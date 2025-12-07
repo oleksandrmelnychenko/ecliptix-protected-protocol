@@ -1,0 +1,109 @@
+# Build directories
+build/
+build-*/
+cmake-build-*/
+out/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Testing/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps
+
+# C++ compiled files
+*.o
+*.obj
+*.exe
+*.out
+*.app
+*.so
+*.dylib
+*.dll
+*.a
+*.lib
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# CLion
+cmake-build-*/
+.idea/
+
+# Visual Studio
+.vs/
+*.user
+*.vcxproj.filters
+*.vcxproj.user
+
+# Xcode
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+
+# Testing
+*.log
+*.tlog
+
+# Protobuf generated files (will be generated during build)
+*.pb.h
+*.pb.cc
+
+# Core dumps
+core
+core.*
+
+# Sanitizer outputs
+*.asan
+*.tsan
+*.ubsan
+
+# Coverage
+*.gcda
+*.gcno
+*.gcov
+coverage/
+*.info
+
+# Dependencies (fetched by CMake)
+_deps/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.orig
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Thumbnails
+._*
+
+# Files that might appear in the root of a volume
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Directories potentially created on remote AFP share
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk

@@ -1,0 +1,437 @@
+#include "ecliptix/protocol/connection/ecliptix_protocol_connection.hpp"
+#include "ecliptix/crypto/sodium_interop.hpp"
+#include "ecliptix/crypto/hkdf.hpp"
+#include "ecliptix/security/validation/dh_validator.hpp"
+#include <chrono>
+#include <format>
+
+namespace ecliptix::protocol::connection {
+
+using namespace ecliptix::protocol::crypto;
+using namespace ecliptix::protocol::security;
+using namespace ecliptix::protocol::chain_step;
+using namespace ecliptix::protocol::enums;
+
+// Static constants for HKDF domain separation
+static constexpr std::string_view INITIAL_SENDER_CHAIN_INFO = "EcliptixProtocolInitialSenderChain";
+static constexpr std::string_view INITIAL_RECEIVER_CHAIN_INFO = "EcliptixProtocolInitialReceiverChain";
+static constexpr std::string_view DH_RATCHET_INFO = "EcliptixProtocolDHRatchet";
+static constexpr std::string_view METADATA_KEY_INFO = "EcliptixProtocolMetadataEncryption";
+
+// ============================================================================
+// Constructor (Private) - for Create()
+// ============================================================================
+
+EcliptixProtocolConnection::EcliptixProtocolConnection(
+    uint32_t connection_id,
+    bool is_initiator,
+    RatchetConfig ratchet_config,
+    PubKeyExchangeType exchange_type,
+    SecureMemoryHandle initial_sending_dh_private_handle,
+    std::vector<uint8_t> initial_sending_dh_public,
+    SecureMemoryHandle persistent_dh_private_handle,
+    std::vector<uint8_t> persistent_dh_public,
+    EcliptixProtocolChainStep sending_step)
+    : lock_(std::make_unique<std::mutex>())
+    , id_(connection_id)
+    , created_at_(std::chrono::system_clock::now())
+    , is_initiator_(is_initiator)
+    , exchange_type_(exchange_type)
+    , ratchet_config_(ratchet_config)
+    , root_key_handle_()
+    , metadata_encryption_key_handle_()
+    , initial_sending_dh_private_handle_(std::move(initial_sending_dh_private_handle))
+    , initial_sending_dh_public_(std::move(initial_sending_dh_public))
+    , current_sending_dh_private_handle_() // Will be set in Create()
+    , persistent_dh_private_handle_(std::move(persistent_dh_private_handle))
+    , persistent_dh_public_(std::move(persistent_dh_public))
+    , sending_step_(std::move(sending_step))
+    , receiving_step_()
+    , peer_bundle_()
+    , peer_dh_public_key_()
+    , nonce_counter_(ProtocolConstants::INITIAL_NONCE_COUNTER)
+    , disposed_(false)
+    , is_first_receiving_ratchet_(true)
+    , received_new_dh_key_(false)
+{
+}
+
+// ============================================================================
+// Factory Method: Create
+// ============================================================================
+
+Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>
+EcliptixProtocolConnection::Create(uint32_t connection_id, bool is_initiator) {
+    return Create(connection_id, is_initiator, RatchetConfig::Default());
+}
+
+Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>
+EcliptixProtocolConnection::Create(
+    uint32_t connection_id,
+    bool is_initiator,
+    const RatchetConfig& config) {
+
+    try {
+        // Generate initial sending DH key pair
+        auto initial_dh_result = SodiumInterop::GenerateX25519KeyPair("Initial sending DH key");
+        if (initial_dh_result.IsErr()) {
+            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                initial_dh_result.UnwrapErr());
+        }
+
+        auto [initial_dh_private, initial_dh_public] = std::move(initial_dh_result).Unwrap();
+
+        // Read initial private key bytes for ChainStep initialization
+        auto initial_private_bytes_result = initial_dh_private.ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
+        if (initial_private_bytes_result.IsErr()) {
+            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::Generic("Failed to read initial DH private key"));
+        }
+
+        auto initial_private_bytes = initial_private_bytes_result.Unwrap();
+
+        // Generate persistent DH key pair
+        auto persistent_dh_result = SodiumInterop::GenerateX25519KeyPair("Persistent DH key");
+        if (persistent_dh_result.IsErr()) {
+            auto wipe_result = SodiumInterop::SecureWipe(std::span<uint8_t>(initial_private_bytes));
+            (void)wipe_result; // Ignore wipe result on error path
+            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                persistent_dh_result.UnwrapErr());
+        }
+
+        auto [persistent_dh_private, persistent_dh_public] = std::move(persistent_dh_result).Unwrap();
+
+        // Create temporary zero chain key (will be updated during finalization)
+        std::vector<uint8_t> temp_chain_key(Constants::X_25519_KEY_SIZE, 0);
+
+        // Create initial sending chain step
+        auto sending_step_result = EcliptixProtocolChainStep::Create(
+            ChainStepType::SENDER,
+            temp_chain_key,
+            initial_private_bytes,
+            initial_dh_public);
+
+        // Wipe temporary data
+        auto wipe1 = SodiumInterop::SecureWipe(std::span<uint8_t>(temp_chain_key));
+        auto wipe2 = SodiumInterop::SecureWipe(std::span<uint8_t>(initial_private_bytes));
+        (void)wipe1; (void)wipe2; // Ignore wipe results
+
+        if (sending_step_result.IsErr()) {
+            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                sending_step_result.UnwrapErr());
+        }
+
+        auto sending_step = std::move(sending_step_result).Unwrap();
+
+        // Create connection using private constructor
+        auto connection = std::unique_ptr<EcliptixProtocolConnection>(
+            new EcliptixProtocolConnection(
+                connection_id,
+                is_initiator,
+                config,
+                PubKeyExchangeType::X3DH,  // Default exchange type
+                std::move(initial_dh_private),
+                std::move(initial_dh_public),
+                std::move(persistent_dh_private),
+                std::move(persistent_dh_public),
+                std::move(sending_step)));
+
+        // Copy initial DH private key to current_sending_dh_private_handle_
+        auto initial_copy_result = connection->initial_sending_dh_private_handle_.ReadBytes(
+            Constants::X_25519_PRIVATE_KEY_SIZE);
+        if (initial_copy_result.IsErr()) {
+            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::Generic("Failed to copy initial DH key"));
+        }
+
+        auto initial_copy_bytes = initial_copy_result.Unwrap();
+        auto current_dh_alloc = SecureMemoryHandle::Allocate(Constants::X_25519_PRIVATE_KEY_SIZE);
+        if (current_dh_alloc.IsErr()) {
+            auto wipe_result = SodiumInterop::SecureWipe(std::span<uint8_t>(initial_copy_bytes));
+            (void)wipe_result;
+            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::FromSodiumFailure(current_dh_alloc.UnwrapErr()));
+        }
+
+        auto current_dh_handle = std::move(current_dh_alloc).Unwrap();
+        auto write_result = current_dh_handle.Write(initial_copy_bytes);
+        auto wipe3 = SodiumInterop::SecureWipe(std::span<uint8_t>(initial_copy_bytes));
+        (void)wipe3;
+
+        if (write_result.IsErr()) {
+            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                write_result.UnwrapErr());
+        }
+
+        connection->current_sending_dh_private_handle_ = std::move(current_dh_handle);
+
+        return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Ok(
+            std::move(connection));
+
+    } catch (const std::exception& ex) {
+        return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+            EcliptixProtocolFailure::Generic(
+                std::format("Unexpected error creating connection {}: {}",
+                    connection_id, ex.what())));
+    }
+}
+
+// ============================================================================
+// Finalization: FinalizeChainAndDhKeys
+// ============================================================================
+
+Result<Unit, EcliptixProtocolFailure>
+EcliptixProtocolConnection::FinalizeChainAndDhKeys(
+    std::span<const uint8_t> initial_root_key,
+    std::span<const uint8_t> initial_peer_dh_public_key) {
+
+    std::lock_guard<std::mutex> lock(*lock_);
+
+    // Validation checks
+    if (root_key_handle_.has_value()) {
+        return Result<Unit, EcliptixProtocolFailure>::Err(
+            EcliptixProtocolFailure::Generic("Connection already finalized"));
+    }
+
+    if (initial_root_key.size() != Constants::X_25519_KEY_SIZE) {
+        return Result<Unit, EcliptixProtocolFailure>::Err(
+            EcliptixProtocolFailure::InvalidInput(
+                std::format("Initial root key must be {} bytes, got {}",
+                    Constants::X_25519_KEY_SIZE, initial_root_key.size())));
+    }
+
+    if (initial_peer_dh_public_key.size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
+        return Result<Unit, EcliptixProtocolFailure>::Err(
+            EcliptixProtocolFailure::InvalidInput(
+                std::format("Initial peer DH public key must be {} bytes, got {}",
+                    Constants::X_25519_PUBLIC_KEY_SIZE, initial_peer_dh_public_key.size())));
+    }
+
+    // Validate peer DH public key
+    auto validation_result = DhValidator::ValidateX25519PublicKey(initial_peer_dh_public_key);
+    if (validation_result.IsErr()) {
+        return validation_result;
+    }
+
+    std::vector<uint8_t> dh_secret;
+    std::vector<uint8_t> new_root_key;
+    std::vector<uint8_t> sender_chain_key;
+    std::vector<uint8_t> receiver_chain_key;
+    std::vector<uint8_t> persistent_private_bytes;
+    std::vector<uint8_t> peer_dh_public_copy(
+        initial_peer_dh_public_key.begin(),
+        initial_peer_dh_public_key.end());
+
+    try {
+        // Read initial sending DH private key
+        auto private_key_result = initial_sending_dh_private_key_.ReadBytes(
+            Constants::X_25519_PRIVATE_KEY_SIZE);
+        if (private_key_result.IsErr()) {
+            return Result<Unit, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::Generic("Failed to read initial DH private key"));
+        }
+
+        persistent_private_bytes = private_key_result.Unwrap();
+
+        // Compute DH shared secret
+        auto dh_result = SodiumInterop::ComputeX25519SharedSecret(
+            persistent_private_bytes,
+            peer_dh_public_copy);
+        if (dh_result.IsErr()) {
+            SodiumInterop::SecureWipe(persistent_private_bytes);
+            return Result<Unit, EcliptixProtocolFailure>::Err(
+                dh_result.UnwrapErr());
+        }
+
+        dh_secret = dh_result.Unwrap();
+
+        // Derive new root key using HKDF (DH secret + initial root key -> new root key)
+        std::vector<uint8_t> hkdf_output(Constants::X_25519_KEY_SIZE * 2);
+        auto root_derive_result = Hkdf::DeriveKeyBytes(
+            dh_secret,
+            Constants::X_25519_KEY_SIZE * 2,
+            std::vector<uint8_t>(initial_root_key.begin(), initial_root_key.end()),
+            std::vector<uint8_t>(DH_RATCHET_INFO.begin(), DH_RATCHET_INFO.end()));
+
+        if (root_derive_result.IsErr()) {
+            SodiumInterop::SecureWipe(persistent_private_bytes);
+            SodiumInterop::SecureWipe(dh_secret);
+            return root_derive_result;
+        }
+
+        hkdf_output = root_derive_result.Unwrap();
+        new_root_key.assign(hkdf_output.begin(), hkdf_output.begin() + Constants::X_25519_KEY_SIZE);
+
+        // Derive initial sender and receiver chain keys from new root key
+        auto sender_chain_result = Hkdf::DeriveKeyBytes(
+            new_root_key,
+            Constants::X_25519_KEY_SIZE,
+            std::vector<uint8_t>(), // no salt
+            std::vector<uint8_t>(INITIAL_SENDER_CHAIN_INFO.begin(), INITIAL_SENDER_CHAIN_INFO.end()));
+
+        if (sender_chain_result.IsErr()) {
+            SodiumInterop::SecureWipe(persistent_private_bytes);
+            SodiumInterop::SecureWipe(dh_secret);
+            SodiumInterop::SecureWipe(new_root_key);
+            return sender_chain_result;
+        }
+
+        auto receiver_chain_result = Hkdf::DeriveKeyBytes(
+            new_root_key,
+            Constants::X_25519_KEY_SIZE,
+            std::vector<uint8_t>(), // no salt
+            std::vector<uint8_t>(INITIAL_RECEIVER_CHAIN_INFO.begin(), INITIAL_RECEIVER_CHAIN_INFO.end()));
+
+        if (receiver_chain_result.IsErr()) {
+            SodiumInterop::SecureWipe(persistent_private_bytes);
+            SodiumInterop::SecureWipe(dh_secret);
+            SodiumInterop::SecureWipe(new_root_key);
+            return receiver_chain_result;
+        }
+
+        auto sender_derived = sender_chain_result.Unwrap();
+        auto receiver_derived = receiver_chain_result.Unwrap();
+
+        // Initiator uses sender chain for sending, receiver chain for receiving
+        // Responder swaps them
+        if (is_initiator_) {
+            sender_chain_key = std::move(sender_derived);
+            receiver_chain_key = std::move(receiver_derived);
+        } else {
+            sender_chain_key = std::move(receiver_derived);
+            receiver_chain_key = std::move(sender_derived);
+        }
+
+        // Wipe temporary DH secret and HKDF output
+        SodiumInterop::SecureWipe(dh_secret);
+        SodiumInterop::SecureWipe(hkdf_output);
+
+        // Update sending step with new chain key
+        auto update_result = sending_step_->UpdateKeysAfterDhRatchet(sender_chain_key);
+        if (update_result.IsErr()) {
+            SodiumInterop::SecureWipe(persistent_private_bytes);
+            SodiumInterop::SecureWipe(new_root_key);
+            SodiumInterop::SecureWipe(sender_chain_key);
+            SodiumInterop::SecureWipe(receiver_chain_key);
+            return update_result;
+        }
+
+        // Create receiving chain step
+        auto receiving_step_result = EcliptixProtocolChainStep::Create(
+            ChainStepType::RECEIVER,
+            receiver_chain_key,
+            persistent_private_bytes,
+            persistent_dh_public_key_);
+
+        SodiumInterop::SecureWipe(persistent_private_bytes);
+        SodiumInterop::SecureWipe(sender_chain_key);
+        SodiumInterop::SecureWipe(receiver_chain_key);
+
+        if (receiving_step_result.IsErr()) {
+            SodiumInterop::SecureWipe(new_root_key);
+            return Result<Unit, EcliptixProtocolFailure>::Err(
+                receiving_step_result.UnwrapErr());
+        }
+
+        // Allocate secure memory for root key
+        auto root_handle_result = SecureMemoryHandle::Allocate(Constants::X_25519_KEY_SIZE);
+        if (root_handle_result.IsErr()) {
+            SodiumInterop::SecureWipe(new_root_key);
+            return Result<Unit, EcliptixProtocolFailure>::Err(
+                root_handle_result.UnwrapErr());
+        }
+
+        auto root_handle = std::move(root_handle_result).Unwrap();
+        auto root_write_result = root_handle.Write(new_root_key);
+        SodiumInterop::SecureWipe(new_root_key);
+
+        if (root_write_result.IsErr()) {
+            return Result<Unit, EcliptixProtocolFailure>::Err(
+                root_write_result.UnwrapErr());
+        }
+
+        // Store state
+        root_key_handle_ = std::move(root_handle);
+        receiving_step_ = std::move(receiving_step_result).Unwrap();
+        peer_dh_public_key_ = std::move(peer_dh_public_copy);
+
+        // Derive metadata encryption key
+        auto metadata_result = DeriveMetadataEncryptionKey();
+        if (metadata_result.IsErr()) {
+            return metadata_result;
+        }
+
+        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+
+    } catch (const std::exception& ex) {
+        SodiumInterop::SecureWipe(persistent_private_bytes);
+        SodiumInterop::SecureWipe(dh_secret);
+        SodiumInterop::SecureWipe(new_root_key);
+        SodiumInterop::SecureWipe(sender_chain_key);
+        SodiumInterop::SecureWipe(receiver_chain_key);
+
+        return Result<Unit, EcliptixProtocolFailure>::Err(
+            EcliptixProtocolFailure::Generic(
+                std::format("Unexpected error during finalization: {}", ex.what())));
+    }
+}
+
+// ============================================================================
+// Helper: Derive Metadata Encryption Key
+// ============================================================================
+
+Result<Unit, EcliptixProtocolFailure>
+EcliptixProtocolConnection::DeriveMetadataEncryptionKey() {
+
+    if (!root_key_handle_.has_value()) {
+        return Result<Unit, EcliptixProtocolFailure>::Err(
+            EcliptixProtocolFailure::Generic("Root key not initialized"));
+    }
+
+    // Read root key
+    auto root_bytes_result = root_key_handle_->ReadBytes(Constants::X_25519_KEY_SIZE);
+    if (root_bytes_result.IsErr()) {
+        return Result<Unit, EcliptixProtocolFailure>::Err(
+            EcliptixProtocolFailure::Generic("Failed to read root key"));
+    }
+
+    auto root_bytes = root_bytes_result.Unwrap();
+
+    // Derive metadata key using HKDF
+    auto metadata_key_result = Hkdf::DeriveKeyBytes(
+        root_bytes,
+        Constants::AES_KEY_SIZE,
+        std::vector<uint8_t>(), // no salt
+        std::vector<uint8_t>(METADATA_KEY_INFO.begin(), METADATA_KEY_INFO.end()));
+
+    SodiumInterop::SecureWipe(root_bytes);
+
+    if (metadata_key_result.IsErr()) {
+        return metadata_key_result;
+    }
+
+    auto metadata_key_bytes = metadata_key_result.Unwrap();
+
+    // Allocate secure memory for metadata key
+    auto metadata_handle_result = SecureMemoryHandle::Allocate(Constants::AES_KEY_SIZE);
+    if (metadata_handle_result.IsErr()) {
+        SodiumInterop::SecureWipe(metadata_key_bytes);
+        return Result<Unit, EcliptixProtocolFailure>::Err(
+            metadata_handle_result.UnwrapErr());
+    }
+
+    auto metadata_handle = std::move(metadata_handle_result).Unwrap();
+    auto write_result = metadata_handle.Write(metadata_key_bytes);
+    SodiumInterop::SecureWipe(metadata_key_bytes);
+
+    if (write_result.IsErr()) {
+        return Result<Unit, EcliptixProtocolFailure>::Err(
+            write_result.UnwrapErr());
+    }
+
+    metadata_encryption_key_handle_ = std::move(metadata_handle);
+
+    return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+}
+
+} // namespace ecliptix::protocol::connection

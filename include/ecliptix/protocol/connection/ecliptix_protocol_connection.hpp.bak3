@@ -1,0 +1,519 @@
+#pragma once
+
+#include "ecliptix/core/result.hpp"
+#include "ecliptix/core/option.hpp"
+#include "ecliptix/core/failures.hpp"
+#include "ecliptix/crypto/sodium_secure_memory_handle.hpp"
+#include "ecliptix/protocol/chain_step/ecliptix_protocol_chain_step.hpp"
+#include "ecliptix/models/bundles/local_public_key_bundle.hpp"
+#include "ecliptix/models/keys/ratchet_chain_key.hpp"
+#include "ecliptix/configuration/ratchet_config.hpp"
+#include "ecliptix/enums/pub_key_exchange_type.hpp"
+
+#include <cstdint>
+#include <vector>
+#include <chrono>
+#include <memory>
+#include <mutex>
+#include <atomic>
+#include <optional>
+
+// Forward declaration for protobuf
+namespace ecliptix::proto::protocol {
+class RatchetState;
+}
+
+namespace ecliptix::protocol::connection {
+
+using protocol::Result;
+using protocol::Option;
+using protocol::Unit;
+using protocol::EcliptixProtocolFailure;
+using crypto::SecureMemoryHandle;
+using chain_step::EcliptixProtocolChainStep;
+using models::LocalPublicKeyBundle;
+using models::RatchetChainKey;
+using configuration::RatchetConfig;
+using enums::PubKeyExchangeType;
+
+/**
+ * @brief Complete Double Ratchet protocol implementation
+ *
+ * **Core Responsibility**: Full Signal Protocol Double Ratchet with X3DH handshake
+ *
+ * **Protocol Components**:
+ * 1. **Asymmetric (DH) Ratchet**: Periodic X25519 ephemeral key rotation
+ * 2. **Symmetric Ratchet**: Per-message HKDF-based chain key stepping
+ * 3. **Root Key**: Derives all chain keys via DH ratchet
+ * 4. **Sending Chain**: Encrypts outbound messages
+ * 5. **Receiving Chain**: Decrypts inbound messages
+ *
+ * **Security Properties**:
+ * - Forward Secrecy: Old keys can't be derived from new ones
+ * - Future Secrecy (Self-Healing): Compromise recovery after DH ratchet
+ * - Out-of-Order Resilience: Message key caching with recovery
+ * - Replay Protection: Nonce deduplication + index window tracking
+ *
+ * **Thread Safety**: All methods protected by internal mutex
+ *
+ * **Memory Safety**:
+ * - All cryptographic keys in libsodium secure memory (locked, guarded)
+ * - Automatic wiping via RAII on destruction
+ * - Move-only semantics prevent accidental copies
+ *
+ * **Usage Example**:
+ * ```cpp
+ * // Initiator creates connection
+ * auto conn_result = EcliptixProtocolConnection::Create(1, true);
+ * auto conn = std::move(conn_result).Unwrap();
+ *
+ * // Set peer's public key bundle from X3DH
+ * conn.SetPeerBundle(peer_bundle);
+ *
+ * // Finalize with derived root key from X3DH
+ * conn.FinalizeChainAndDhKeys(root_key, peer_dh_public);
+ *
+ * // Send messages
+ * auto send_result = conn.PrepareNextSendMessage();
+ * auto [ratchet_key, include_dh] = send_result.Unwrap();
+ * // Use ratchet_key.WithKeyMaterial() to encrypt
+ *
+ * // Receive messages
+ * auto recv_result = conn.ProcessReceivedMessage(msg_index);
+ * auto recv_key = recv_result.Unwrap();
+ * // Use recv_key.WithKeyMaterial() to decrypt
+ * ```
+ */
+class EcliptixProtocolConnection {
+public:
+    // ========================================================================
+    // Factory Methods
+    // ========================================================================
+
+    /**
+     * @brief Create a new connection (pre-handshake state)
+     *
+     * @param connection_id Unique identifier for this connection
+     * @param is_initiator True if initiating the connection, false if responding
+     *
+     * @return Result containing the connection or an error
+     *
+     * @note Connection is not ready for use until FinalizeChainAndDhKeys() is called
+     */
+    [[nodiscard]] static Result<EcliptixProtocolConnection, EcliptixProtocolFailure> Create(
+        uint32_t connection_id,
+        bool is_initiator);
+
+    /**
+     * @brief Create a new connection with custom configuration
+     *
+     * @param connection_id Unique identifier for this connection
+     * @param is_initiator True if initiating, false if responding
+     * @param ratchet_config Configuration for DH ratchet frequency
+     * @param exchange_type Type of public key exchange (X3DH, etc.)
+     *
+     * @return Result containing the connection or an error
+     */
+    [[nodiscard]] static Result<EcliptixProtocolConnection, EcliptixProtocolFailure> Create(
+        uint32_t connection_id,
+        bool is_initiator,
+        RatchetConfig ratchet_config,
+        PubKeyExchangeType exchange_type);
+
+    /**
+     * @brief Restore connection from persisted state
+     *
+     * @param connection_id Unique identifier
+     * @param proto Protobuf RatchetState message
+     * @param ratchet_config Configuration for DH ratchet
+     * @param exchange_type Type of public key exchange
+     *
+     * @return Result containing the restored connection or an error
+     */
+    [[nodiscard]] static Result<EcliptixProtocolConnection, EcliptixProtocolFailure> FromProtoState(
+        uint32_t connection_id,
+        const proto::protocol::RatchetState& proto,
+        RatchetConfig ratchet_config,
+        PubKeyExchangeType exchange_type);
+
+    // ========================================================================
+    // Initialization (X3DH Integration)
+    // ========================================================================
+
+    /**
+     * @brief Set peer's public key bundle from X3DH handshake
+     *
+     * @param peer_bundle Bundle containing peer's identity and prekeys
+     *
+     * @return Ok on success, Err if connection already finalized
+     *
+     * @note Must be called before FinalizeChainAndDhKeys()
+     */
+    [[nodiscard]] Result<Unit, EcliptixProtocolFailure> SetPeerBundle(
+        const LocalPublicKeyBundle& peer_bundle);
+
+    /**
+     * @brief Finalize connection with root key from X3DH
+     *
+     * Called after X3DH handshake completes. Derives initial chain keys
+     * for both sending and receiving.
+     *
+     * **Algorithm**:
+     * ```
+     * 1. Compute DH: initial_dh_private * peer_dh_public = dh_secret
+     * 2. Derive root: HKDF(dh_secret, salt=initial_root_key, "Ecliptix-DH-Ratchet")
+     * 3. Split into chains:
+     *    - sending_key = HKDF(root, null, "Ecliptix-Initial-Sender")
+     *    - receiving_key = HKDF(root, null, "Ecliptix-Initial-Receiver")
+     * 4. Initialize both chain steps
+     * 5. Derive metadata encryption key
+     * ```
+     *
+     * @param initial_root_key Root key from X3DH (32 bytes, will be securely copied)
+     * @param initial_peer_dh_public_key Peer's initial ephemeral DH public key (32 bytes)
+     *
+     * @return Ok on success, Err on validation or derivation failure
+     *
+     * @note Caller must securely wipe initial_root_key after this call
+     */
+    [[nodiscard]] Result<Unit, EcliptixProtocolFailure> FinalizeChainAndDhKeys(
+        std::span<const uint8_t> initial_root_key,
+        std::span<const uint8_t> initial_peer_dh_public_key);
+
+    // ========================================================================
+    // Message Operations
+    // ========================================================================
+
+    /**
+     * @brief Prepare to send the next message
+     *
+     * Performs DH ratchet if needed, derives message key for next index.
+     *
+     * **DH Ratchet Triggers**:
+     * - Received new DH key from peer (reactive)
+     * - Message index % ratchet_frequency == 0 (periodic)
+     * - Index exceeds max_messages_without_ratchet (safety limit)
+     *
+     * @return Tuple of (RatchetChainKey, bool include_dh_public_key)
+     *
+     * @note If include_dh_public_key is true, must include current ephemeral
+     *       DH public key in message header via GetCurrentSenderDhPublicKey()
+     */
+    [[nodiscard]] Result<std::pair<RatchetChainKey, bool>, EcliptixProtocolFailure>
+        PrepareNextSendMessage();
+
+    /**
+     * @brief Process a received message
+     *
+     * Handles out-of-order delivery, derives/recovers message key.
+     *
+     * **Algorithm**:
+     * ```
+     * 1. Check if key already cached (out-of-order recovery)
+     * 2. If gap exists:
+     *    - Derive all skipped keys
+     *    - Store in recovery cache
+     * 3. Derive key at received_index
+     * 4. Update current receiving index
+     * 5. Prune old cached keys
+     * ```
+     *
+     * @param received_index Index from message header
+     *
+     * @return RatchetChainKey for decryption
+     *
+     * @note Caller must call CheckReplayProtection() before decryption
+     */
+    [[nodiscard]] Result<RatchetChainKey, EcliptixProtocolFailure>
+        ProcessReceivedMessage(uint32_t received_index);
+
+    /**
+     * @brief Generate next nonce for AES-GCM encryption
+     *
+     * **Format**: [4 bytes random | 8 bytes counter (LE)]
+     * Total: 12 bytes (96 bits)
+     *
+     * @return 12-byte nonce
+     *
+     * @note Counter is atomically incremented to prevent collisions
+     */
+    [[nodiscard]] Result<std::vector<uint8_t>, EcliptixProtocolFailure> GenerateNextNonce();
+
+    /**
+     * @brief Check for replay attacks
+     *
+     * Validates nonce uniqueness and message index within window.
+     *
+     * @param nonce Received nonce (12 bytes)
+     * @param message_index Received message index
+     *
+     * @return Ok if valid, Err if replay detected
+     */
+    [[nodiscard]] Result<Unit, EcliptixProtocolFailure> CheckReplayProtection(
+        std::span<const uint8_t> nonce,
+        uint64_t message_index);
+
+    // ========================================================================
+    // DH Ratchet Operations
+    // ========================================================================
+
+    /**
+     * @brief Perform receiving-side DH ratchet
+     *
+     * Called when receiving a message with a new ephemeral DH public key.
+     *
+     * **Algorithm**:
+     * ```
+     * 1. Validate received DH public key (curve25519 point check)
+     * 2. Compute DH: current_dh_private * received_dh_public = dh_secret
+     * 3. Derive via HKDF:
+     *    - Input: dh_secret
+     *    - Salt: current_root_key
+     *    - Info: "Ecliptix-DH-Ratchet"
+     *    - Output: 64 bytes → [new_root_key (32) | new_recv_chain_key (32)]
+     * 4. Update receiving chain step with new chain key
+     * 5. Store received DH public key as peer's current key
+     * 6. Set flag for next sending ratchet
+     * ```
+     *
+     * @param received_dh_public_key Peer's new ephemeral DH public key (32 bytes)
+     *
+     * @return Ok on success, Err on validation or derivation failure
+     */
+    [[nodiscard]] Result<Unit, EcliptixProtocolFailure> PerformReceivingRatchet(
+        std::span<const uint8_t> received_dh_public_key);
+
+    /**
+     * @brief Notify that a DH ratchet rotation should occur
+     *
+     * Sets internal flag to trigger ratchet on next send.
+     */
+    void NotifyRatchetRotation();
+
+    // ========================================================================
+    // State Queries
+    // ========================================================================
+
+    /**
+     * @brief Check if this connection is the initiator
+     */
+    [[nodiscard]] bool IsInitiator() const noexcept;
+
+    /**
+     * @brief Get the public key exchange type
+     */
+    [[nodiscard]] PubKeyExchangeType ExchangeType() const noexcept;
+
+    /**
+     * @brief Get peer's public key bundle
+     */
+    [[nodiscard]] Result<LocalPublicKeyBundle, EcliptixProtocolFailure> GetPeerBundle() const;
+
+    /**
+     * @brief Get peer's current ephemeral DH public key
+     *
+     * @return Option containing the key (32 bytes) or None if not set
+     */
+    [[nodiscard]] Result<Option<std::vector<uint8_t>>, EcliptixProtocolFailure>
+        GetCurrentPeerDhPublicKey() const;
+
+    /**
+     * @brief Get this connection's current ephemeral DH public key
+     *
+     * @return Option containing the key (32 bytes) or None if not initialized
+     */
+    [[nodiscard]] Result<Option<std::vector<uint8_t>>, EcliptixProtocolFailure>
+        GetCurrentSenderDhPublicKey() const;
+
+    /**
+     * @brief Get metadata encryption key
+     *
+     * Derived from root key, used for encrypting message metadata.
+     *
+     * @return 32-byte key (caller must wipe after use)
+     */
+    [[nodiscard]] Result<std::vector<uint8_t>, EcliptixProtocolFailure>
+        GetMetadataEncryptionKey() const;
+
+    // ========================================================================
+    // Serialization
+    // ========================================================================
+
+    /**
+     * @brief Serialize current state to protobuf
+     *
+     * @return Protobuf RatchetState message
+     */
+    [[nodiscard]] Result<proto::protocol::RatchetState, EcliptixProtocolFailure>
+        ToProtoState() const;
+
+    // ========================================================================
+    // Move/Copy Semantics and Cleanup
+    // ========================================================================
+
+    // Non-copyable and non-movable (contains atomics and mutexes)
+    EcliptixProtocolConnection(EcliptixProtocolConnection&&) = delete;
+    EcliptixProtocolConnection& operator=(EcliptixProtocolConnection&&) = delete;
+    EcliptixProtocolConnection(const EcliptixProtocolConnection&) = delete;
+    EcliptixProtocolConnection& operator=(const EcliptixProtocolConnection&) = delete;
+
+    /**
+     * @brief Destructor - securely wipes all key material
+     *
+     * - Wipes root key (libsodium automatic)
+     * - Wipes metadata encryption key (libsodium automatic)
+     * - Wipes all DH private keys (libsodium automatic)
+     * - Wipes DH public keys (sodium_memzero)
+     * - Wipes peer bundle keys
+     */
+    ~EcliptixProtocolConnection();
+
+private:
+    // ========================================================================
+    // Private Constructors
+    // ========================================================================
+
+    /**
+     * @brief Private constructor for factory methods
+     */
+    explicit EcliptixProtocolConnection(
+        uint32_t connection_id,
+        bool is_initiator,
+        RatchetConfig ratchet_config,
+        PubKeyExchangeType exchange_type,
+        SecureMemoryHandle initial_sending_dh_private_handle,
+        std::vector<uint8_t> initial_sending_dh_public,
+        SecureMemoryHandle persistent_dh_private_handle,
+        std::vector<uint8_t> persistent_dh_public,
+        EcliptixProtocolChainStep sending_step);
+
+    /**
+     * @brief Private constructor for deserialization
+     */
+    explicit EcliptixProtocolConnection(
+        uint32_t connection_id,
+        bool is_initiator,
+        RatchetConfig ratchet_config,
+        PubKeyExchangeType exchange_type,
+        std::chrono::system_clock::time_point created_at,
+        uint64_t nonce_counter,
+        SecureMemoryHandle root_key_handle,
+        SecureMemoryHandle metadata_encryption_key_handle,
+        EcliptixProtocolChainStep sending_step,
+        EcliptixProtocolChainStep receiving_step,
+        std::optional<LocalPublicKeyBundle> peer_bundle,
+        std::optional<std::vector<uint8_t>> peer_dh_public_key,
+        SecureMemoryHandle initial_sending_dh_private_handle,
+        std::vector<uint8_t> initial_sending_dh_public,
+        SecureMemoryHandle current_sending_dh_private_handle,
+        SecureMemoryHandle persistent_dh_private_handle,
+        std::vector<uint8_t> persistent_dh_public,
+        bool is_first_receiving_ratchet);
+
+    // ========================================================================
+    // Helper Methods
+    // ========================================================================
+
+    /**
+     * @brief Check if connection has been finalized
+     */
+    [[nodiscard]] Result<Unit, EcliptixProtocolFailure> CheckIfFinalized() const;
+
+    /**
+     * @brief Check if connection is not yet finalized
+     */
+    [[nodiscard]] Result<Unit, EcliptixProtocolFailure> CheckIfNotFinalized() const;
+
+    /**
+     * @brief Check if disposed (for RAII safety)
+     */
+    [[nodiscard]] Result<Unit, EcliptixProtocolFailure> CheckDisposed() const;
+
+    /**
+     * @brief Check if connection has expired
+     */
+    [[nodiscard]] Result<Unit, EcliptixProtocolFailure> EnsureNotExpired() const;
+
+    /**
+     * @brief Maybe perform sending-side DH ratchet
+     *
+     * @return True if ratchet was performed, false otherwise
+     */
+    [[nodiscard]] Result<bool, EcliptixProtocolFailure> MaybePerformSendingDhRatchet();
+
+    /**
+     * @brief Derive new root key and chain keys via DH ratchet
+     *
+     * @param dh_secret Shared secret from X25519 (32 bytes)
+     * @param[out] new_root_key Output: new root key (32 bytes)
+     * @param[out] new_chain_key Output: new chain key (32 bytes)
+     *
+     * @return Ok on success, Err on HKDF failure
+     */
+    [[nodiscard]] static Result<Unit, EcliptixProtocolFailure> DeriveRatchetKeys(
+        std::span<const uint8_t> dh_secret,
+        std::span<const uint8_t> current_root_key,
+        std::span<uint8_t> new_root_key,
+        std::span<uint8_t> new_chain_key);
+
+    /**
+     * @brief Derive metadata encryption key from root key
+     */
+    [[nodiscard]] Result<SecureMemoryHandle, EcliptixProtocolFailure>
+        DeriveMetadataEncryptionKey() const;
+
+    /**
+     * @brief Validate initial keys before finalization
+     */
+    [[nodiscard]] static Result<Unit, EcliptixProtocolFailure> ValidateInitialKeys(
+        std::span<const uint8_t> root_key,
+        std::span<const uint8_t> peer_dh_public_key);
+
+    // ========================================================================
+    // Member Variables
+    // ========================================================================
+
+    mutable std::unique_ptr<std::mutex> lock_;         ///< Protects all mutable state
+
+    // Session metadata
+    uint32_t id_;                                       ///< Connection identifier
+    std::chrono::system_clock::time_point created_at_;  ///< Creation timestamp
+    bool is_initiator_;                                 ///< True if initiator role
+    PubKeyExchangeType exchange_type_;                  ///< Type of key exchange
+
+    // Configuration
+    RatchetConfig ratchet_config_;                      ///< DH ratchet configuration
+
+    // Cryptographic keys (secure memory)
+    std::optional<SecureMemoryHandle> root_key_handle_;              ///< Root key
+    std::optional<SecureMemoryHandle> metadata_encryption_key_handle_;  ///< Metadata key
+
+    // DH keys for ratcheting
+    SecureMemoryHandle initial_sending_dh_private_handle_;  ///< Initial ephemeral DH private
+    std::vector<uint8_t> initial_sending_dh_public_;        ///< Initial ephemeral DH public
+    std::optional<SecureMemoryHandle> current_sending_dh_private_handle_;  ///< Current ephemeral DH private
+    SecureMemoryHandle persistent_dh_private_handle_;       ///< Long-term DH private
+    std::vector<uint8_t> persistent_dh_public_;             ///< Long-term DH public
+
+    // Chain steps for symmetric ratchet
+    EcliptixProtocolChainStep sending_step_;                ///< Outbound message chain
+    std::optional<EcliptixProtocolChainStep> receiving_step_;  ///< Inbound message chain
+
+    // Peer state
+    std::optional<LocalPublicKeyBundle> peer_bundle_;       ///< Peer's public keys
+    std::optional<std::vector<uint8_t>> peer_dh_public_key_;  ///< Peer's current ephemeral DH public
+
+    // Nonce management
+    std::atomic<uint64_t> nonce_counter_;                   ///< Atomic nonce counter
+
+    // State flags
+    std::atomic<bool> disposed_;                            ///< Disposal flag
+    std::atomic<bool> is_first_receiving_ratchet_;          ///< First receiving ratchet flag
+    std::atomic<bool> received_new_dh_key_;                 ///< Flag for reactive ratchet trigger
+
+    // TODO: Add ReplayProtection and RatchetRecovery components
+    // std::unique_ptr<ReplayProtection> replay_protection_;
+    // std::unique_ptr<RatchetRecovery> ratchet_recovery_;
+};
+
+} // namespace ecliptix::protocol::connection

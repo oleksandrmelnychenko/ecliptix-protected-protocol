@@ -1,0 +1,153 @@
+#pragma once
+
+#include "ecliptix/core/result.hpp"
+#include "ecliptix/core/constants.hpp"
+#include "ecliptix/core/failures.hpp"
+#include <span>
+#include <array>
+#include <cstdint>
+
+namespace ecliptix::protocol::security {
+
+/**
+ * @brief Validates X25519 Diffie-Hellman public keys
+ *
+ * Provides cryptographic validation for Curve25519 public keys including:
+ * - Size validation
+ * - Small-order point detection (8 known weak points)
+ * - Field element validity checks
+ *
+ * Critical for preventing invalid curve attacks and ensuring DH security.
+ */
+class DhValidator {
+public:
+    /**
+     * @brief Validates an X25519 public key
+     *
+     * Performs comprehensive validation:
+     * 1. Checks key size (must be 32 bytes)
+     * 2. Detects small-order points (8 known weak points)
+     * 3. Validates point is on Curve25519
+     *
+     * @param public_key The X25519 public key to validate
+     * @return Ok(Unit) if valid, Err(failure) otherwise
+     *
+     * Security guarantees:
+     * - Prevents small-subgroup attacks
+     * - Ensures key is valid curve point
+     * - Constant-time comparisons (where applicable)
+     */
+    static Result<Unit, EcliptixProtocolFailure> ValidateX25519PublicKey(
+        std::span<const uint8_t> public_key);
+
+private:
+    /**
+     * @brief Known small-order points on Curve25519
+     *
+     * These 8 points have orders {1, 2, 4, 8} in the small subgroup.
+     * Accepting any of these as a DH public key would compromise security
+     * by reducing the keyspace to a trivial subgroup.
+     *
+     * Points are stored in little-endian format as 32-byte arrays.
+     */
+    static constexpr std::array<std::array<uint8_t, 32>, 8> SMALL_ORDER_POINTS = {{
+        // Point of order 1 (identity)
+        {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+
+        // Point of order 2
+        {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+
+        // Point of order 4 (first variant)
+        {0x5F, 0x9C, 0x95, 0xBC, 0xA3, 0x50, 0x8C, 0x24,
+         0xB1, 0xD0, 0xB1, 0x55, 0x9C, 0x83, 0xEF, 0x5B,
+         0x04, 0x44, 0x5C, 0xC4, 0x58, 0x1C, 0x8E, 0x86,
+         0xD8, 0x22, 0x4E, 0xDD, 0xD0, 0x9F, 0x11, 0x57},
+
+        // Point of order 4 (second variant)
+        {0xE0, 0xEB, 0x7A, 0x7C, 0x3B, 0x41, 0xB8, 0xAE,
+         0x16, 0x56, 0xE3, 0xFA, 0xF1, 0x9F, 0xC4, 0x6A,
+         0xDA, 0x09, 0x8D, 0xEB, 0x9C, 0x32, 0xB1, 0xFD,
+         0x86, 0x62, 0x05, 0x16, 0x5F, 0x49, 0xB8, 0x00},
+
+        // Point of order 8 (first variant)
+        {0xEC, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+         0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+         0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+         0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F},
+
+        // Point of order 8 (second variant)
+        {0xED, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+         0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+         0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+         0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F},
+
+        // Point of order 8 (third variant)
+        {0xEE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+         0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+         0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+         0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F},
+
+        // Point of order 8 (fourth variant)
+        {0xCD, 0xEB, 0x7A, 0x7C, 0x3B, 0x41, 0xB8, 0xAE,
+         0x16, 0x56, 0xE3, 0xFA, 0xF1, 0x9F, 0xC4, 0x6A,
+         0xDA, 0x09, 0x8D, 0xEB, 0x9C, 0x32, 0xB1, 0xFD,
+         0x86, 0x62, 0x05, 0x16, 0x5F, 0x49, 0xB8, 0x00}
+    }};
+
+    /**
+     * @brief Curve25519 field prime: 2^255 - 19
+     *
+     * All valid field elements must be less than this prime.
+     * Represented as 32-byte little-endian value.
+     */
+    static constexpr std::array<uint8_t, 32> CURVE_25519_PRIME = {
+        0xED, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F
+    };
+
+    /**
+     * @brief Checks if public key is a small-order point
+     *
+     * Compares against all 8 known small-order points using
+     * constant-time comparison to prevent timing attacks.
+     *
+     * @param public_key The key to check (must be 32 bytes)
+     * @return true if key is a small-order point, false otherwise
+     */
+    static bool HasSmallOrder(std::span<const uint8_t> public_key);
+
+    /**
+     * @brief Validates that key represents a valid Curve25519 field element
+     *
+     * Checks that the key value is less than the field prime (2^255 - 19).
+     * Uses word-by-word comparison to handle 256-bit integers.
+     *
+     * @param public_key The key to validate (must be 32 bytes)
+     * @return true if valid field element, false otherwise
+     */
+    static bool IsValidCurve25519Point(std::span<const uint8_t> public_key);
+
+    /**
+     * @brief Constant-time byte array equality comparison
+     *
+     * Compares two byte arrays in constant time to prevent
+     * timing side-channel attacks.
+     *
+     * @param a First array
+     * @param b Second array
+     * @return true if arrays are equal, false otherwise
+     */
+    static bool ConstantTimeEquals(
+        std::span<const uint8_t> a,
+        std::span<const uint8_t> b);
+};
+
+} // namespace ecliptix::protocol::security
