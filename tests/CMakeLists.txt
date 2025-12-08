@@ -9,7 +9,7 @@ if(NOT Catch2_FOUND)
     FetchContent_Declare(
         Catch2
         GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-        GIT_TAG        v3.5.0
+        GIT_TAG        v3.7.1  # Updated for C++20 compatibility
     )
     FetchContent_MakeAvailable(Catch2)
 endif()
@@ -19,10 +19,13 @@ set(TEST_SOURCES
     unit/test_result.cpp
     unit/test_sodium_interop.cpp
     unit/test_secure_memory_handle.cpp
+    unit/test_aes_gcm.cpp
+    unit/test_envelope_builder.cpp
     unit/test_chain_step.cpp
     unit/test_dh_validator.cpp
     unit/test_replay_protection.cpp
     unit/test_ratchet_recovery.cpp
+    unit/test_connection.cpp
     test_main.cpp
 )
 
@@ -40,6 +43,8 @@ target_include_directories(ecliptix_tests
         ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-# Register tests with CTest
+# Register tests with CTest for CLion test runner
+include(CTest)
+list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
 include(Catch)
 catch_discover_tests(ecliptix_tests)

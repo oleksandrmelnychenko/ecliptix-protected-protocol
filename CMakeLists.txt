@@ -93,6 +93,7 @@ set(ECLIPTIX_SOURCES
     ${ECLIPTIX_SOURCE_DIR}/crypto/sodium_secure_memory_handle.cpp
     ${ECLIPTIX_SOURCE_DIR}/crypto/hkdf.cpp
     ${ECLIPTIX_SOURCE_DIR}/crypto/master_key_derivation.cpp
+    ${ECLIPTIX_SOURCE_DIR}/crypto/aes_gcm.cpp
 
     # Models - Phase 3
     ${ECLIPTIX_SOURCE_DIR}/models/key_materials/ed25519_key_material.cpp
@@ -111,10 +112,16 @@ set(ECLIPTIX_SOURCES
     # Connection - Phase 5
     ${ECLIPTIX_SOURCE_DIR}/protocol/connection/ecliptix_protocol_connection.cpp
 
+    # Protocol System - Phase 6
+    ${ECLIPTIX_SOURCE_DIR}/protocol/ecliptix_protocol_system.cpp
+
     # Security - Phase 5
     ${ECLIPTIX_SOURCE_DIR}/security/validation/dh_validator.cpp
     ${ECLIPTIX_SOURCE_DIR}/security/ratcheting/replay_protection.cpp
     ${ECLIPTIX_SOURCE_DIR}/security/ratcheting/ratchet_recovery.cpp
+
+    # Utilities
+    ${ECLIPTIX_SOURCE_DIR}/utilities/envelope_builder.cpp
 )
 
 # ============================================================================

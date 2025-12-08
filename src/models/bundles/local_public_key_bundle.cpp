@@ -1,7 +1,5 @@
 #include "ecliptix/models/bundles/local_public_key_bundle.hpp"
-
 namespace ecliptix::protocol::models {
-
 LocalPublicKeyBundle::LocalPublicKeyBundle(
     std::vector<uint8_t> ed25519_public,
     std::vector<uint8_t> identity_x25519_public,
@@ -18,5 +16,4 @@ LocalPublicKeyBundle::LocalPublicKeyBundle(
     , one_time_pre_keys_(std::move(one_time_pre_keys))
     , ephemeral_x25519_public_(std::move(ephemeral_x25519_public)) {
 }
-
-} // namespace ecliptix::protocol::models
+} 

@@ -8,6 +8,7 @@ find_package(absl QUIET)
 set(PROTO_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/protocol/protocol_state.proto
     ${CMAKE_CURRENT_SOURCE_DIR}/protocol/key_exchange.proto
+    ${CMAKE_CURRENT_SOURCE_DIR}/common/secure_envelope.proto
 )
 
 # Generate C++ code from proto files
@@ -59,8 +60,7 @@ target_compile_features(ecliptix_proto PUBLIC cxx_std_20)
 # Disable strict warnings for generated protobuf code
 if(NOT MSVC)
     target_compile_options(ecliptix_proto PRIVATE
-        -Wno-nullability-extension
-        -Wno-error
+        -w  # Suppress all warnings for generated protobuf code
     )
 endif()
 
