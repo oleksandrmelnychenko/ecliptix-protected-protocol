@@ -48,11 +48,11 @@ private:
         uint64_t lowest_valid_index = 0;
         uint32_t current_window_size;
         std::unordered_set<uint64_t> processed_indices;
-        std::chrono::system_clock::time_point last_adjustment;
+        std::chrono::steady_clock::time_point last_adjustment;
         uint32_t messages_since_adjustment = 0;
         explicit MessageWindow(uint32_t window_size)
             : current_window_size(window_size)
-            , last_adjustment(std::chrono::system_clock::now()) {}
+            , last_adjustment(std::chrono::steady_clock::now()) {}
     };
     Result<Unit, EcliptixProtocolFailure> CheckMessageWindow(
         uint64_t chain_index,
@@ -60,15 +60,15 @@ private:
     void UpdateMessageWindow(
         uint64_t chain_index,
         uint64_t message_index);
-    void AdjustWindowSize(MessageWindow& window);
+    void AdjustWindowSize(MessageWindow& window) const;
     bool ShouldCleanup() const;
     void CleanupExpiredNoncesInternal();
     uint32_t initial_window_size_;
     std::chrono::minutes cleanup_interval_;
     std::chrono::minutes nonce_lifetime_;
     mutable std::mutex lock_;
-    std::unordered_map<NonceKey, std::chrono::system_clock::time_point, NonceKey::Hash> processed_nonces_;
+    std::unordered_map<NonceKey, std::chrono::steady_clock::time_point, NonceKey::Hash> processed_nonces_;
     std::unordered_map<uint64_t, MessageWindow> message_windows_;
-    std::chrono::system_clock::time_point last_cleanup_;
+    std::chrono::steady_clock::time_point last_cleanup_;
 };
 } 

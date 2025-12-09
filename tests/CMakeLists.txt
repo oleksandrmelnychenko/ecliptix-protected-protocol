@@ -26,6 +26,20 @@ set(TEST_SOURCES
     unit/test_replay_protection.cpp
     unit/test_ratchet_recovery.cpp
     unit/test_connection.cpp
+
+    # Phase 1: Cryptographic Security Tests
+    security/test_aes_gcm_attacks.cpp
+    security/test_hkdf_security.cpp
+
+    # Phase 2: Protocol Attack Tests
+    attacks/test_replay_attacks.cpp
+
+    # Phase 3: Boundary and State Validation Tests
+    boundaries/test_state_transitions.cpp
+
+    # Phase 4: C API Boundary Tests (C# Integration)
+    c_api/test_c_api_boundary.cpp
+
     test_main.cpp
 )
 

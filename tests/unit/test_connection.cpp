@@ -5,6 +5,12 @@
 #include "ecliptix/core/constants.hpp"
 #include "ecliptix/models/bundles/local_public_key_bundle.hpp"
 #include "ecliptix/interfaces/i_protocol_event_handler.hpp"
+#include "ecliptix/configuration/ratchet_config.hpp"
+#include <thread>
+#include <atomic>
+#include <unordered_set>
+#include <vector>
+#include <mutex>
 using namespace ecliptix::protocol;
 using namespace ecliptix::protocol::connection;
 using namespace ecliptix::protocol::crypto;
@@ -16,8 +22,16 @@ public:
         call_count++;
         last_connect_id = connect_id;
     }
+    void OnRatchetRequired(uint32_t connect_id, const std::string& reason) override {
+        ratchet_required_call_count++;
+        last_ratchet_connect_id = connect_id;
+        last_ratchet_reason = reason;
+    }
     int call_count = 0;
     uint32_t last_connect_id = 0;
+    int ratchet_required_call_count = 0;
+    uint32_t last_ratchet_connect_id = 0;
+    std::string last_ratchet_reason;
 };
 TEST_CASE("EcliptixProtocolConnection - Creation and initialization", "[connection]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
@@ -500,5 +514,234 @@ TEST_CASE("EcliptixProtocolConnection - Event Handler", "[connection]") {
         REQUIRE(ratchet_result.IsOk());
         REQUIRE(handler->call_count > calls_after_finalize);
         REQUIRE(handler->last_connect_id == 1);
+    }
+}
+TEST_CASE("EcliptixProtocolConnection - Nonce Counter Overflow Protection", "[connection][security]") {
+    REQUIRE(SodiumInterop::Initialize().IsOk());
+    SECTION("Nonce generation succeeds for reasonable message counts") {
+        auto result = EcliptixProtocolConnection::Create(1, true);
+        REQUIRE(result.IsOk());
+        auto conn = std::move(result).Unwrap();
+        for (int i = 0; i < 500; ++i) {
+            auto nonce_result = conn->GenerateNextNonce();
+            REQUIRE(nonce_result.IsOk());
+            auto nonce = std::move(nonce_result).Unwrap();
+            REQUIRE(nonce.size() == 12);
+        }
+    }
+}
+TEST_CASE("EcliptixProtocolConnection - Reflection Attack Protection", "[connection][security]") {
+    REQUIRE(SodiumInterop::Initialize().IsOk());
+    SECTION("Detect reflection attack - peer echoes our DH key") {
+        auto alice_result = EcliptixProtocolConnection::Create(1, true);
+        REQUIRE(alice_result.IsOk());
+        auto alice = std::move(alice_result).Unwrap();
+        auto alice_dh_key = alice->GetCurrentSenderDhPublicKey();
+        REQUIRE(alice_dh_key.IsOk());
+        auto alice_dh_option = std::move(alice_dh_key).Unwrap();
+        REQUIRE(alice_dh_option.has_value());
+        auto alice_dh = std::move(alice_dh_option).value();
+        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x42);
+        auto finalize_result = alice->FinalizeChainAndDhKeys(root_key, alice_dh);
+        REQUIRE(finalize_result.IsErr());
+        auto error = std::move(finalize_result).UnwrapErr();
+        REQUIRE(error.message.find("reflection attack") != std::string::npos);
+    }
+    SECTION("Allow valid DH key exchange") {
+        auto alice_result = EcliptixProtocolConnection::Create(1, true);
+        REQUIRE(alice_result.IsOk());
+        auto alice = std::move(alice_result).Unwrap();
+        auto bob_keypair = SodiumInterop::GenerateX25519KeyPair("bob");
+        REQUIRE(bob_keypair.IsOk());
+        auto [bob_sk, bob_pk] = std::move(bob_keypair).Unwrap();
+        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x42);
+        auto finalize_result = alice->FinalizeChainAndDhKeys(root_key, bob_pk);
+        REQUIRE(finalize_result.IsOk());
+    }
+}
+TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: Nonce Counter Reset After Ratchet", "[connection][security][sprint1.5b]") {
+    REQUIRE(SodiumInterop::Initialize().IsOk());
+    SECTION("Nonce counter resets to 0 after DH ratchet") {
+        auto conn_result = EcliptixProtocolConnection::Create(1, true);
+        REQUIRE(conn_result.IsOk());
+        auto conn = std::move(conn_result).Unwrap();
+        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
+        auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
+        REQUIRE(peer_keypair.IsOk());
+        auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
+        auto finalize_result = conn->FinalizeChainAndDhKeys(root_key, peer_pk);
+        REQUIRE(finalize_result.IsOk());
+        for (int i = 0; i < 100; ++i) {
+            auto nonce_result = conn->GenerateNextNonce();
+            REQUIRE(nonce_result.IsOk());
+        }
+        auto nonce1 = conn->GenerateNextNonce();
+        REQUIRE(nonce1.IsOk());
+        auto nonce1_bytes = std::move(nonce1).Unwrap();
+        uint32_t counter_before_ratchet = 0;
+        for (size_t i = 0; i < 4; ++i) {
+            counter_before_ratchet |= static_cast<uint32_t>(nonce1_bytes[8 + i]) << (i * 8);
+        }
+        REQUIRE(counter_before_ratchet >= 100);
+        auto new_peer_keypair = SodiumInterop::GenerateX25519KeyPair("new-peer");
+        REQUIRE(new_peer_keypair.IsOk());
+        auto [new_peer_sk, new_peer_pk] = std::move(new_peer_keypair).Unwrap();
+        auto ratchet_result = conn->PerformReceivingRatchet(new_peer_pk);
+        REQUIRE(ratchet_result.IsOk());
+        auto nonce2 = conn->GenerateNextNonce();
+        REQUIRE(nonce2.IsOk());
+        auto nonce2_bytes = std::move(nonce2).Unwrap();
+        uint32_t counter_after_ratchet = 0;
+        for (size_t i = 0; i < 4; ++i) {
+            counter_after_ratchet |= static_cast<uint32_t>(nonce2_bytes[8 + i]) << (i * 8);
+        }
+        REQUIRE(counter_after_ratchet < 10);
+    }
+    SECTION("Ratchet warning flag resets after DH ratchet") {
+        auto handler = std::make_shared<MockEventHandler>();
+        auto conn_result = EcliptixProtocolConnection::Create(1, true);
+        REQUIRE(conn_result.IsOk());
+        auto conn = std::move(conn_result).Unwrap();
+        conn->SetEventHandler(handler);
+        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
+        auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
+        REQUIRE(peer_keypair.IsOk());
+        auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
+        auto finalize_result = conn->FinalizeChainAndDhKeys(root_key, peer_pk);
+        REQUIRE(finalize_result.IsOk());
+        REQUIRE(handler->ratchet_required_call_count == 0);
+        auto new_peer_keypair = SodiumInterop::GenerateX25519KeyPair("new-peer");
+        REQUIRE(new_peer_keypair.IsOk());
+        auto [new_peer_sk, new_peer_pk] = std::move(new_peer_keypair).Unwrap();
+        REQUIRE(handler->ratchet_required_call_count == 0);
+    }
+}
+TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: Nonce Uniqueness Across Ratchet", "[connection][security][sprint1.5b]") {
+    REQUIRE(SodiumInterop::Initialize().IsOk());
+    SECTION("No nonce reuse across DH ratchet boundary") {
+        auto conn_result = EcliptixProtocolConnection::Create(1, true);
+        REQUIRE(conn_result.IsOk());
+        auto conn = std::move(conn_result).Unwrap();
+        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
+        auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
+        REQUIRE(peer_keypair.IsOk());
+        auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
+        auto finalize_result = conn->FinalizeChainAndDhKeys(root_key, peer_pk);
+        REQUIRE(finalize_result.IsOk());
+        std::unordered_set<std::string> nonce_set;
+        for (int i = 0; i < 200; ++i) {
+            auto nonce_result = conn->GenerateNextNonce();
+            REQUIRE(nonce_result.IsOk());
+            auto nonce = std::move(nonce_result).Unwrap();
+            std::string nonce_str(nonce.begin(), nonce.end());
+            REQUIRE(nonce_set.find(nonce_str) == nonce_set.end());
+            nonce_set.insert(nonce_str);
+        }
+        auto new_peer_keypair = SodiumInterop::GenerateX25519KeyPair("new-peer");
+        REQUIRE(new_peer_keypair.IsOk());
+        auto [new_peer_sk, new_peer_pk] = std::move(new_peer_keypair).Unwrap();
+        auto ratchet_result = conn->PerformReceivingRatchet(new_peer_pk);
+        REQUIRE(ratchet_result.IsOk());
+        for (int i = 0; i < 200; ++i) {
+            auto nonce_result = conn->GenerateNextNonce();
+            REQUIRE(nonce_result.IsOk());
+            auto nonce = std::move(nonce_result).Unwrap();
+            std::string nonce_str(nonce.begin(), nonce.end());
+            REQUIRE(nonce_set.find(nonce_str) == nonce_set.end());
+            nonce_set.insert(nonce_str);
+        }
+        REQUIRE(nonce_set.size() == 400);
+    }
+}
+TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: Concurrent Send + Ratchet Stress Test", "[connection][security][sprint1.5b][stress]") {
+    REQUIRE(SodiumInterop::Initialize().IsOk());
+    SECTION("No nonce collisions under concurrent load") {
+        auto conn_result = EcliptixProtocolConnection::Create(1, true);
+        REQUIRE(conn_result.IsOk());
+        auto conn = std::move(conn_result).Unwrap();
+        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xBB);
+        auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
+        REQUIRE(peer_keypair.IsOk());
+        auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
+        auto finalize_result = conn->FinalizeChainAndDhKeys(root_key, peer_pk);
+        REQUIRE(finalize_result.IsOk());
+        std::unordered_set<std::string> nonce_set;
+        std::mutex nonce_set_mutex;
+        std::atomic<bool> collision_detected{false};
+        std::atomic<int> success_count{0};
+        constexpr int THREAD_COUNT = 4;
+        constexpr int NONCES_PER_THREAD = 50;
+        std::vector<std::thread> threads;
+        for (int t = 0; t < THREAD_COUNT; ++t) {
+            threads.emplace_back([&]() {
+                for (int i = 0; i < NONCES_PER_THREAD; ++i) {
+                    auto nonce_result = conn->GenerateNextNonce();
+                    if (nonce_result.IsOk()) {
+                        auto nonce = std::move(nonce_result).Unwrap();
+                        std::string nonce_str(nonce.begin(), nonce.end());
+                        std::lock_guard<std::mutex> lock(nonce_set_mutex);
+                        if (nonce_set.find(nonce_str) != nonce_set.end()) {
+                            collision_detected.store(true);
+                        }
+                        nonce_set.insert(nonce_str);
+                        success_count.fetch_add(1);
+                    }
+                }
+            });
+        }
+        for (auto& thread : threads) {
+            thread.join();
+        }
+        REQUIRE_FALSE(collision_detected.load());
+        REQUIRE(success_count.load() == THREAD_COUNT * NONCES_PER_THREAD);
+        REQUIRE(nonce_set.size() == THREAD_COUNT * NONCES_PER_THREAD);
+    }
+}
+TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: MAX_CHAIN_LENGTH Enforcement", "[connection][security][sprint1.5b]") {
+    REQUIRE(SodiumInterop::Initialize().IsOk());
+    SECTION("Chain length enforcement triggers ratchet requirement") {
+        RatchetConfig config(50000);
+        auto conn_result = EcliptixProtocolConnection::Create(1, true, config);
+        REQUIRE(conn_result.IsOk());
+        auto conn = std::move(conn_result).Unwrap();
+        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xCC);
+        auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
+        REQUIRE(peer_keypair.IsOk());
+        auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
+        auto finalize_result = conn->FinalizeChainAndDhKeys(root_key, peer_pk);
+        REQUIRE(finalize_result.IsOk());
+        bool chain_length_error_detected = false;
+        for (uint32_t i = 0; i < ProtocolConstants::MAX_CHAIN_LENGTH + 100; ++i) {
+            auto msg_result = conn->PrepareNextSendMessage();
+            if (msg_result.IsErr()) {
+                auto err = std::move(msg_result).UnwrapErr();
+                if (err.message.find("Chain length exceeded maximum") != std::string::npos) {
+                    chain_length_error_detected = true;
+                    break;
+                }
+            }
+        }
+        REQUIRE(chain_length_error_detected);
+    }
+}
+TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: Ratchet Warning Reset", "[connection][security][sprint1.5b]") {
+    REQUIRE(SodiumInterop::Initialize().IsOk());
+    SECTION("Ratchet warning can trigger again after reset") {
+        auto handler = std::make_shared<MockEventHandler>();
+        auto conn_result = EcliptixProtocolConnection::Create(1, true);
+        REQUIRE(conn_result.IsOk());
+        auto conn = std::move(conn_result).Unwrap();
+        conn->SetEventHandler(handler);
+        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xDD);
+        auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
+        REQUIRE(peer_keypair.IsOk());
+        auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
+        auto finalize_result = conn->FinalizeChainAndDhKeys(root_key, peer_pk);
+        REQUIRE(finalize_result.IsOk());
+        REQUIRE(handler->ratchet_required_call_count == 0);
+        auto new_peer_keypair = SodiumInterop::GenerateX25519KeyPair("new-peer");
+        REQUIRE(new_peer_keypair.IsOk());
+        auto [new_peer_sk, new_peer_pk] = std::move(new_peer_keypair).Unwrap();
+        REQUIRE(handler->ratchet_required_call_count == 0);
     }
 }

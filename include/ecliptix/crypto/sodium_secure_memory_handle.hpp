@@ -14,7 +14,7 @@ public:
     SecureMemoryHandle& operator=(SecureMemoryHandle&& other) noexcept;
     SecureMemoryHandle(const SecureMemoryHandle&) = delete;
     SecureMemoryHandle& operator=(const SecureMemoryHandle&) = delete;
-    Result<Unit, SodiumFailure> Write(std::span<const uint8_t> data);
+    Result<Unit, SodiumFailure> Write(std::span<const uint8_t> data) const;
     Result<Unit, SodiumFailure> Read(std::span<uint8_t> output) const;
     Result<std::vector<uint8_t>, SodiumFailure> ReadBytes(size_t size) const;
     template<typename F>

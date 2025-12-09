@@ -65,7 +65,6 @@ private:
         std::optional<std::vector<uint8_t>> dh_public_key);
     [[nodiscard]] static Result<Unit, EcliptixProtocolFailure> DeriveNextChainKeys(
         std::span<const uint8_t> current_chain_key,
-        uint32_t index,
         std::span<uint8_t> next_chain_key,
         std::span<uint8_t> message_key);
     [[nodiscard]] Result<Unit, EcliptixProtocolFailure> StoreMessageKey(

@@ -9,6 +9,7 @@ set(PROTO_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/protocol/protocol_state.proto
     ${CMAKE_CURRENT_SOURCE_DIR}/protocol/key_exchange.proto
     ${CMAKE_CURRENT_SOURCE_DIR}/common/secure_envelope.proto
+    ${CMAKE_CURRENT_SOURCE_DIR}/group/group_state.proto
 )
 
 # Generate C++ code from proto files

@@ -97,6 +97,7 @@ private:
         RatchetConfig ratchet_config,
         PubKeyExchangeType exchange_type,
         std::chrono::system_clock::time_point created_at,
+        std::vector<uint8_t> session_id,
         uint64_t nonce_counter,
         SecureMemoryHandle root_key_handle,
         SecureMemoryHandle metadata_encryption_key_handle,
@@ -128,11 +129,12 @@ private:
     [[nodiscard]] Result<Unit, EcliptixProtocolFailure>
         PerformDhRatchet(bool is_sender, std::span<const uint8_t> received_dh_public_key = {});
     void PerformCleanupIfNeeded(uint32_t received_index);
-    mutable std::unique_ptr<std::mutex> lock_;         
-    uint32_t id_;                                       
-    std::chrono::system_clock::time_point created_at_;  
-    bool is_initiator_;                                 
-    PubKeyExchangeType exchange_type_;                  
+    mutable std::unique_ptr<std::mutex> lock_;
+    uint32_t id_;
+    std::chrono::system_clock::time_point created_at_;
+    std::vector<uint8_t> session_id_;
+    bool is_initiator_;
+    PubKeyExchangeType exchange_type_;
     RatchetConfig ratchet_config_;                      
     std::optional<SecureMemoryHandle> root_key_handle_;              
     std::optional<SecureMemoryHandle> metadata_encryption_key_handle_;  
@@ -145,10 +147,13 @@ private:
     std::optional<EcliptixProtocolChainStep> receiving_step_;  
     std::optional<LocalPublicKeyBundle> peer_bundle_;       
     std::optional<std::vector<uint8_t>> peer_dh_public_key_;  
-    std::atomic<uint64_t> nonce_counter_;                   
-    std::atomic<bool> disposed_;                            
-    std::atomic<bool> is_first_receiving_ratchet_;          
-    std::atomic<bool> received_new_dh_key_;                 
+    std::atomic<uint64_t> nonce_counter_;
+    std::atomic<int64_t> rate_limit_window_start_ns_;
+    std::atomic<uint32_t> nonces_in_current_window_;
+    std::atomic<bool> disposed_;
+    std::atomic<bool> is_first_receiving_ratchet_;
+    std::atomic<bool> received_new_dh_key_;
+    std::atomic<bool> ratchet_warning_triggered_;
     std::shared_ptr<IProtocolEventHandler> event_handler_;  
 };
 } 

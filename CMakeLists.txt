@@ -22,7 +22,7 @@ option(ECLIPTIX_ENABLE_TSAN "Enable ThreadSanitizer" OFF)
 option(ECLIPTIX_ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer" OFF)
 
 # ============================================================================
-# Compiler Warnings
+# Compiler Warnings and Security Hardening
 # ============================================================================
 if(MSVC)
     add_compile_options(/W4 /WX)
@@ -33,6 +33,21 @@ else()
         -Wno-missing-field-initializers
         -Wno-gnu-statement-expression-from-macro-expansion
     )
+
+    # Security hardening flags
+    add_compile_options(
+        -fstack-protector-strong
+        -D_FORTIFY_SOURCE=2
+        -Wformat
+        -Wformat-security
+        -Werror=format-security
+    )
+
+    # Position-independent code for Release builds
+    if(CMAKE_BUILD_TYPE STREQUAL "Release")
+        add_compile_options(-fPIE)
+        add_link_options(-pie)
+    endif()
 endif()
 
 # ============================================================================
@@ -122,6 +137,13 @@ set(ECLIPTIX_SOURCES
 
     # Utilities
     ${ECLIPTIX_SOURCE_DIR}/utilities/envelope_builder.cpp
+
+    # Group Messaging - Phase 5
+    ${ECLIPTIX_SOURCE_DIR}/protocol/group/group_member.cpp
+    ${ECLIPTIX_SOURCE_DIR}/protocol/group/group_metadata.cpp
+
+    # C API - Phase 1 (C# Interop)
+    ${ECLIPTIX_SOURCE_DIR}/c_api/ecliptix_c_api.cpp
 )
 
 # ============================================================================

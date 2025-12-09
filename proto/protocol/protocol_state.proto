@@ -42,6 +42,7 @@ message RatchetState {
   ecliptix.proto.protocol.PublicKeyBundle peer_bundle = 4;
   bytes peer_dh_public_key = 5;
   bool is_first_receiving_ratchet = 6;
+  bytes session_id = 7;
 
   bytes root_key = 10;
   ChainStepState sending_step = 11;

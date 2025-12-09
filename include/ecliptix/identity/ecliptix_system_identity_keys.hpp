@@ -28,6 +28,7 @@ public:
         std::string_view membership_id,
         uint32_t one_time_key_count);
     [[nodiscard]] std::vector<uint8_t> GetIdentityX25519PublicKeyCopy() const;
+    [[nodiscard]] std::vector<uint8_t> GetIdentityEd25519PublicKeyCopy() const;
     [[nodiscard]] Result<LocalPublicKeyBundle, EcliptixProtocolFailure> CreatePublicBundle() const;
     void GenerateEphemeralKeyPair();
     [[nodiscard]] Result<SecureMemoryHandle, EcliptixProtocolFailure> X3dhDeriveSharedSecret(
@@ -47,7 +48,7 @@ private:
     [[nodiscard]] static Result<Ed25519KeyMaterial, EcliptixProtocolFailure> GenerateEd25519Keys();
     [[nodiscard]] static Result<X25519KeyMaterial, EcliptixProtocolFailure> GenerateX25519IdentityKeys();
     [[nodiscard]] static Result<X25519KeyMaterial, EcliptixProtocolFailure> GenerateX25519SignedPreKey(
-        uint32_t id);
+    );
     [[nodiscard]] static Result<std::vector<uint8_t>, EcliptixProtocolFailure> SignSignedPreKey(
         const SecureMemoryHandle& ed_secret_key_handle,
         std::span<const uint8_t> spk_public);
