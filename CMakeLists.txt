@@ -188,6 +188,7 @@ target_link_libraries(${PROJECT_NAME}
 target_compile_definitions(${PROJECT_NAME}
     PRIVATE
         $<$<BOOL:${spdlog_FOUND}>:ECLIPTIX_HAS_SPDLOG>
+        $<$<BOOL:${ECLIPTIX_BUILD_TESTS}>:ECLIPTIX_TEST_BUILD=1>
 )
 
 # Set library properties

@@ -1,11 +1,18 @@
 #pragma once
 #include "ecliptix/core/constants.hpp"
 #include <cstdint>
+#include <algorithm>
 namespace ecliptix::protocol::configuration {
 class RatchetConfig {
 public:
+    static constexpr uint32_t MIN_MESSAGE_COUNT = 1;
+    static constexpr uint32_t MAX_MESSAGE_COUNT = 100'000;
+
+    RatchetConfig() noexcept
+        : message_count_before_ratchet_(ProtocolConstants::DEFAULT_MESSAGE_COUNT_BEFORE_RATCHET) {}
     explicit RatchetConfig(uint32_t message_count_before_ratchet) noexcept
-        : message_count_before_ratchet_(message_count_before_ratchet) {}
+        : message_count_before_ratchet_(
+            std::clamp(message_count_before_ratchet, MIN_MESSAGE_COUNT, MAX_MESSAGE_COUNT)) {}
     [[nodiscard]] static RatchetConfig Default() noexcept {
         return RatchetConfig(ProtocolConstants::DEFAULT_MESSAGE_COUNT_BEFORE_RATCHET);
     }

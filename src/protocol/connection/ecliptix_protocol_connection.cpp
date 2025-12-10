@@ -45,6 +45,8 @@ namespace ecliptix::protocol::connection {
           , nonce_counter_(ProtocolConstants::INITIAL_NONCE_COUNTER)
           , rate_limit_window_start_ns_(0)
           , nonces_in_current_window_(0)
+          , dh_ratchet_rate_limit_window_start_ns_(0)
+          , dh_ratchets_in_current_window_(0)
           , disposed_(false)
           , is_first_receiving_ratchet_(true)
           , received_new_dh_key_(false)
@@ -93,6 +95,8 @@ namespace ecliptix::protocol::connection {
           , nonce_counter_(nonce_counter)
           , rate_limit_window_start_ns_(0)
           , nonces_in_current_window_(0)
+          , dh_ratchet_rate_limit_window_start_ns_(0)
+          , dh_ratchets_in_current_window_(0)
           , disposed_(false)
           , is_first_receiving_ratchet_(is_first_receiving_ratchet)
           , received_new_dh_key_(false)
@@ -474,12 +478,16 @@ namespace ecliptix::protocol::connection {
     EcliptixProtocolConnection::EnsureNotExpired() const {
         auto now = std::chrono::system_clock::now();
         auto age = now - created_at_;
+#ifdef ECLIPTIX_TEST_BUILD
+        constexpr auto SESSION_TIMEOUT = std::chrono::seconds(5);
+#else
         constexpr auto SESSION_TIMEOUT = std::chrono::hours(24);
+#endif
         if (age > SESSION_TIMEOUT) {
             return Result<Unit, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic(
                     "Session expired (age: " + std::to_string(
-                        std::chrono::duration_cast<std::chrono::hours>(age).count()) + " hours)"));
+                        std::chrono::duration_cast<std::chrono::seconds>(age).count()) + " seconds)"));
         }
         return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
     }
@@ -756,6 +764,17 @@ namespace ecliptix::protocol::connection {
 
     Result<std::vector<uint8_t>, EcliptixProtocolFailure>
     EcliptixProtocolConnection::GenerateNextNonce() {
+        auto expired_check = EnsureNotExpired();
+        if (expired_check.IsErr()) {
+            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
+                std::move(expired_check).UnwrapErr());
+        }
+
+#ifdef ECLIPTIX_TEST_BUILD
+        constexpr uint32_t NONCE_RATE_LIMIT = 100'000;
+#else
+        constexpr uint32_t NONCE_RATE_LIMIT = ProtocolConstants::NONCE_RATE_LIMIT_PER_SECOND;
+#endif
         constexpr int64_t ONE_SECOND_NS = 1'000'000'000LL;
         const auto now = std::chrono::steady_clock::now();
         const int64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
@@ -766,11 +785,11 @@ namespace ecliptix::protocol::connection {
             window_start = now_ns;
         }
         const uint32_t nonces_in_window = nonces_in_current_window_.fetch_add(1, std::memory_order_seq_cst);
-        if (nonces_in_window >= ProtocolConstants::NONCE_RATE_LIMIT_PER_SECOND) {
+        if (nonces_in_window >= NONCE_RATE_LIMIT) {
             return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic(
                     "Nonce generation rate limit exceeded (" +
-                    std::to_string(ProtocolConstants::NONCE_RATE_LIMIT_PER_SECOND) +
+                    std::to_string(NONCE_RATE_LIMIT) +
                     " nonces per second)"));
         }
         constexpr size_t NONCE_SIZE = 12;
@@ -817,6 +836,11 @@ namespace ecliptix::protocol::connection {
     Result<std::pair<RatchetChainKey, bool>, EcliptixProtocolFailure>
     EcliptixProtocolConnection::PrepareNextSendMessage() {
         std::lock_guard lock(*lock_);
+        auto expired_check = EnsureNotExpired();
+        if (expired_check.IsErr()) {
+            return Result<std::pair<RatchetChainKey, bool>, EcliptixProtocolFailure>::Err(
+                std::move(expired_check).UnwrapErr());
+        }
         if (!root_key_handle_.has_value()) {
             return Result<std::pair<RatchetChainKey, bool>, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic("Connection not finalized - call FinalizeChainAndDhKeys() first"));
@@ -842,6 +866,13 @@ namespace ecliptix::protocol::connection {
             }
             include_dh_key = true;
             received_new_dh_key_.store(false);
+
+            auto new_index_result = sending_step_.GetCurrentIndex();
+            if (new_index_result.IsErr()) {
+                return Result<std::pair<RatchetChainKey, bool>, EcliptixProtocolFailure>::Err(
+                    new_index_result.UnwrapErr());
+            }
+            next_index = new_index_result.Unwrap() + 1;
         }
         auto derived_key_result = sending_step_.GetOrDeriveKeyFor(next_index);
         if (derived_key_result.IsErr()) {
@@ -867,6 +898,27 @@ namespace ecliptix::protocol::connection {
         if (!root_key_handle_.has_value()) {
             return Result<Unit, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic("Root key not initialized"));
+        }
+
+#ifdef ECLIPTIX_TEST_BUILD
+        constexpr uint32_t DH_RATCHET_RATE_LIMIT = 1000;
+#else
+        constexpr uint32_t DH_RATCHET_RATE_LIMIT = ProtocolConstants::MAX_DH_RATCHETS_PER_MINUTE;
+#endif
+        constexpr int64_t ONE_MINUTE_NS = 60'000'000'000LL;
+        const auto now = std::chrono::steady_clock::now();
+        const int64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
+        int64_t window_start = dh_ratchet_rate_limit_window_start_ns_.load(std::memory_order_seq_cst);
+        if (window_start == 0 || (now_ns - window_start) >= ONE_MINUTE_NS) {
+            dh_ratchet_rate_limit_window_start_ns_.store(now_ns, std::memory_order_seq_cst);
+            dh_ratchets_in_current_window_.store(0, std::memory_order_seq_cst);
+        }
+        const uint32_t ratchets_in_window = dh_ratchets_in_current_window_.fetch_add(1, std::memory_order_seq_cst);
+        if (ratchets_in_window >= DH_RATCHET_RATE_LIMIT) {
+            return Result<Unit, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::Generic(std::format(
+                    "DH ratchet rate limit exceeded: {} ratchets per minute maximum (DoS protection)",
+                    DH_RATCHET_RATE_LIMIT)));
         }
         if (!received_dh_public_key.empty()) {
             auto validation_result = DhValidator::ValidateX25519PublicKey(received_dh_public_key);

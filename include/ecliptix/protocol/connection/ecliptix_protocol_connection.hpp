@@ -150,6 +150,8 @@ private:
     std::atomic<uint64_t> nonce_counter_;
     std::atomic<int64_t> rate_limit_window_start_ns_;
     std::atomic<uint32_t> nonces_in_current_window_;
+    std::atomic<int64_t> dh_ratchet_rate_limit_window_start_ns_;
+    std::atomic<uint32_t> dh_ratchets_in_current_window_;
     std::atomic<bool> disposed_;
     std::atomic<bool> is_first_receiving_ratchet_;
     std::atomic<bool> received_new_dh_key_;

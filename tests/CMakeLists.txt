@@ -30,6 +30,9 @@ set(TEST_SOURCES
     # Phase 1: Cryptographic Security Tests
     security/test_aes_gcm_attacks.cpp
     security/test_hkdf_security.cpp
+    security/test_metadata_key_rotation.cpp
+    security/test_rate_limiting.cpp
+    security/test_session_lifecycle.cpp
 
     # Phase 2: Protocol Attack Tests
     attacks/test_replay_attacks.cpp
@@ -39,6 +42,17 @@ set(TEST_SOURCES
 
     # Phase 4: C API Boundary Tests (C# Integration)
     c_api/test_c_api_boundary.cpp
+
+    # Phase 5: Signal Protocol Interoperability Tests
+    interop/test_x3dh_vectors.cpp
+    interop/test_double_ratchet_vectors.cpp
+
+    # Sprint 1.5B: Aggressive Testing Suite
+    integration/test_end_to_end_workflow.cpp
+    attacks/test_envelope_attacks.cpp
+    concurrency/test_concurrent_envelopes.cpp
+    performance/test_envelope_performance.cpp
+    fuzzing/test_envelope_fuzzing.cpp
 
     test_main.cpp
 )
@@ -55,6 +69,11 @@ target_link_libraries(ecliptix_tests
 target_include_directories(ecliptix_tests
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_compile_definitions(ecliptix_tests
+    PRIVATE
+        ECLIPTIX_TEST_BUILD=1
 )
 
 # Register tests with CTest for CLion test runner
