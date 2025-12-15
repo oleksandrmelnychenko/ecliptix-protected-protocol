@@ -174,8 +174,16 @@ TEST_CASE("KyberInterop - ValidateSecretKey accepts valid key", "[kyber][validat
 }
 
 TEST_CASE("KyberInterop - ValidateSecretKey rejects wrong size", "[kyber][validation]") {
-    auto handle_small = SecureMemoryHandle::Allocate(1000).Unwrap();
-    auto handle_large = SecureMemoryHandle::Allocate(3000).Unwrap();
+    REQUIRE(SodiumInterop::Initialize().IsOk());
+
+    auto handle_small_result = SecureMemoryHandle::Allocate(1000);
+    auto handle_large_result = SecureMemoryHandle::Allocate(3000);
+
+    REQUIRE(handle_small_result.IsOk());
+    REQUIRE(handle_large_result.IsOk());
+
+    auto handle_small = std::move(handle_small_result).Unwrap();
+    auto handle_large = std::move(handle_large_result).Unwrap();
 
     auto result1 = KyberInterop::ValidateSecretKey(handle_small);
     auto result2 = KyberInterop::ValidateSecretKey(handle_large);
@@ -356,6 +364,8 @@ TEST_CASE("KyberInterop - SelfTestKeyPair fails on invalid secret key", "[kyber]
 // =============================================================================
 
 TEST_CASE("KyberInterop - CombineHybridSecrets produces valid output", "[kyber][hybrid][hkdf]") {
+    REQUIRE(SodiumInterop::Initialize().IsOk());
+
     std::vector<uint8_t> x25519_ss(32, 0xAA);
     std::vector<uint8_t> kyber_ss(32, 0xBB);
 
@@ -383,6 +393,8 @@ TEST_CASE("KyberInterop - CombineHybridSecrets rejects wrong Kyber size", "[kybe
 }
 
 TEST_CASE("KyberInterop - CombineHybridSecrets domain separates by context", "[kyber][hybrid][domain-separation]") {
+    REQUIRE(SodiumInterop::Initialize().IsOk());
+
     std::vector<uint8_t> x25519_ss(32, 0xAA);
     std::vector<uint8_t> kyber_ss(32, 0xBB);
 
@@ -400,6 +412,8 @@ TEST_CASE("KyberInterop - CombineHybridSecrets domain separates by context", "[k
 }
 
 TEST_CASE("KyberInterop - CombineHybridSecrets different if either input changes", "[kyber][hybrid][sensitivity]") {
+    REQUIRE(SodiumInterop::Initialize().IsOk());
+
     std::vector<uint8_t> x_ss1(32, 0xAA);
     std::vector<uint8_t> x_ss2(32, 0xAB);  // One byte different
     std::vector<uint8_t> k_ss1(32, 0xBB);
@@ -418,6 +432,8 @@ TEST_CASE("KyberInterop - CombineHybridSecrets different if either input changes
 }
 
 TEST_CASE("KyberInterop - CombineHybridSecrets is deterministic", "[kyber][hybrid][determinism]") {
+    REQUIRE(SodiumInterop::Initialize().IsOk());
+
     std::vector<uint8_t> x25519_ss(32, 0xAA);
     std::vector<uint8_t> kyber_ss(32, 0xBB);
 

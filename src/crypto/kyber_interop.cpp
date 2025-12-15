@@ -298,11 +298,11 @@ namespace ecliptix::protocol::crypto {
         salt_str += context;
         std::vector<uint8_t> salt(salt_str.begin(), salt_str.end());
 
-        // HKDF-Extract
-        auto prk_result = Hkdf::Extract(salt, ikm);
+        // HKDF-Extract (signature: Extract(ikm, salt))
+        auto prk_result = Hkdf::Extract(ikm, salt);
 
         // Secure wipe temporary buffers
-        auto wipe_result = SodiumInterop::SecureWipe(std::span<uint8_t>(ikm));
+        auto wipe_result = SodiumInterop::SecureWipe(std::span(ikm));
         (void) wipe_result;
 
         if (prk_result.IsErr()) {
@@ -313,11 +313,14 @@ namespace ecliptix::protocol::crypto {
             );
         }
 
+        // Store PRK before using it (std::move from Result consumes it)
+        auto prk = std::move(prk_result).Unwrap();
+
         // HKDF-Expand with context as info to derive 32-byte hybrid secret
         std::vector<uint8_t> hybrid_vec(32);
         std::vector<uint8_t> context_info(context.begin(), context.end());
         auto expand_result = Hkdf::Expand(
-            prk_result.Unwrap(),
+            prk,
             std::span<uint8_t>(hybrid_vec),
             context_info);
 
@@ -327,14 +330,14 @@ namespace ecliptix::protocol::crypto {
         }
         auto handle_result = SecureMemoryHandle::Allocate(hybrid_vec.size());
         if (handle_result.IsErr()) {
-            SodiumInterop::SecureWipe(std::span<uint8_t>(hybrid_vec));
+            SodiumInterop::SecureWipe(std::span(hybrid_vec));
             return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic("Failed to allocate secure memory for hybrid master secret"));
         }
 
         auto handle = std::move(handle_result).Unwrap();
         auto write_result = handle.Write(hybrid_vec);
-        SodiumInterop::SecureWipe(std::span<uint8_t>(hybrid_vec));
+        SodiumInterop::SecureWipe(std::span(hybrid_vec));
 
         if (write_result.IsErr()) {
             return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
@@ -362,7 +365,7 @@ namespace ecliptix::protocol::crypto {
         }
 
         // Basic sanity check: key should not be all zeros
-        if (std::all_of(public_key.begin(), public_key.end(), [](uint8_t b) { return b == 0; })) {
+        if (std::ranges::all_of(public_key, [](const uint8_t b) { return b == 0; })) {
             return Result<Unit, SodiumFailure>::Err(
                 SodiumFailure::InvalidOperation(
                     "Invalid Kyber-768 public key (all zeros)"
@@ -384,7 +387,7 @@ namespace ecliptix::protocol::crypto {
         }
 
         // Basic sanity check: ciphertext should not be all zeros
-        if (std::all_of(ciphertext.begin(), ciphertext.end(), [](uint8_t b) { return b == 0; })) {
+        if (std::ranges::all_of(ciphertext, [](uint8_t b) { return b == 0; })) {
             return Result<Unit, SodiumFailure>::Err(
                 SodiumFailure::InvalidOperation(
                     "Invalid Kyber-768 ciphertext (all zeros)"
@@ -411,7 +414,7 @@ namespace ecliptix::protocol::crypto {
             return Result<Unit, SodiumFailure>::Err(read_result.UnwrapErr());
         }
         auto sk_bytes = read_result.Unwrap();
-        if (std::all_of(sk_bytes.begin(), sk_bytes.end(), [](uint8_t b) { return b == 0; })) {
+        if (std::ranges::all_of(sk_bytes, [](uint8_t b) { return b == 0; })) {
             SodiumInterop::SecureWipe(std::span(sk_bytes));
             return Result<Unit, SodiumFailure>::Err(
                 SodiumFailure::InvalidOperation("Invalid Kyber-768 secret key (all zeros)"));
