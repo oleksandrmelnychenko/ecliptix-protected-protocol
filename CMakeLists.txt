@@ -14,12 +14,14 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # ============================================================================
 # Build Options
 # ============================================================================
-option(ECLIPTIX_BUILD_TESTS "Build tests" ON)
+option(ECLIPTIX_BUILD_TESTS "Build tests" OFF)
 option(ECLIPTIX_BUILD_EXAMPLES "Build examples" ON)
 option(ECLIPTIX_BUILD_SHARED "Build shared library" OFF)
 option(ECLIPTIX_ENABLE_ASAN "Enable AddressSanitizer" OFF)
 option(ECLIPTIX_ENABLE_TSAN "Enable ThreadSanitizer" OFF)
 option(ECLIPTIX_ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer" OFF)
+option(ECLIPTIX_BUILD_CLIENT_TARGET "Build client (desktop/mobile) target with C API" ON)
+option(ECLIPTIX_BUILD_SERVER_TARGET "Build server target (core only)" ON)
 
 # ============================================================================
 # Compiler Warnings and Security Hardening
@@ -102,8 +104,8 @@ set(ECLIPTIX_PUBLIC_HEADERS
     ${ECLIPTIX_INCLUDE_DIR}/ecliptix/core/failures.hpp
 )
 
-# Source files (will be populated as we port)
-set(ECLIPTIX_SOURCES
+# Source files
+set(ECLIPTIX_CORE_SOURCES
     ${ECLIPTIX_SOURCE_DIR}/core/failures.cpp
 
     # Crypto layer - Phase 2 & 3
@@ -145,66 +147,73 @@ set(ECLIPTIX_SOURCES
     # Group Messaging - Phase 5
     ${ECLIPTIX_SOURCE_DIR}/protocol/group/group_member.cpp
     ${ECLIPTIX_SOURCE_DIR}/protocol/group/group_metadata.cpp
+)
 
-    # C API - Phase 1 (C# Interop)
+set(ECLIPTIX_CLIENT_SOURCES
+    ${ECLIPTIX_CORE_SOURCES}
     ${ECLIPTIX_SOURCE_DIR}/c_api/ecliptix_c_api.cpp
 )
+
+function(configure_protocol_target target_name output_name)
+    if(ECLIPTIX_BUILD_SHARED)
+        add_library(${target_name} SHARED ${ARGN})
+        target_compile_definitions(${target_name} PRIVATE ECLIPTIX_EXPORTS)
+    else()
+        add_library(${target_name} STATIC ${ARGN})
+    endif()
+
+    target_include_directories(${target_name}
+        PUBLIC
+            $<BUILD_INTERFACE:${ECLIPTIX_INCLUDE_DIR}>
+            $<INSTALL_INTERFACE:include>
+            ${LIBSODIUM_INCLUDE_DIRS}
+            ${LIBOQS_INCLUDE_DIRS}
+        PRIVATE
+            ${ECLIPTIX_SOURCE_DIR}
+    )
+
+    target_link_directories(${target_name}
+        PUBLIC
+            ${LIBSODIUM_LIBRARY_DIRS}
+            ${LIBOQS_LIBRARY_DIRS}
+    )
+
+    target_link_libraries(${target_name}
+        PUBLIC
+            ${LIBSODIUM_LIBRARIES}
+            ${LIBOQS_LIBRARIES}
+            OpenSSL::Crypto
+            Ecliptix::Proto
+        PRIVATE
+            $<$<BOOL:${spdlog_FOUND}>:spdlog::spdlog>
+    )
+
+    target_compile_definitions(${target_name}
+        PRIVATE
+            $<$<BOOL:${spdlog_FOUND}>:ECLIPTIX_HAS_SPDLOG>
+            $<$<BOOL:${ECLIPTIX_BUILD_TESTS}>:ECLIPTIX_TEST_BUILD=1>
+    )
+
+    set_target_properties(${target_name} PROPERTIES
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR}
+        OUTPUT_NAME ${output_name}
+        POSITION_INDEPENDENT_CODE ON
+    )
+endfunction()
 
 # ============================================================================
 # Library Target
 # ============================================================================
-if(ECLIPTIX_BUILD_SHARED)
-    add_library(${PROJECT_NAME} SHARED ${ECLIPTIX_SOURCES})
-    target_compile_definitions(${PROJECT_NAME} PRIVATE ECLIPTIX_EXPORTS)
-else()
-    add_library(${PROJECT_NAME} STATIC ${ECLIPTIX_SOURCES})
+if(ECLIPTIX_BUILD_CLIENT_TARGET)
+    configure_protocol_target(${PROJECT_NAME} "ecliptix_protocol" ${ECLIPTIX_CLIENT_SOURCES})
+    add_library(Ecliptix::Protocol ALIAS ${PROJECT_NAME})
 endif()
 
-# Library alias for consistent usage
-add_library(Ecliptix::Protocol ALIAS ${PROJECT_NAME})
-
-# ============================================================================
-# Target Properties
-# ============================================================================
-target_include_directories(${PROJECT_NAME}
-    PUBLIC
-        $<BUILD_INTERFACE:${ECLIPTIX_INCLUDE_DIR}>
-        $<INSTALL_INTERFACE:include>
-        ${LIBSODIUM_INCLUDE_DIRS}
-        ${LIBOQS_INCLUDE_DIRS}
-    PRIVATE
-        ${ECLIPTIX_SOURCE_DIR}
-)
-
-target_link_directories(${PROJECT_NAME}
-    PUBLIC
-        ${LIBSODIUM_LIBRARY_DIRS}
-        ${LIBOQS_LIBRARY_DIRS}
-)
-
-target_link_libraries(${PROJECT_NAME}
-    PUBLIC
-        ${LIBSODIUM_LIBRARIES}
-        ${LIBOQS_LIBRARIES}
-        OpenSSL::Crypto
-        Ecliptix::Proto
-    PRIVATE
-        $<$<BOOL:${spdlog_FOUND}>:spdlog::spdlog>
-)
-
-target_compile_definitions(${PROJECT_NAME}
-    PRIVATE
-        $<$<BOOL:${spdlog_FOUND}>:ECLIPTIX_HAS_SPDLOG>
-        $<$<BOOL:${ECLIPTIX_BUILD_TESTS}>:ECLIPTIX_TEST_BUILD=1>
-)
-
-# Set library properties
-set_target_properties(${PROJECT_NAME} PROPERTIES
-    VERSION ${PROJECT_VERSION}
-    SOVERSION ${PROJECT_VERSION_MAJOR}
-    OUTPUT_NAME "ecliptix_protocol"
-    POSITION_INDEPENDENT_CODE ON
-)
+if(ECLIPTIX_BUILD_SERVER_TARGET)
+    configure_protocol_target(Ecliptix_Protocol_Server "ecliptix_protocol_server" ${ECLIPTIX_CORE_SOURCES})
+    add_library(Ecliptix::ProtocolServer ALIAS Ecliptix_Protocol_Server)
+endif()
 
 # ============================================================================
 # Protobuf Code Generation
@@ -222,9 +231,10 @@ endif()
 # ============================================================================
 # Examples
 # ============================================================================
-if(ECLIPTIX_BUILD_EXAMPLES)
-    add_subdirectory(examples)
-endif()
+# Examples removed - functionality moved to tests
+# if(ECLIPTIX_BUILD_EXAMPLES)
+#     add_subdirectory(examples)
+# endif()
 
 # ============================================================================
 # Installation
@@ -232,7 +242,15 @@ endif()
 include(GNUInstallDirs)
 
 # Install library
-install(TARGETS ${PROJECT_NAME} ecliptix_proto
+set(ECLIPTIX_INSTALL_TARGETS ecliptix_proto)
+if(ECLIPTIX_BUILD_CLIENT_TARGET)
+    list(APPEND ECLIPTIX_INSTALL_TARGETS ${PROJECT_NAME})
+endif()
+if(ECLIPTIX_BUILD_SERVER_TARGET)
+    list(APPEND ECLIPTIX_INSTALL_TARGETS Ecliptix_Protocol_Server)
+endif()
+
+install(TARGETS ${ECLIPTIX_INSTALL_TARGETS}
     EXPORT EcliptixProtocolTargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
