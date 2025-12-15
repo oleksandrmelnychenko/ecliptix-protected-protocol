@@ -47,6 +47,9 @@ message RatchetState {
   bytes root_key = 10;
   ChainStepState sending_step = 11;
   ChainStepState receiving_step = 12;
+  bytes state_mac = 13;
+  bytes initial_sending_dh_public = 14;
+  bytes current_sending_dh_public = 15;
 }
 
 message ChainStepState {

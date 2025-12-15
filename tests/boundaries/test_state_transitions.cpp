@@ -167,7 +167,8 @@ TEST_CASE("State Transitions - Unfinalized Violations: ProcessReceivedMessage", 
     auto conn = CreateUnfinalizedConnection();
 
     SECTION("ProcessReceivedMessage before finalization must fail") {
-        auto result = conn->ProcessReceivedMessage(0);
+        std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE, 0xAA);
+        auto result = conn->ProcessReceivedMessage(0, nonce);
         REQUIRE(result.IsErr());
 
         auto err = std::move(result).UnwrapErr();
@@ -180,7 +181,8 @@ TEST_CASE("State Transitions - Unfinalized Violations: ProcessReceivedMessage", 
         auto peer_result = conn->SetPeerBundle(material.GetBundle());
         REQUIRE(peer_result.IsOk());
 
-        auto recv_result = conn->ProcessReceivedMessage(0);
+        std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE, 0xAA);
+        auto recv_result = conn->ProcessReceivedMessage(0, nonce);
         REQUIRE(recv_result.IsErr());
 
         auto err = std::move(recv_result).UnwrapErr();

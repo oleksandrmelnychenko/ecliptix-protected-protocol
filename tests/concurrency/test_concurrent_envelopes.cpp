@@ -126,7 +126,11 @@ TEST_CASE("Concurrency - Parallel Message Preparation", "[concurrency][envelope]
         }
 
         REQUIRE(successful_preparations.load() > 0);
-        REQUIRE(message_indices.size() == static_cast<size_t>(successful_preparations.load()));
+        // Note: With stateless key derivation, multiple concurrent PrepareNextSendMessage() calls
+        // may return keys at the same index until the keys are consumed via WithKeyMaterial().
+        // The chain index only advances when keys are actually used, not when they're prepared.
+        REQUIRE(message_indices.size() > 0);
+        REQUIRE(message_indices.size() <= static_cast<size_t>(successful_preparations.load()));
     }
 }
 

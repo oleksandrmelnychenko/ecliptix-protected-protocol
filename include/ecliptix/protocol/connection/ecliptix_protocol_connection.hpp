@@ -9,6 +9,7 @@
 #include "ecliptix/configuration/ratchet_config.hpp"
 #include "ecliptix/enums/pub_key_exchange_type.hpp"
 #include "ecliptix/interfaces/i_protocol_event_handler.hpp"
+#include "ecliptix/security/ratcheting/replay_protection.hpp"
 #include <cstdint>
 #include <vector>
 #include <chrono>
@@ -52,7 +53,7 @@ public:
     [[nodiscard]] Result<std::pair<RatchetChainKey, bool>, EcliptixProtocolFailure>
         PrepareNextSendMessage();
     [[nodiscard]] Result<RatchetChainKey, EcliptixProtocolFailure>
-        ProcessReceivedMessage(uint32_t received_index);
+        ProcessReceivedMessage(uint32_t received_index, std::span<const uint8_t> nonce);
     [[nodiscard]] Result<std::vector<uint8_t>, EcliptixProtocolFailure> GenerateNextNonce();
     [[nodiscard]] Result<Unit, EcliptixProtocolFailure> CheckReplayProtection(
         std::span<const uint8_t> nonce,
@@ -123,6 +124,19 @@ private:
         std::span<uint8_t> new_chain_key);
     [[nodiscard]] Result<Unit, EcliptixProtocolFailure>
         DeriveMetadataEncryptionKey();
+    [[nodiscard]] static Result<std::vector<uint8_t>, EcliptixProtocolFailure> DeriveStateMacKey(
+        std::span<const uint8_t> root_key_bytes,
+        std::span<const uint8_t> session_id,
+        bool is_initiator,
+        uint32_t connection_id,
+        std::span<const uint8_t> initial_sending_dh_public,
+        std::span<const uint8_t> current_sending_dh_public);
+    [[nodiscard]] static Result<std::vector<uint8_t>, EcliptixProtocolFailure> ComputeStateMac(
+        proto::protocol::RatchetState state,
+        std::span<const uint8_t> mac_key);
+    [[nodiscard]] static Result<Unit, EcliptixProtocolFailure> VerifyStateMac(
+        const proto::protocol::RatchetState& proto,
+        uint32_t expected_connection_id);
     [[nodiscard]] static Result<Unit, EcliptixProtocolFailure> ValidateInitialKeys(
         std::span<const uint8_t> root_key,
         std::span<const uint8_t> peer_dh_public_key);
@@ -138,15 +152,17 @@ private:
     RatchetConfig ratchet_config_;                      
     std::optional<SecureMemoryHandle> root_key_handle_;              
     std::optional<SecureMemoryHandle> metadata_encryption_key_handle_;  
-    SecureMemoryHandle initial_sending_dh_private_handle_;  
-    std::vector<uint8_t> initial_sending_dh_public_;        
-    std::optional<SecureMemoryHandle> current_sending_dh_private_handle_;  
+    SecureMemoryHandle initial_sending_dh_private_handle_;
+    std::vector<uint8_t> initial_sending_dh_public_;
+    std::optional<SecureMemoryHandle> current_sending_dh_private_handle_;
+    std::vector<uint8_t> current_sending_dh_public_;  // Updated after each sender DH ratchet
     SecureMemoryHandle persistent_dh_private_handle_;       
     std::vector<uint8_t> persistent_dh_public_;             
     EcliptixProtocolChainStep sending_step_;                
     std::optional<EcliptixProtocolChainStep> receiving_step_;  
     std::optional<LocalPublicKeyBundle> peer_bundle_;       
     std::optional<std::vector<uint8_t>> peer_dh_public_key_;  
+    security::ReplayProtection replay_protection_;          
     std::atomic<uint64_t> nonce_counter_;
     std::atomic<int64_t> rate_limit_window_start_ns_;
     std::atomic<uint32_t> nonces_in_current_window_;
@@ -156,6 +172,7 @@ private:
     std::atomic<bool> is_first_receiving_ratchet_;
     std::atomic<bool> received_new_dh_key_;
     std::atomic<bool> ratchet_warning_triggered_;
-    std::shared_ptr<IProtocolEventHandler> event_handler_;  
+    std::atomic<uint64_t> receiving_ratchet_epoch_;  // Increments with each receiving DH ratchet
+    std::shared_ptr<IProtocolEventHandler> event_handler_;
 };
 } 

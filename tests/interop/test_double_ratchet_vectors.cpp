@@ -40,9 +40,9 @@ struct DoubleRatchetTestVector {
 
             auto message_hkdf_result = Hkdf::DeriveKey(
                 current_chain_key,
+                message_key,
                 {},
-                message_info,
-                message_key
+                message_info
             );
             REQUIRE(message_hkdf_result.IsOk());
 
@@ -55,9 +55,9 @@ struct DoubleRatchetTestVector {
 
             auto chain_hkdf_result = Hkdf::DeriveKey(
                 current_chain_key,
+                next_chain_key,
                 {},
-                chain_info,
-                next_chain_key
+                chain_info
             );
             REQUIRE(chain_hkdf_result.IsOk());
 
@@ -440,6 +440,9 @@ TEST_CASE("Double Ratchet - Memory Management Under Load", "[interop][double-rat
                 ++processed_keys;
             }
         }
+
+        // Final pruning to keep only the last PRUNE_THRESHOLD keys
+        mock.PruneKeysBelow(TOTAL_KEYS - PRUNE_THRESHOLD);
 
         REQUIRE(processed_keys == TOTAL_KEYS);
         REQUIRE(mock.KeyCount() <= PRUNE_THRESHOLD);

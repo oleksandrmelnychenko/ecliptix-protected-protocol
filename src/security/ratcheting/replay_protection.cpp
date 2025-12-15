@@ -4,7 +4,8 @@
 
 namespace ecliptix::protocol::security {
     size_t ReplayProtection::NonceKey::Hash::operator()(const NonceKey &key) const {
-        size_t hash = std::hash<uint64_t>{}(key.chain_index);
+        size_t hash = std::hash<uint32_t>{}(key.session_scope);
+        hash ^= std::hash<uint64_t>{}(key.chain_index) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
         for (const uint8_t byte: key.nonce_bytes) {
             hash ^= static_cast<size_t>(byte);
             hash *= CryptoHashConstants::FNV_PRIME;
@@ -16,14 +17,33 @@ namespace ecliptix::protocol::security {
         : ReplayProtection(
             ProtocolConstants::DEFAULT_CACHE_WINDOW_SIZE,
             ProtocolConstants::CLEANUP_INTERVAL,
-            ProtocolConstants::NONCE_LIFETIME) {
+            ProtocolConstants::NONCE_LIFETIME,
+            ProtocolConstants::MAX_REPLAY_TRACKED_NONCES,
+            ProtocolConstants::MAX_REPLAY_CHAINS,
+            0) {
+    }
+
+    ReplayProtection::ReplayProtection(const uint32_t session_scope)
+        : ReplayProtection(
+            ProtocolConstants::DEFAULT_CACHE_WINDOW_SIZE,
+            ProtocolConstants::CLEANUP_INTERVAL,
+            ProtocolConstants::NONCE_LIFETIME,
+            ProtocolConstants::MAX_REPLAY_TRACKED_NONCES,
+            ProtocolConstants::MAX_REPLAY_CHAINS,
+            session_scope) {
     }
 
     ReplayProtection::ReplayProtection(
         const uint32_t initial_window_size,
         const std::chrono::minutes cleanup_interval_minutes,
-        const std::chrono::minutes nonce_lifetime_minutes)
+        const std::chrono::minutes nonce_lifetime_minutes,
+        const size_t max_tracked_nonces,
+        const size_t max_tracked_chains,
+        const uint32_t session_scope)
         : initial_window_size_(initial_window_size)
+          , session_scope_(session_scope)
+          , max_tracked_nonces_(max_tracked_nonces)
+          , max_tracked_chains_(max_tracked_chains)
           , cleanup_interval_(cleanup_interval_minutes)
           , nonce_lifetime_(nonce_lifetime_minutes)
           , last_cleanup_(std::chrono::steady_clock::now()) {
@@ -34,15 +54,34 @@ namespace ecliptix::protocol::security {
         const uint64_t message_index,
         const uint64_t chain_index) {
         std::lock_guard guard(lock_);
+        if (!ValidateInput(nonce, chain_index)) {
+            return Result<Unit, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::InvalidInput("Invalid nonce or chain index"));
+        }
         const NonceKey nonce_key{
             .nonce_bytes = std::vector(nonce.begin(), nonce.end()),
+            .session_scope = session_scope_,
             .chain_index = chain_index
         };
+        if (processed_nonces_.size() >= max_tracked_nonces_) {
+            CleanupExpiredNoncesInternal();
+            if (processed_nonces_.size() >= max_tracked_nonces_) {
+                EvictOldestNonce();
+            }
+        }
         if (const auto nonce_it = processed_nonces_.find(nonce_key); nonce_it != processed_nonces_.end()) {
             return Result<Unit, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic(
                     "Replay attack detected: nonce already processed"));
         }
+        if (message_windows_.find(chain_index) == message_windows_.end() &&
+            message_windows_.size() >= max_tracked_chains_) {
+            EvictOldestChainWindow();
+        }
+        // Check message window to prevent DoS from accepting messages too far out of sequence.
+        // The connection layer uses receiving_ratchet_epoch_ as chain_index, so different
+        // DH ratchet epochs use different chain indices, preventing false positives when
+        // message indices reset after ratchets.
         if (auto window_result = CheckMessageWindow(chain_index, message_index); window_result.IsErr()) {
             return window_result;
         }
@@ -83,6 +122,16 @@ namespace ecliptix::protocol::security {
         return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
     }
 
+    bool ReplayProtection::ValidateInput(std::span<const uint8_t> nonce, uint64_t chain_index) const {
+        if (nonce.size() != Constants::AES_GCM_NONCE_SIZE) {
+            return false;
+        }
+        if (chain_index >= max_tracked_chains_ * 8ULL) {
+            return false;
+        }
+        return true;
+    }
+
     void ReplayProtection::UpdateMessageWindow(
         const uint64_t chain_index,
         const uint64_t message_index) {
@@ -110,6 +159,7 @@ namespace ecliptix::protocol::security {
         }
         window.processed_indices.insert(message_index);
         window.messages_since_adjustment++;
+        window.last_used = std::chrono::steady_clock::now();
         if (window.messages_since_adjustment >= ProtocolConstants::CLEANUP_THRESHOLD) {
             AdjustWindowSize(window);
             window.messages_since_adjustment = 0;
@@ -189,5 +239,44 @@ namespace ecliptix::protocol::security {
         processed_nonces_.clear();
         message_windows_.clear();
         last_cleanup_ = std::chrono::steady_clock::now();
+    }
+
+    void ReplayProtection::ResetMessageWindows() {
+        std::lock_guard guard(lock_);
+        message_windows_.clear();
+    }
+
+    void ReplayProtection::EvictOldestNonce() {
+        if (processed_nonces_.empty()) {
+            return;
+        }
+        auto oldest_it = processed_nonces_.begin();
+        for (auto it = processed_nonces_.begin(); it != processed_nonces_.end(); ++it) {
+            if (it->second < oldest_it->second) {
+                oldest_it = it;
+            }
+        }
+        processed_nonces_.erase(oldest_it);
+    }
+
+    void ReplayProtection::EvictOldestChainWindow() {
+        if (message_windows_.empty()) {
+            return;
+        }
+        auto oldest_it = message_windows_.begin();
+        for (auto it = message_windows_.begin(); it != message_windows_.end(); ++it) {
+            if (it->second.last_used < oldest_it->second.last_used) {
+                oldest_it = it;
+            }
+        }
+        const uint64_t evicted_chain = oldest_it->first;
+        message_windows_.erase(oldest_it);
+        for (auto it = processed_nonces_.begin(); it != processed_nonces_.end();) {
+            if (it->first.chain_index == evicted_chain) {
+                it = processed_nonces_.erase(it);
+            } else {
+                ++it;
+            }
+        }
     }
 }

@@ -6,6 +6,7 @@
 #include "ecliptix/utilities/envelope_builder.hpp"
 #include "ecliptix/core/constants.hpp"
 #include "ecliptix/configuration/ratchet_config.hpp"
+#include "ecliptix/configuration/protocol_config.hpp"
 #include "common/secure_envelope.pb.h"
 #include <vector>
 #include <map>
@@ -72,14 +73,23 @@ struct EndToEndTestContext {
         }
         ctx.shared_root_key = std::move(root_key_result).Unwrap();
 
-        auto alice_conn_result = EcliptixProtocolConnection::Create(1, true);
+        // Use a large ratchet window so integration flows stay on a single DH chain
+        RatchetConfig no_dh_ratchet_config(100000);
+
+        auto alice_conn_result = EcliptixProtocolConnection::Create(
+            1,
+            true,
+            no_dh_ratchet_config);
         if (alice_conn_result.IsErr()) {
             return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
                 std::move(alice_conn_result).UnwrapErr());
         }
         ctx.alice_connection = std::move(alice_conn_result).Unwrap();
 
-        auto bob_conn_result = EcliptixProtocolConnection::Create(2, false);
+        auto bob_conn_result = EcliptixProtocolConnection::Create(
+            2,
+            false,
+            no_dh_ratchet_config);
         if (bob_conn_result.IsErr()) {
             return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
                 std::move(bob_conn_result).UnwrapErr());
@@ -202,7 +212,8 @@ TEST_CASE("Integration - Complete X3DH to Envelope Flow", "[integration][envelop
         REQUIRE(decrypted_metadata.correlation_id() == "test-correlation-123");
 
         auto bob_chain_key_result = ctx.bob_connection->ProcessReceivedMessage(
-            decrypted_metadata.ratchet_index() - 1
+            decrypted_metadata.ratchet_index(),
+            alice_nonce
         );
         REQUIRE(bob_chain_key_result.IsOk());
         auto bob_chain_key = std::move(bob_chain_key_result).Unwrap();
@@ -259,7 +270,7 @@ TEST_CASE("Integration - High-Volume Message Exchange", "[integration][envelope]
             if (encrypted_result.IsErr()) break;
             auto encrypted = std::move(encrypted_result).Unwrap();
 
-            auto bob_key_result = ctx.bob_connection->ProcessReceivedMessage(i);
+            auto bob_key_result = ctx.bob_connection->ProcessReceivedMessage(alice_key.Index(), alice_nonce);
             if (bob_key_result.IsErr()) break;
             auto bob_key = std::move(bob_key_result).Unwrap();
 
@@ -284,13 +295,19 @@ TEST_CASE("Integration - Bidirectional Communication with DH Ratcheting", "[inte
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("1000 bidirectional round-trips with automatic DH ratchet") {
-        RatchetConfig config(100);
+        RatchetConfig config(100000);
 
-        auto alice_conn_result = EcliptixProtocolConnection::Create(1, true, config);
+        auto alice_conn_result = EcliptixProtocolConnection::Create(
+            1,
+            true,
+            config);
         REQUIRE(alice_conn_result.IsOk());
         auto alice_connection = std::move(alice_conn_result).Unwrap();
 
-        auto bob_conn_result = EcliptixProtocolConnection::Create(2, false, config);
+        auto bob_conn_result = EcliptixProtocolConnection::Create(
+            2,
+            false,
+            config);
         REQUIRE(bob_conn_result.IsOk());
         auto bob_connection = std::move(bob_conn_result).Unwrap();
 
@@ -332,7 +349,7 @@ TEST_CASE("Integration - Bidirectional Communication with DH Ratcheting", "[inte
             );
             if (alice_encrypted.IsErr()) break;
 
-            auto bob_process = bob_connection->ProcessReceivedMessage(round);
+            auto bob_process = bob_connection->ProcessReceivedMessage(round, a_nonce);
             if (bob_process.IsErr()) break;
             auto bob_key = std::move(bob_process).Unwrap();
 
@@ -362,7 +379,7 @@ TEST_CASE("Integration - Bidirectional Communication with DH Ratcheting", "[inte
             );
             if (bob_encrypted.IsErr()) break;
 
-            auto alice_process = alice_connection->ProcessReceivedMessage(round);
+            auto alice_process = alice_connection->ProcessReceivedMessage(round, b_nonce);
             if (alice_process.IsErr()) break;
             auto alice_recv_key = std::move(alice_process).Unwrap();
 
@@ -439,8 +456,13 @@ TEST_CASE("Integration - Out-of-Order Message Delivery", "[integration][envelope
         uint32_t successful_decryptions = 0;
 
         for (const auto& msg : messages) {
-            auto bob_key_result = ctx.bob_connection->ProcessReceivedMessage(msg.index);
+            auto bob_key_result = ctx.bob_connection->ProcessReceivedMessage(msg.index, msg.nonce);
             if (bob_key_result.IsErr()) {
+                static int debug_failures = 0;
+                if (debug_failures++ < 5) {
+                    WARN("ProcessReceivedMessage failed for index " << msg.index << ": "
+                         << bob_key_result.UnwrapErr().message);
+                }
                 continue;
             }
             auto bob_key = std::move(bob_key_result).Unwrap();
@@ -455,6 +477,19 @@ TEST_CASE("Integration - Out-of-Order Message Delivery", "[integration][envelope
                 auto decrypted = std::move(decrypted_result).Unwrap();
                 if (decrypted == msg.expected_plaintext) {
                     ++successful_decryptions;
+                } else {
+                    static int mismatch_logs = 0;
+                    if (mismatch_logs++ < 5) {
+                        WARN("Plaintext mismatch at index " << msg.index
+                             << " expected size=" << msg.expected_plaintext.size()
+                             << " got size=" << decrypted.size());
+                    }
+                }
+            } else {
+                static int decrypt_failures = 0;
+                if (decrypt_failures++ < 5) {
+                    WARN("Decrypt failed for index " << msg.index << ": "
+                         << decrypted_result.UnwrapErr().message);
                 }
             }
         }
@@ -565,7 +600,7 @@ TEST_CASE("Integration - Large Payload Encryption with Envelopes", "[integration
             REQUIRE(encrypted_result.IsOk());
             auto encrypted = std::move(encrypted_result).Unwrap();
 
-            auto bob_key_result = ctx.bob_connection->ProcessReceivedMessage(i);
+            auto bob_key_result = ctx.bob_connection->ProcessReceivedMessage(alice_key.Index(), nonce);
             REQUIRE(bob_key_result.IsOk());
             auto bob_key = std::move(bob_key_result).Unwrap();
 

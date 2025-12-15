@@ -3,9 +3,13 @@
 #include "ecliptix/crypto/hkdf.hpp"
 #include "ecliptix/security/validation/dh_validator.hpp"
 #include "protocol/protocol_state.pb.h"
+#include <cstdlib>
 #include <sodium.h>
 #include <chrono>
 #include <format>
+#include <string>
+#include <mutex>
+#include <optional>
 
 namespace ecliptix::protocol::connection {
     using namespace ecliptix::protocol::crypto;
@@ -13,6 +17,51 @@ namespace ecliptix::protocol::connection {
     using namespace ecliptix::protocol::chain_step;
     using namespace ecliptix::protocol::enums;
     using ProtocolConstants = ProtocolConstants;
+
+    namespace {
+        Result<std::vector<uint8_t>, EcliptixProtocolFailure> GetStateMacSecret() {
+            static std::once_flag init_flag;
+            static std::optional<std::vector<uint8_t> > cached_secret;
+            static std::string init_error;
+            std::call_once(init_flag, []() {
+                const char *env = std::getenv("ECLIPTIX_STATE_MAC_SECRET");
+                if (env == nullptr) {
+#ifdef ECLIPTIX_TEST_BUILD
+                    env = "test-state-mac-secret-ecliptix-derive-key-material";
+#else
+                    init_error = "ECLIPTIX_STATE_MAC_SECRET is required for state integrity";
+                    return;
+#endif
+                }
+                const std::string secret_str(env);
+                if (secret_str.size() < crypto_generichash_KEYBYTES) {
+#ifdef ECLIPTIX_TEST_BUILD
+                    init_error.clear();
+                    cached_secret = std::vector<uint8_t>(
+                        crypto_generichash_KEYBYTES, 0x42);
+                    return;
+#else
+                    init_error = "ECLIPTIX_STATE_MAC_SECRET must be at least 32 bytes";
+                    return;
+#endif
+                }
+                std::vector<uint8_t> hashed(crypto_generichash_KEYBYTES);
+                crypto_generichash(
+                    hashed.data(),
+                    hashed.size(),
+                    reinterpret_cast<const unsigned char *>(secret_str.data()),
+                    secret_str.size(),
+                    nullptr,
+                    0);
+                cached_secret = std::move(hashed);
+            });
+            if (!cached_secret.has_value()) {
+                return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
+                    EcliptixProtocolFailure::Generic(init_error));
+            }
+            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Ok(*cached_secret);
+        }
+    }
 
     EcliptixProtocolConnection::EcliptixProtocolConnection(
         uint32_t connection_id,
@@ -34,14 +83,16 @@ namespace ecliptix::protocol::connection {
           , root_key_handle_()
           , metadata_encryption_key_handle_()
           , initial_sending_dh_private_handle_(std::move(initial_sending_dh_private_handle))
-          , initial_sending_dh_public_(std::move(initial_sending_dh_public))
+          , initial_sending_dh_public_(initial_sending_dh_public)
           , current_sending_dh_private_handle_()
+          , current_sending_dh_public_(initial_sending_dh_public)
           , persistent_dh_private_handle_(std::move(persistent_dh_private_handle))
           , persistent_dh_public_(std::move(persistent_dh_public))
           , sending_step_(std::move(sending_step))
           , receiving_step_()
           , peer_bundle_()
           , peer_dh_public_key_()
+          , replay_protection_(connection_id)
           , nonce_counter_(ProtocolConstants::INITIAL_NONCE_COUNTER)
           , rate_limit_window_start_ns_(0)
           , nonces_in_current_window_(0)
@@ -51,6 +102,7 @@ namespace ecliptix::protocol::connection {
           , is_first_receiving_ratchet_(true)
           , received_new_dh_key_(false)
           , ratchet_warning_triggered_(false)
+          , receiving_ratchet_epoch_(0)
           , event_handler_(nullptr) {
     }
 
@@ -84,14 +136,16 @@ namespace ecliptix::protocol::connection {
           , root_key_handle_(std::move(root_key_handle))
           , metadata_encryption_key_handle_(std::move(metadata_encryption_key_handle))
           , initial_sending_dh_private_handle_(std::move(initial_sending_dh_private_handle))
-          , initial_sending_dh_public_(std::move(initial_sending_dh_public))
+          , initial_sending_dh_public_(initial_sending_dh_public)
           , current_sending_dh_private_handle_(std::move(current_sending_dh_private_handle))
+          , current_sending_dh_public_(initial_sending_dh_public)
           , persistent_dh_private_handle_(std::move(persistent_dh_private_handle))
           , persistent_dh_public_(std::move(persistent_dh_public))
           , sending_step_(std::move(sending_step))
           , receiving_step_(receiving_step ? std::make_optional(std::move(*receiving_step)) : std::nullopt)
           , peer_bundle_(std::move(peer_bundle))
           , peer_dh_public_key_(std::move(peer_dh_public_key))
+          , replay_protection_(connection_id)
           , nonce_counter_(nonce_counter)
           , rate_limit_window_start_ns_(0)
           , nonces_in_current_window_(0)
@@ -101,6 +155,7 @@ namespace ecliptix::protocol::connection {
           , is_first_receiving_ratchet_(is_first_receiving_ratchet)
           , received_new_dh_key_(false)
           , ratchet_warning_triggered_(false)
+          , receiving_ratchet_epoch_(0)
           , event_handler_(nullptr) {
     }
 
@@ -137,7 +192,7 @@ namespace ecliptix::protocol::connection {
             }
             auto [persistent_dh_private, persistent_dh_public] = std::move(persistent_dh_result).Unwrap();
             std::vector temp_chain_key(Constants::X_25519_KEY_SIZE,
-                                                static_cast<uint8_t>(ProtocolConstants::ZERO_VALUE));
+                                       static_cast<uint8_t>(ProtocolConstants::ZERO_VALUE));
             auto sending_step_result = EcliptixProtocolChainStep::Create(
                 ChainStepType::SENDER,
                 temp_chain_key,
@@ -427,12 +482,31 @@ namespace ecliptix::protocol::connection {
                 EcliptixProtocolFailure::Generic("Failed to read root key"));
         }
         auto root_bytes = root_bytes_result.Unwrap();
+        std::vector<uint8_t> info;
+        info.insert(info.end(),
+                    ProtocolConstants::METADATA_ENCRYPTION_INFO.begin(),
+                    ProtocolConstants::METADATA_ENCRYPTION_INFO.end());
+        if (peer_dh_public_key_) {
+            // Use CURRENT DH public keys for metadata key rotation.
+            // current_sending_dh_public_ changes after each DH ratchet, causing the metadata key to rotate.
+            std::array<std::vector<uint8_t>, 2> dh_publics = {
+                current_sending_dh_public_,
+                *peer_dh_public_key_
+            };
+            if (dh_publics[0] > dh_publics[1]) {
+                std::swap(dh_publics[0], dh_publics[1]);
+            }
+            info.insert(info.end(), dh_publics[0].begin(), dh_publics[0].end());
+            info.insert(info.end(), dh_publics[1].begin(), dh_publics[1].end());
+        } else {
+            // No peer yet - use initial DH public key
+            info.insert(info.end(), initial_sending_dh_public_.begin(), initial_sending_dh_public_.end());
+        }
         auto metadata_key_result = Hkdf::DeriveKeyBytes(
             root_bytes,
             Constants::AES_KEY_SIZE,
             std::vector<uint8_t>(),
-            std::vector<uint8_t>(ProtocolConstants::METADATA_ENCRYPTION_INFO.begin(),
-                                 ProtocolConstants::METADATA_ENCRYPTION_INFO.end())); {
+            info); {
             auto __wipe = SodiumInterop::SecureWipe(std::span(root_bytes));
             (void) __wipe;
         }
@@ -459,6 +533,123 @@ namespace ecliptix::protocol::connection {
                 EcliptixProtocolFailure::FromSodiumFailure(write_result.UnwrapErr()));
         }
         metadata_encryption_key_handle_ = std::move(metadata_handle);
+        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+    }
+
+    Result<std::vector<uint8_t>, EcliptixProtocolFailure> EcliptixProtocolConnection::DeriveStateMacKey(
+        std::span<const uint8_t> root_key_bytes,
+        std::span<const uint8_t> session_id,
+        const bool is_initiator,
+        const uint32_t connection_id,
+        std::span<const uint8_t> initial_sending_dh_public,
+        std::span<const uint8_t> current_sending_dh_public) {
+        auto secret_result = GetStateMacSecret();
+        if (secret_result.IsErr()) {
+            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(secret_result.UnwrapErr());
+        }
+        const auto &mac_secret = secret_result.Unwrap();
+        if (root_key_bytes.size() != Constants::X_25519_KEY_SIZE) {
+            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::InvalidInput("Invalid root key size for state MAC derivation"));
+        }
+        if (session_id.size() != 16) {
+            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::InvalidInput("Session id must be 16 bytes for state MAC derivation"));
+        }
+        if (initial_sending_dh_public.size() != Constants::X_25519_PUBLIC_KEY_SIZE ||
+            current_sending_dh_public.size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
+            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::InvalidInput("DH public keys must be 32 bytes for state MAC derivation"));
+        }
+        std::vector<uint8_t> info;
+        info.insert(info.end(),
+                    ProtocolConstants::STATE_MAC_INFO.begin(),
+                    ProtocolConstants::STATE_MAC_INFO.end());
+        info.push_back(static_cast<uint8_t>(is_initiator ? 0x01 : 0x00));
+        info.push_back(static_cast<uint8_t>((connection_id >> 24) & 0xFF));
+        info.push_back(static_cast<uint8_t>((connection_id >> 16) & 0xFF));
+        info.push_back(static_cast<uint8_t>((connection_id >> 8) & 0xFF));
+        info.push_back(static_cast<uint8_t>(connection_id & 0xFF));
+        info.insert(info.end(), session_id.begin(), session_id.end());
+        info.insert(info.end(), initial_sending_dh_public.begin(), initial_sending_dh_public.end());
+        info.insert(info.end(), current_sending_dh_public.begin(), current_sending_dh_public.end());
+
+        auto mac_key_result = Hkdf::DeriveKeyBytes(
+            root_key_bytes,
+            crypto_generichash_KEYBYTES,
+            mac_secret,
+            info);
+        if (mac_key_result.IsErr()) {
+            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(mac_key_result.UnwrapErr());
+        }
+        return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Ok(mac_key_result.Unwrap());
+    }
+
+    Result<std::vector<uint8_t>, EcliptixProtocolFailure> EcliptixProtocolConnection::ComputeStateMac(
+        proto::protocol::RatchetState state,
+        std::span<const uint8_t> mac_key) {
+        state.clear_state_mac();
+        std::string serialized;
+        if (!state.SerializeToString(&serialized)) {
+            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::Generic("Failed to serialize ratchet state for MAC"));
+        }
+        std::vector<uint8_t> mac(crypto_generichash_BYTES);
+        crypto_generichash(
+            mac.data(),
+            mac.size(),
+            reinterpret_cast<const unsigned char *>(serialized.data()),
+            serialized.size(),
+            mac_key.data(),
+            mac_key.size());
+        return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Ok(std::move(mac));
+    }
+
+    Result<Unit, EcliptixProtocolFailure> EcliptixProtocolConnection::VerifyStateMac(
+        const proto::protocol::RatchetState &proto,
+        const uint32_t expected_connection_id) {
+        if (proto.state_mac().size() != crypto_generichash_BYTES) {
+            return Result<Unit, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::Generic("Invalid or missing state MAC"));
+        }
+        if (proto.root_key().size() != Constants::X_25519_KEY_SIZE) {
+            return Result<Unit, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::Generic("Invalid root key size in stored state"));
+        }
+        if (proto.initial_sending_dh_public().size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
+            return Result<Unit, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::Generic("Missing or invalid initial sending DH public key in stored state"));
+        }
+        if (!proto.current_sending_dh_public().empty() &&
+            proto.current_sending_dh_public().size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
+            return Result<Unit, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::Generic("Invalid current sending DH public key size in stored state"));
+        }
+        std::vector<uint8_t> session_id_bytes(proto.session_id().begin(), proto.session_id().end());
+        auto mac_key_result = DeriveStateMacKey(
+            std::span(reinterpret_cast<const uint8_t *>(proto.root_key().data()), proto.root_key().size()),
+            session_id_bytes,
+            proto.is_initiator(),
+            expected_connection_id,
+            std::span(reinterpret_cast<const uint8_t *>(proto.initial_sending_dh_public().data()),
+                      proto.initial_sending_dh_public().size()),
+            proto.current_sending_dh_public().empty()
+                ? std::span(reinterpret_cast<const uint8_t *>(proto.initial_sending_dh_public().data()),
+                            proto.initial_sending_dh_public().size())
+                : std::span(reinterpret_cast<const uint8_t *>(proto.current_sending_dh_public().data()),
+                            proto.current_sending_dh_public().size()));
+        if (mac_key_result.IsErr()) {
+            return Result<Unit, EcliptixProtocolFailure>::Err(mac_key_result.UnwrapErr());
+        }
+        auto computed_mac_result = ComputeStateMac(proto, mac_key_result.Unwrap());
+        if (computed_mac_result.IsErr()) {
+            return Result<Unit, EcliptixProtocolFailure>::Err(computed_mac_result.UnwrapErr());
+        }
+        auto computed_mac = std::move(computed_mac_result.Unwrap());
+        if (sodium_memcmp(computed_mac.data(), proto.state_mac().data(), computed_mac.size()) != 0) {
+            return Result<Unit, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::Generic("State MAC verification failed"));
+        }
         return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
     }
 
@@ -617,24 +808,22 @@ namespace ecliptix::protocol::connection {
     Result<Option<std::vector<uint8_t> >, EcliptixProtocolFailure>
     EcliptixProtocolConnection::GetCurrentSenderDhPublicKey() const {
         std::lock_guard lock(*lock_);
-        auto disposed_check = CheckDisposed();
-        if (disposed_check.IsErr()) {
+        if (auto disposed_check = CheckDisposed(); disposed_check.IsErr()) {
             return Result<Option<std::vector<uint8_t> >, EcliptixProtocolFailure>::Err(
                 disposed_check.UnwrapErr());
         }
-        if (initial_sending_dh_public_.empty()) {
+        if (current_sending_dh_public_.empty()) {
             return Result<Option<std::vector<uint8_t> >, EcliptixProtocolFailure>::Ok(
                 None<std::vector<uint8_t> >());
         }
         return Result<Option<std::vector<uint8_t> >, EcliptixProtocolFailure>::Ok(
-            Some(initial_sending_dh_public_));
+            Some(current_sending_dh_public_));
     }
 
     Result<std::vector<uint8_t>, EcliptixProtocolFailure>
     EcliptixProtocolConnection::GetMetadataEncryptionKey() const {
         std::lock_guard lock(*lock_);
-        auto disposed_check = CheckDisposed();
-        if (disposed_check.IsErr()) {
+        if (auto disposed_check = CheckDisposed(); disposed_check.IsErr()) {
             return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
                 disposed_check.UnwrapErr());
         }
@@ -653,12 +842,10 @@ namespace ecliptix::protocol::connection {
     Result<Unit, EcliptixProtocolFailure>
     EcliptixProtocolConnection::SetPeerBundle(const LocalPublicKeyBundle &peer_bundle) {
         std::lock_guard lock(*lock_);
-        auto disposed_check = CheckDisposed();
-        if (disposed_check.IsErr()) {
+        if (auto disposed_check = CheckDisposed(); disposed_check.IsErr()) {
             return disposed_check;
         }
-        auto finalized_check = CheckIfNotFinalized();
-        if (finalized_check.IsErr()) {
+        if (auto finalized_check = CheckIfNotFinalized(); finalized_check.IsErr()) {
             return Result<Unit, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic("Cannot set peer bundle after connection finalized"));
         }
@@ -669,12 +856,10 @@ namespace ecliptix::protocol::connection {
     Result<Unit, EcliptixProtocolFailure>
     EcliptixProtocolConnection::PerformReceivingRatchet(std::span<const uint8_t> received_dh_public_key) {
         std::lock_guard lock(*lock_);
-        auto disposed_check = CheckDisposed();
-        if (disposed_check.IsErr()) {
+        if (auto disposed_check = CheckDisposed(); disposed_check.IsErr()) {
             return disposed_check;
         }
-        auto finalized_check = CheckIfFinalized();
-        if (finalized_check.IsErr()) {
+        if (auto finalized_check = CheckIfFinalized(); finalized_check.IsErr()) {
             return finalized_check;
         }
         if (received_dh_public_key.size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
@@ -683,8 +868,7 @@ namespace ecliptix::protocol::connection {
                     std::format("Received DH public key must be {} bytes, got {}",
                                 Constants::X_25519_PUBLIC_KEY_SIZE, received_dh_public_key.size())));
         }
-        auto ratchet_result = PerformDhRatchet(false, received_dh_public_key);
-        if (ratchet_result.IsErr()) {
+        if (auto ratchet_result = PerformDhRatchet(false, received_dh_public_key); ratchet_result.IsErr()) {
             return ratchet_result;
         }
         received_new_dh_key_.store(true);
@@ -706,12 +890,10 @@ namespace ecliptix::protocol::connection {
     Result<bool, EcliptixProtocolFailure>
     EcliptixProtocolConnection::MaybePerformSendingDhRatchet() {
         std::lock_guard lock(*lock_);
-        auto disposed_check = CheckDisposed();
-        if (disposed_check.IsErr()) {
+        if (auto disposed_check = CheckDisposed(); disposed_check.IsErr()) {
             return Result<bool, EcliptixProtocolFailure>::Err(disposed_check.UnwrapErr());
         }
-        auto finalized_check = CheckIfFinalized();
-        if (finalized_check.IsErr()) {
+        if (auto finalized_check = CheckIfFinalized(); finalized_check.IsErr()) {
             return Result<bool, EcliptixProtocolFailure>::Err(finalized_check.UnwrapErr());
         }
         auto current_index_result = sending_step_.GetCurrentIndex();
@@ -719,12 +901,11 @@ namespace ecliptix::protocol::connection {
             return Result<bool, EcliptixProtocolFailure>::Err(current_index_result.UnwrapErr());
         }
         uint32_t current_index = current_index_result.Unwrap();
-        bool should_ratchet = ratchet_config_.ShouldRatchet(current_index, received_new_dh_key_.load());
-        if (!should_ratchet) {
+        if (bool should_ratchet = ratchet_config_.ShouldRatchet(current_index, received_new_dh_key_.load()); !
+            should_ratchet) {
             return Result<bool, EcliptixProtocolFailure>::Ok(false);
         }
-        auto ratchet_result = PerformDhRatchet(true, {});
-        if (ratchet_result.IsErr()) {
+        if (auto ratchet_result = PerformDhRatchet(true, {}); ratchet_result.IsErr()) {
             return Result<bool, EcliptixProtocolFailure>::Err(ratchet_result.UnwrapErr());
         }
         received_new_dh_key_.store(false);
@@ -736,24 +917,22 @@ namespace ecliptix::protocol::connection {
         uint32_t remote_sending_chain_length,
         uint32_t remote_receiving_chain_length) {
         std::lock_guard lock(*lock_);
-        auto disposed_check = CheckDisposed();
-        if (disposed_check.IsErr()) {
+        if (auto disposed_check = CheckDisposed(); disposed_check.IsErr()) {
             return disposed_check;
         }
-        auto finalized_check = CheckIfFinalized();
-        if (finalized_check.IsErr()) {
+        if (auto finalized_check = CheckIfFinalized(); finalized_check.IsErr()) {
             return finalized_check;
         }
         if (!receiving_step_.has_value()) {
             return Result<Unit, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic("Receiving chain step not initialized"));
         }
-        auto receiving_skip_result = receiving_step_->SkipKeysUntil(remote_sending_chain_length);
-        if (receiving_skip_result.IsErr()) {
+        if (auto receiving_skip_result = receiving_step_->SkipKeysUntil(remote_sending_chain_length);
+            receiving_skip_result.IsErr()) {
             return receiving_skip_result;
         }
-        auto sending_skip_result = sending_step_.SkipKeysUntil(remote_receiving_chain_length);
-        if (sending_skip_result.IsErr()) {
+        if (auto sending_skip_result = sending_step_.SkipKeysUntil(remote_receiving_chain_length); sending_skip_result.
+            IsErr()) {
             return sending_skip_result;
         }
         if (event_handler_) {
@@ -764,14 +943,12 @@ namespace ecliptix::protocol::connection {
 
     Result<std::vector<uint8_t>, EcliptixProtocolFailure>
     EcliptixProtocolConnection::GenerateNextNonce() {
-        auto expired_check = EnsureNotExpired();
-        if (expired_check.IsErr()) {
+        if (auto expired_check = EnsureNotExpired(); expired_check.IsErr()) {
             return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
                 std::move(expired_check).UnwrapErr());
         }
 
 #ifdef ECLIPTIX_TEST_BUILD
-        constexpr uint32_t NONCE_RATE_LIMIT = 100'000;
 #else
         constexpr uint32_t NONCE_RATE_LIMIT = ProtocolConstants::NONCE_RATE_LIMIT_PER_SECOND;
 #endif
@@ -785,7 +962,7 @@ namespace ecliptix::protocol::connection {
             window_start = now_ns;
         }
         const uint32_t nonces_in_window = nonces_in_current_window_.fetch_add(1, std::memory_order_seq_cst);
-        if (nonces_in_window >= NONCE_RATE_LIMIT) {
+        if (constexpr uint32_t NONCE_RATE_LIMIT = 100'000; nonces_in_window >= NONCE_RATE_LIMIT) {
             return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic(
                     "Nonce generation rate limit exceeded (" +
@@ -804,7 +981,7 @@ namespace ecliptix::protocol::connection {
                 EcliptixProtocolFailure::Generic(
                     "Nonce counter overflow - must rotate keys (ratchet) before continuing"));
         }
-        constexpr uint64_t RATCHET_THRESHOLD =
+        constexpr auto RATCHET_THRESHOLD =
                 static_cast<uint64_t>(ProtocolConstants::MAX_NONCE_COUNTER * 0.95);
         if (counter >= RATCHET_THRESHOLD && !ratchet_warning_triggered_.load(std::memory_order_seq_cst)) {
             ratchet_warning_triggered_.store(true, std::memory_order_seq_cst);
@@ -821,23 +998,16 @@ namespace ecliptix::protocol::connection {
 
     Result<Unit, EcliptixProtocolFailure>
     EcliptixProtocolConnection::CheckReplayProtection(
-        std::span<const uint8_t> nonce,
-        uint64_t message_index) {
-        constexpr size_t NONCE_SIZE = 12;
-        if (nonce.size() != NONCE_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput(
-                    std::format("Nonce must be {} bytes, got {}", NONCE_SIZE, nonce.size())));
-        }
-        (void) message_index;
-        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        const std::span<const uint8_t> nonce,
+        const uint64_t message_index) {
+        const uint64_t chain_index = receiving_ratchet_epoch_.load(std::memory_order_acquire);
+        return replay_protection_.CheckAndRecordMessage(nonce, message_index, chain_index);
     }
 
     Result<std::pair<RatchetChainKey, bool>, EcliptixProtocolFailure>
     EcliptixProtocolConnection::PrepareNextSendMessage() {
         std::lock_guard lock(*lock_);
-        auto expired_check = EnsureNotExpired();
-        if (expired_check.IsErr()) {
+        if (auto expired_check = EnsureNotExpired(); expired_check.IsErr()) {
             return Result<std::pair<RatchetChainKey, bool>, EcliptixProtocolFailure>::Err(
                 std::move(expired_check).UnwrapErr());
         }
@@ -854,13 +1024,11 @@ namespace ecliptix::protocol::connection {
             return Result<std::pair<RatchetChainKey, bool>, EcliptixProtocolFailure>::Err(
                 current_index_result.UnwrapErr());
         }
-        uint32_t current_index = current_index_result.Unwrap();
-        uint32_t next_index = current_index + 1;
+        uint32_t next_index = current_index_result.Unwrap();
         bool should_ratchet = ratchet_config_.ShouldRatchet(next_index, received_new_dh_key_.load());
         bool include_dh_key = false;
         if (should_ratchet) {
-            auto ratchet_result = PerformDhRatchet(true, {});
-            if (ratchet_result.IsErr()) {
+            if (auto ratchet_result = PerformDhRatchet(true, {}); ratchet_result.IsErr()) {
                 return Result<std::pair<RatchetChainKey, bool>, EcliptixProtocolFailure>::Err(
                     ratchet_result.UnwrapErr());
             }
@@ -872,7 +1040,7 @@ namespace ecliptix::protocol::connection {
                 return Result<std::pair<RatchetChainKey, bool>, EcliptixProtocolFailure>::Err(
                     new_index_result.UnwrapErr());
             }
-            next_index = new_index_result.Unwrap() + 1;
+            next_index = new_index_result.Unwrap();
         }
         auto derived_key_result = sending_step_.GetOrDeriveKeyFor(next_index);
         if (derived_key_result.IsErr()) {
@@ -880,11 +1048,6 @@ namespace ecliptix::protocol::connection {
                 derived_key_result.UnwrapErr());
         }
         auto derived_key = derived_key_result.Unwrap();
-        auto set_index_result = sending_step_.SetCurrentIndex(next_index);
-        if (set_index_result.IsErr()) {
-            return Result<std::pair<RatchetChainKey, bool>, EcliptixProtocolFailure>::Err(
-                set_index_result.UnwrapErr());
-        }
         sending_step_.PruneOldKeys();
         if (event_handler_) {
             event_handler_->OnProtocolStateChanged(id_);
@@ -901,28 +1064,27 @@ namespace ecliptix::protocol::connection {
         }
 
 #ifdef ECLIPTIX_TEST_BUILD
-        constexpr uint32_t DH_RATCHET_RATE_LIMIT = 1000;
 #else
         constexpr uint32_t DH_RATCHET_RATE_LIMIT = ProtocolConstants::MAX_DH_RATCHETS_PER_MINUTE;
 #endif
         constexpr int64_t ONE_MINUTE_NS = 60'000'000'000LL;
         const auto now = std::chrono::steady_clock::now();
         const int64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
-        int64_t window_start = dh_ratchet_rate_limit_window_start_ns_.load(std::memory_order_seq_cst);
-        if (window_start == 0 || (now_ns - window_start) >= ONE_MINUTE_NS) {
+        if (int64_t window_start = dh_ratchet_rate_limit_window_start_ns_.load(std::memory_order_seq_cst);
+            window_start == 0 || (now_ns - window_start) >= ONE_MINUTE_NS) {
             dh_ratchet_rate_limit_window_start_ns_.store(now_ns, std::memory_order_seq_cst);
             dh_ratchets_in_current_window_.store(0, std::memory_order_seq_cst);
         }
         const uint32_t ratchets_in_window = dh_ratchets_in_current_window_.fetch_add(1, std::memory_order_seq_cst);
-        if (ratchets_in_window >= DH_RATCHET_RATE_LIMIT) {
+        if (constexpr uint32_t DH_RATCHET_RATE_LIMIT = 1000; ratchets_in_window >= DH_RATCHET_RATE_LIMIT) {
             return Result<Unit, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic(std::format(
                     "DH ratchet rate limit exceeded: {} ratchets per minute maximum (DoS protection)",
                     DH_RATCHET_RATE_LIMIT)));
         }
         if (!received_dh_public_key.empty()) {
-            auto validation_result = DhValidator::ValidateX25519PublicKey(received_dh_public_key);
-            if (validation_result.IsErr()) {
+            if (auto validation_result = DhValidator::ValidateX25519PublicKey(received_dh_public_key); validation_result
+                .IsErr()) {
                 return validation_result;
             }
         }
@@ -930,8 +1092,8 @@ namespace ecliptix::protocol::connection {
         std::vector<uint8_t> new_root_key;
         std::vector<uint8_t> new_chain_key;
         std::vector<uint8_t> new_dh_private;
-        std::vector<uint8_t> new_dh_public;
         try {
+            std::vector<uint8_t> new_dh_public;
             if (is_sender) {
                 auto new_keypair_result = SodiumInterop::GenerateX25519KeyPair("Ratchet ephemeral DH key");
                 if (new_keypair_result.IsErr()) {
@@ -948,8 +1110,8 @@ namespace ecliptix::protocol::connection {
                 new_dh_public = std::move(new_pub);
                 if (!peer_dh_public_key_.has_value() || peer_dh_public_key_->empty()) {
                     {
-                        auto __wipe = SodiumInterop::SecureWipe(std::span(new_dh_private));
-                        (void) __wipe;
+                        auto _wipe = SodiumInterop::SecureWipe(std::span(new_dh_private));
+                        (void) _wipe;
                     }
                     return Result<Unit, EcliptixProtocolFailure>::Err(
                         EcliptixProtocolFailure::Generic("Peer DH public key not set"));
@@ -957,8 +1119,8 @@ namespace ecliptix::protocol::connection {
                 dh_secret.resize(Constants::X_25519_KEY_SIZE);
                 if (crypto_scalarmult(dh_secret.data(), new_dh_private.data(), peer_dh_public_key_->data()) != 0) {
                     {
-                        auto __wipe = SodiumInterop::SecureWipe(std::span(new_dh_private));
-                        (void) __wipe;
+                        auto _wipe = SodiumInterop::SecureWipe(std::span(new_dh_private));
+                        (void) _wipe;
                     }
                     return Result<Unit, EcliptixProtocolFailure>::Err(
                         EcliptixProtocolFailure::DeriveKey("Failed to compute sender DH secret"));
@@ -982,25 +1144,25 @@ namespace ecliptix::protocol::connection {
                 dh_secret.resize(Constants::X_25519_KEY_SIZE);
                 if (crypto_scalarmult(dh_secret.data(), our_priv_bytes.data(), received_dh_public_key.data()) != 0) {
                     {
-                        auto __wipe = SodiumInterop::SecureWipe(std::span(our_priv_bytes));
-                        (void) __wipe;
+                        auto _wipe = SodiumInterop::SecureWipe(std::span(our_priv_bytes));
+                        (void) _wipe;
                     }
                     return Result<Unit, EcliptixProtocolFailure>::Err(
                         EcliptixProtocolFailure::DeriveKey("Failed to compute receiver DH secret"));
                 } {
-                    auto __wipe = SodiumInterop::SecureWipe(std::span(our_priv_bytes));
-                    (void) __wipe;
+                    auto _wipe = SodiumInterop::SecureWipe(std::span(our_priv_bytes));
+                    (void) _wipe;
                 }
                 peer_dh_public_key_ = std::vector(received_dh_public_key.begin(), received_dh_public_key.end());
             }
             auto root_bytes_result = root_key_handle_->ReadBytes(Constants::X_25519_KEY_SIZE);
             if (root_bytes_result.IsErr()) {
                 {
-                    auto __wipe = SodiumInterop::SecureWipe(std::span(dh_secret));
-                    (void) __wipe;
+                    auto _wipe = SodiumInterop::SecureWipe(std::span(dh_secret));
+                    (void) _wipe;
                 } {
-                    auto __wipe = SodiumInterop::SecureWipe(std::span(new_dh_private));
-                    (void) __wipe;
+                    auto _wipe = SodiumInterop::SecureWipe(std::span(new_dh_private));
+                    (void) _wipe;
                 }
                 return Result<Unit, EcliptixProtocolFailure>::Err(
                     EcliptixProtocolFailure::Generic("Failed to read root key"));
@@ -1012,16 +1174,16 @@ namespace ecliptix::protocol::connection {
                 root_bytes,
                 std::vector<uint8_t>(ProtocolConstants::DH_RATCHET_INFO.begin(),
                                      ProtocolConstants::DH_RATCHET_INFO.end())); {
-                auto __wipe = SodiumInterop::SecureWipe(std::span(root_bytes));
-                (void) __wipe;
+                auto _wipe = SodiumInterop::SecureWipe(std::span(root_bytes));
+                (void) _wipe;
             } {
-                auto __wipe = SodiumInterop::SecureWipe(std::span(dh_secret));
-                (void) __wipe;
+                auto _wipe = SodiumInterop::SecureWipe(std::span(dh_secret));
+                (void) _wipe;
             }
             if (hkdf_output_result.IsErr()) {
                 {
-                    auto __wipe = SodiumInterop::SecureWipe(std::span(new_dh_private));
-                    (void) __wipe;
+                    auto _wipe = SodiumInterop::SecureWipe(std::span(new_dh_private));
+                    (void) _wipe;
                 }
                 return Result<Unit, EcliptixProtocolFailure>::Err(
                     hkdf_output_result.UnwrapErr());
@@ -1029,103 +1191,121 @@ namespace ecliptix::protocol::connection {
             auto hkdf_output = hkdf_output_result.Unwrap();
             new_root_key.assign(hkdf_output.begin(), hkdf_output.begin() + Constants::X_25519_KEY_SIZE);
             new_chain_key.assign(hkdf_output.begin() + Constants::X_25519_KEY_SIZE, hkdf_output.end()); {
-                auto __wipe = SodiumInterop::SecureWipe(std::span(hkdf_output));
-                (void) __wipe;
+                auto _wipe = SodiumInterop::SecureWipe(std::span(hkdf_output));
+                (void) _wipe;
             }
-            auto write_result = root_key_handle_->Write(new_root_key);
-            if (write_result.IsErr()) {
+            if (auto write_result = root_key_handle_->Write(new_root_key); write_result.IsErr()) {
                 {
-                    auto __wipe = SodiumInterop::SecureWipe(std::span(new_root_key));
-                    (void) __wipe;
+                    auto _wipe = SodiumInterop::SecureWipe(std::span(new_root_key));
+                    (void) _wipe;
                 } {
-                    auto __wipe = SodiumInterop::SecureWipe(std::span(new_chain_key));
-                    (void) __wipe;
+                    auto _wipe = SodiumInterop::SecureWipe(std::span(new_chain_key));
+                    (void) _wipe;
                 } {
-                    auto __wipe = SodiumInterop::SecureWipe(std::span(new_dh_private));
-                    (void) __wipe;
+                    auto _wipe = SodiumInterop::SecureWipe(std::span(new_dh_private));
+                    (void) _wipe;
                 }
                 return Result<Unit, EcliptixProtocolFailure>::Err(
                     EcliptixProtocolFailure::FromSodiumFailure(write_result.UnwrapErr()));
             } {
-                auto __wipe = SodiumInterop::SecureWipe(std::span(new_root_key));
-                (void) __wipe;
+                auto _wipe = SodiumInterop::SecureWipe(std::span(new_root_key));
+                (void) _wipe;
             }
             if (is_sender) {
-                auto update_result = sending_step_.UpdateKeysAfterDhRatchet(new_chain_key);
-                if (update_result.IsErr()) {
+                if (auto update_result = sending_step_.UpdateKeysAfterDhRatchet(new_chain_key); update_result.IsErr()) {
                     {
-                        auto __wipe = SodiumInterop::SecureWipe(std::span(new_chain_key));
-                        (void) __wipe;
+                        auto _wipe = SodiumInterop::SecureWipe(std::span(new_chain_key));
+                        (void) _wipe;
                     } {
-                        auto __wipe = SodiumInterop::SecureWipe(std::span(new_dh_private));
-                        (void) __wipe;
+                        auto _wipe = SodiumInterop::SecureWipe(std::span(new_dh_private));
+                        (void) _wipe;
                     }
                     return update_result;
                 }
                 auto new_dh_handle_result = SecureMemoryHandle::Allocate(Constants::X_25519_PRIVATE_KEY_SIZE);
                 if (new_dh_handle_result.IsErr()) {
                     {
-                        auto __wipe = SodiumInterop::SecureWipe(std::span(new_chain_key));
-                        (void) __wipe;
+                        auto _wipe = SodiumInterop::SecureWipe(std::span(new_chain_key));
+                        (void) _wipe;
                     } {
-                        auto __wipe = SodiumInterop::SecureWipe(std::span(new_dh_private));
-                        (void) __wipe;
+                        auto _wipe = SodiumInterop::SecureWipe(std::span(new_dh_private));
+                        (void) _wipe;
                     }
                     return Result<Unit, EcliptixProtocolFailure>::Err(
                         EcliptixProtocolFailure::FromSodiumFailure(new_dh_handle_result.UnwrapErr()));
                 }
                 auto new_dh_handle = std::move(new_dh_handle_result).Unwrap();
                 auto dh_write_result = new_dh_handle.Write(new_dh_private); {
-                    auto __wipe = SodiumInterop::SecureWipe(std::span(new_dh_private));
-                    (void) __wipe;
+                    auto _wipe = SodiumInterop::SecureWipe(std::span(new_dh_private));
+                    (void) _wipe;
                 }
                 if (dh_write_result.IsErr()) {
                     {
-                        auto __wipe = SodiumInterop::SecureWipe(std::span(new_chain_key));
-                        (void) __wipe;
+                        auto _wipe = SodiumInterop::SecureWipe(std::span(new_chain_key));
+                        (void) _wipe;
                     }
                     return Result<Unit, EcliptixProtocolFailure>::Err(
                         EcliptixProtocolFailure::FromSodiumFailure(dh_write_result.UnwrapErr()));
                 }
                 current_sending_dh_private_handle_ = std::move(new_dh_handle);
+                current_sending_dh_public_ = std::move(new_dh_public);
             } else {
                 if (!receiving_step_.has_value()) {
                     {
-                        auto __wipe = SodiumInterop::SecureWipe(std::span(new_chain_key));
-                        (void) __wipe;
+                        auto _wipe = SodiumInterop::SecureWipe(std::span(new_chain_key));
+                        (void) _wipe;
                     }
                     return Result<Unit, EcliptixProtocolFailure>::Err(
                         EcliptixProtocolFailure::Generic("Receiving step not initialized"));
                 }
-                auto update_result = receiving_step_->UpdateKeysAfterDhRatchet(new_chain_key);
-                if (update_result.IsErr()) {
+                if (auto update_result = receiving_step_->UpdateKeysAfterDhRatchet(new_chain_key); update_result.
+                    IsErr()) {
                     {
-                        auto __wipe = SodiumInterop::SecureWipe(std::span(new_chain_key));
-                        (void) __wipe;
+                        auto _wipe = SodiumInterop::SecureWipe(std::span(new_chain_key));
+                        (void) _wipe;
                     }
                     return update_result;
                 }
             } {
-                auto __wipe = SodiumInterop::SecureWipe(std::span(new_chain_key));
-                (void) __wipe;
+                auto _wipe = SodiumInterop::SecureWipe(std::span(new_chain_key));
+                (void) _wipe;
             }
-            auto metadata_result = DeriveMetadataEncryptionKey();
-            if (metadata_result.IsErr()) {
+            if (auto metadata_result = DeriveMetadataEncryptionKey(); metadata_result.IsErr()) {
                 return metadata_result;
             }
-            nonce_counter_.store(ProtocolConstants::INITIAL_NONCE_COUNTER, std::memory_order_seq_cst);
+
+            // SECURITY: Do NOT reset nonce_counter here!
+            // Nonces must be globally unique for the entire session lifetime to prevent replay attacks.
+            // The nonce counter increments monotonically and never resets, even across DH ratchets.
+            // Only the message index (embedded in nonce bytes [8-11]) resets to 0.
+
             ratchet_warning_triggered_.store(false, std::memory_order_seq_cst);
+
+            // Increment receiving ratchet epoch to track DH ratchet chains in replay protection
+            // This allows message indices to reset to 0 after each ratchet while maintaining
+            // proper replay protection by tracking each ratchet epoch separately
+            if (!is_sender) {
+                receiving_ratchet_epoch_.fetch_add(1, std::memory_order_release);
+            }
+
+            // Reset message window tracking when performing a DH ratchet
+            // Each ratchet epoch uses a different chain_index (receiving_ratchet_epoch_),
+            // so we clear windows to start fresh for each epoch and prevent unbounded memory growth
+            // SECURITY: We only clear message windows, NOT nonce tracking - nonces must remain
+            // tracked across ALL ratchets to prevent replay attacks
+            replay_protection_.ResetMessageWindows();
+
             return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
         } catch (const std::exception &ex) {
             {
-                auto __wipe = SodiumInterop::SecureWipe(std::span(dh_secret));
-                (void) __wipe;
+                auto _wipe = SodiumInterop::SecureWipe(std::span(dh_secret));
+                (void) _wipe;
             } {
-                auto __wipe = SodiumInterop::SecureWipe(std::span(new_root_key));
-                (void) __wipe;
+                auto _wipe = SodiumInterop::SecureWipe(std::span(new_root_key));
+                (void) _wipe;
             } {
-                auto __wipe = SodiumInterop::SecureWipe(std::span(new_chain_key));
-                (void) __wipe;
+                auto _wipe = SodiumInterop::SecureWipe(std::span(new_chain_key));
+                (void) _wipe;
             }
             return Result<Unit, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic("Exception during DH ratchet: " + std::string(ex.what())));
@@ -1133,15 +1313,15 @@ namespace ecliptix::protocol::connection {
     }
 
     Result<RatchetChainKey, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::ProcessReceivedMessage(uint32_t received_index) {
+    EcliptixProtocolConnection::ProcessReceivedMessage(
+        uint32_t received_index,
+        std::span<const uint8_t> nonce) {
         std::lock_guard lock(*lock_);
-        auto disposed_check = CheckDisposed();
-        if (disposed_check.IsErr()) {
+        if (auto disposed_check = CheckDisposed(); disposed_check.IsErr()) {
             return Result<RatchetChainKey, EcliptixProtocolFailure>::Err(
                 disposed_check.UnwrapErr());
         }
-        auto expired_check = EnsureNotExpired();
-        if (expired_check.IsErr()) {
+        if (auto expired_check = EnsureNotExpired(); expired_check.IsErr()) {
             return Result<RatchetChainKey, EcliptixProtocolFailure>::Err(
                 expired_check.UnwrapErr());
         }
@@ -1149,11 +1329,29 @@ namespace ecliptix::protocol::connection {
             return Result<RatchetChainKey, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic("Receiving step not initialized"));
         }
-        constexpr uint32_t INDEX_OVERFLOW_BUFFER = 1000;
-        if (received_index > std::numeric_limits<uint32_t>::max() - INDEX_OVERFLOW_BUFFER) {
+        if (constexpr uint32_t INDEX_OVERFLOW_BUFFER = 1000;
+            received_index > std::numeric_limits<uint32_t>::max() - INDEX_OVERFLOW_BUFFER) {
             return Result<RatchetChainKey, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic(
                     "Received index too large: " + std::to_string(received_index)));
+        }
+        if (nonce.size() != Constants::AES_GCM_NONCE_SIZE) {
+            return Result<RatchetChainKey, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::InvalidInput(
+                    std::format("Nonce must be {} bytes, got {}", Constants::AES_GCM_NONCE_SIZE, nonce.size())));
+        }
+        // Enforce nonce/index binding: lower 4 bytes of nonce must match the message index (little endian).
+        uint32_t nonce_index = 0;
+        for (size_t i = 0; i < 4; ++i) {
+            constexpr size_t COUNTER_OFFSET = 8;
+            nonce_index |= static_cast<uint32_t>(nonce[COUNTER_OFFSET + i]) << (i * 8);
+        }
+        if (nonce_index != received_index) {
+            return Result<RatchetChainKey, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::Generic("Nonce/index binding failed"));
+        }
+        if (auto replay_result = CheckReplayProtection(nonce, received_index); replay_result.IsErr()) {
+            return Result<RatchetChainKey, EcliptixProtocolFailure>::Err(replay_result.UnwrapErr());
         }
         EcliptixProtocolChainStep &receiving_step = *receiving_step_;
         auto derived_key_result = receiving_step.GetOrDeriveKeyFor(received_index);
@@ -1162,11 +1360,6 @@ namespace ecliptix::protocol::connection {
                 derived_key_result.UnwrapErr());
         }
         RatchetChainKey derived_key = derived_key_result.Unwrap();
-        auto set_index_result = receiving_step.SetCurrentIndex(derived_key.Index());
-        if (set_index_result.IsErr()) {
-            return Result<RatchetChainKey, EcliptixProtocolFailure>::Err(
-                set_index_result.UnwrapErr());
-        }
         PerformCleanupIfNeeded(received_index);
         return Result<RatchetChainKey, EcliptixProtocolFailure>::Ok(derived_key);
     }
@@ -1202,17 +1395,28 @@ namespace ecliptix::protocol::connection {
             if (peer_dh_public_key_ && !peer_dh_public_key_->empty()) {
                 proto.set_peer_dh_public_key(peer_dh_public_key_->data(), peer_dh_public_key_->size());
             }
+            if (!initial_sending_dh_public_.empty()) {
+                proto.set_initial_sending_dh_public(
+                    initial_sending_dh_public_.data(),
+                    initial_sending_dh_public_.size());
+            }
+            if (!current_sending_dh_public_.empty()) {
+                proto.set_current_sending_dh_public(
+                    current_sending_dh_public_.data(),
+                    current_sending_dh_public_.size());
+            }
+            std::vector<uint8_t> root_key_bytes;
             if (root_key_handle_) {
                 auto root_key_result = root_key_handle_->ReadBytes(Constants::X_25519_KEY_SIZE);
                 if (root_key_result.IsErr()) {
                     return Result<proto::protocol::RatchetState, EcliptixProtocolFailure>::Err(
                         EcliptixProtocolFailure::FromSodiumFailure(root_key_result.UnwrapErr()));
                 }
-                std::vector<uint8_t> root_key_bytes = root_key_result.Unwrap();
-                proto.set_root_key(root_key_bytes.data(), root_key_bytes.size()); {
-                    auto __wipe = SodiumInterop::SecureWipe(std::span(root_key_bytes));
-                    (void) __wipe;
-                }
+                root_key_bytes = root_key_result.Unwrap();
+                proto.set_root_key(root_key_bytes.data(), root_key_bytes.size());
+            } else {
+                return Result<proto::protocol::RatchetState, EcliptixProtocolFailure>::Err(
+                    EcliptixProtocolFailure::Generic("Root key missing - cannot serialize state"));
             }
             auto sending_step_result = sending_step_.ToProtoState();
             if (sending_step_result.IsErr()) {
@@ -1228,6 +1432,27 @@ namespace ecliptix::protocol::connection {
                 }
                 *proto.mutable_receiving_step() = receiving_step_result.Unwrap();
             }
+            auto mac_key_result = DeriveStateMacKey(
+                root_key_bytes,
+                session_id_,
+                is_initiator_,
+                id_,
+                initial_sending_dh_public_,
+                current_sending_dh_public_);
+            if (mac_key_result.IsErr()) {
+                auto _wipe = SodiumInterop::SecureWipe(std::span(root_key_bytes));
+                (void) _wipe;
+                return Result<proto::protocol::RatchetState, EcliptixProtocolFailure>::Err(
+                    mac_key_result.UnwrapErr());
+            }
+            auto mac_result = ComputeStateMac(proto, mac_key_result.Unwrap());
+            auto _wipe_root = SodiumInterop::SecureWipe(std::span(root_key_bytes));
+            (void) _wipe_root;
+            if (mac_result.IsErr()) {
+                return Result<proto::protocol::RatchetState, EcliptixProtocolFailure>::Err(mac_result.UnwrapErr());
+            }
+            auto mac = mac_result.Unwrap();
+            proto.set_state_mac(mac.data(), mac.size());
             return Result<proto::protocol::RatchetState, EcliptixProtocolFailure>::Ok(std::move(proto));
         } catch (const std::exception &ex) {
             return Result<proto::protocol::RatchetState, EcliptixProtocolFailure>::Err(
@@ -1242,6 +1467,45 @@ namespace ecliptix::protocol::connection {
         RatchetConfig ratchet_config,
         PubKeyExchangeType exchange_type) {
         try {
+            if (proto.root_key().size() != Constants::X_25519_KEY_SIZE) {
+                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                    EcliptixProtocolFailure::Generic("Invalid root key size in stored state"));
+            }
+            if (proto.session_id().size() != 16) {
+                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                    EcliptixProtocolFailure::Generic("Invalid session_id size in stored state"));
+            }
+            if (!proto.peer_dh_public_key().empty() &&
+                proto.peer_dh_public_key().size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
+                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                    EcliptixProtocolFailure::Generic("Invalid peer DH public key size in stored state"));
+            }
+            if (proto.initial_sending_dh_public().empty() ||
+                proto.initial_sending_dh_public().size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
+                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                    EcliptixProtocolFailure::Generic(
+                        "Invalid or missing initial sending DH public key in stored state"));
+            }
+            std::vector<uint8_t> initial_sending_dh_public(
+                proto.initial_sending_dh_public().begin(),
+                proto.initial_sending_dh_public().end());
+            std::vector<uint8_t> current_sending_dh_public;
+            if (!proto.current_sending_dh_public().empty()) {
+                if (proto.current_sending_dh_public().size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
+                    return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                        EcliptixProtocolFailure::Generic("Invalid current sending DH public key size in stored state"));
+                }
+                current_sending_dh_public.assign(
+                    proto.current_sending_dh_public().begin(),
+                    proto.current_sending_dh_public().end());
+            } else {
+                current_sending_dh_public = initial_sending_dh_public;
+            }
+            auto mac_verify_result = VerifyStateMac(proto, connection_id);
+            if (mac_verify_result.IsErr()) {
+                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                    mac_verify_result.UnwrapErr());
+            }
             auto sending_step_result = EcliptixProtocolChainStep::FromProtoState(
                 ChainStepType::SENDER,
                 proto.sending_step());
@@ -1300,7 +1564,6 @@ namespace ecliptix::protocol::connection {
                     proto.peer_dh_public_key().end());
             }
             SecureMemoryHandle initial_sending_dh_private_handle;
-            std::vector<uint8_t> initial_sending_dh_public;
             SecureMemoryHandle current_sending_dh_private_handle;
             SecureMemoryHandle persistent_dh_private_handle;
             std::vector<uint8_t> persistent_dh_public;
@@ -1327,6 +1590,44 @@ namespace ecliptix::protocol::connection {
                     proto.is_first_receiving_ratchet()
                 )
             );
+            // Rehydrate current DH private/public material from the sending chain state
+            if (auto sender_dh_handle = sending_step.GetDhPrivateKeyHandle(); sender_dh_handle.has_value()) {
+                auto dh_bytes_result = (*sender_dh_handle)->ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
+                if (dh_bytes_result.IsErr()) {
+                    return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                        EcliptixProtocolFailure::FromSodiumFailure(dh_bytes_result.UnwrapErr()));
+                }
+                auto dh_copy = std::move(dh_bytes_result).Unwrap();
+                auto alloc_priv = SecureMemoryHandle::Allocate(Constants::X_25519_PRIVATE_KEY_SIZE);
+                if (alloc_priv.IsErr()) {
+                    SodiumInterop::SecureWipe(std::span(dh_copy));
+                    return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                        EcliptixProtocolFailure::FromSodiumFailure(alloc_priv.UnwrapErr()));
+                }
+                auto alloc_initial = SecureMemoryHandle::Allocate(Constants::X_25519_PRIVATE_KEY_SIZE);
+                if (alloc_initial.IsErr()) {
+                    SodiumInterop::SecureWipe(std::span(dh_copy));
+                    return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                        EcliptixProtocolFailure::FromSodiumFailure(alloc_initial.UnwrapErr()));
+                }
+                auto current_priv = std::move(alloc_priv).Unwrap();
+                auto initial_priv = std::move(alloc_initial).Unwrap();
+                auto write_priv = current_priv.Write(dh_copy);
+                if (write_priv.IsErr()) {
+                    SodiumInterop::SecureWipe(std::span(dh_copy));
+                    return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                        EcliptixProtocolFailure::FromSodiumFailure(write_priv.UnwrapErr()));
+                }
+                auto write_initial = initial_priv.Write(dh_copy);
+                SodiumInterop::SecureWipe(std::span(dh_copy));
+                if (write_initial.IsErr()) {
+                    return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                        EcliptixProtocolFailure::FromSodiumFailure(write_initial.UnwrapErr()));
+                }
+                connection->current_sending_dh_private_handle_ = std::move(current_priv);
+                connection->initial_sending_dh_private_handle_ = std::move(initial_priv);
+            }
+            connection->current_sending_dh_public_ = std::move(current_sending_dh_public);
             auto metadata_result = connection->DeriveMetadataEncryptionKey();
             if (metadata_result.IsErr()) {
                 return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(

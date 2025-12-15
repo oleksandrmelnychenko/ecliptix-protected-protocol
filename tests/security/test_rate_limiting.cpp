@@ -10,6 +10,25 @@ using namespace ecliptix::protocol;
 using namespace ecliptix::protocol::connection;
 using namespace ecliptix::protocol::crypto;
 
+static std::vector<uint8_t> MakeRateNonce(uint64_t idx) {
+    // Nonce structure (12 bytes total):
+    // Bytes [0-7]: Monotonic counter (use idx for test simplicity)
+    // Bytes [8-11]: Message index in little-endian format
+    std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE, 0);
+
+    // Set monotonic counter (bytes 0-7)
+    for (size_t i = 0; i < 8; ++i) {
+        nonce[i] = static_cast<uint8_t>((idx >> (i * 8)) & 0xFF);
+    }
+
+    // Set message index in little-endian (bytes 8-11)
+    for (size_t i = 0; i < 4; ++i) {
+        nonce[8 + i] = static_cast<uint8_t>((idx >> (i * 8)) & 0xFF);
+    }
+
+    return nonce;
+}
+
 TEST_CASE("Rate Limiting - Nonce Generation Rate Limit", "[security][rate_limiting][nonce]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
@@ -174,7 +193,7 @@ TEST_CASE("Rate Limiting - DH Ratchet Flood Protection", "[security][rate_limiti
             for (uint32_t i = 0; i < 100; ++i) {
                 auto prepare = alice->PrepareNextSendMessage();
                 if (prepare.IsOk()) {
-                    auto process = bob->ProcessReceivedMessage(attempt * 100 + i);
+                    auto process = bob->ProcessReceivedMessage(attempt * 100 + i, MakeRateNonce(attempt * 100 + i));
                     if (process.IsOk()) {
                         ++successful_ratchets;
                     }
@@ -217,7 +236,7 @@ TEST_CASE("Rate Limiting - DH Ratchet Rate Resets Per Minute", "[security][rate_
             for (uint32_t i = 0; i < 100; ++i) {
                 auto prepare = alice->PrepareNextSendMessage();
                 if (prepare.IsOk()) {
-                    auto process = bob->ProcessReceivedMessage(attempt * 100 + i);
+                    auto process = bob->ProcessReceivedMessage(attempt * 100 + i, MakeRateNonce(attempt * 100 + i));
                     if (process.IsOk()) {
                         ++first_window_ratchets;
                     }
@@ -321,7 +340,7 @@ TEST_CASE("Rate Limiting - DH Ratchet Independent of Message Count", "[security]
                 auto prepare = alice->PrepareNextSendMessage();
                 if (prepare.IsOk()) {
                     auto [key, include_dh] = std::move(prepare).Unwrap();
-                    auto process = bob->ProcessReceivedMessage(total_messages);
+                    auto process = bob->ProcessReceivedMessage(total_messages, MakeRateNonce(total_messages));
                     if (process.IsOk()) {
                         ++total_messages;
                         if (include_dh) {
@@ -376,7 +395,7 @@ TEST_CASE("Rate Limiting - Combined Nonce and DH Rate Limits", "[security][rate_
                 if (prepare.IsErr()) {
                     continue;
                 }
-                auto process = bob->ProcessReceivedMessage(i);
+                auto process = bob->ProcessReceivedMessage(i, MakeRateNonce(i));
                 if (process.IsErr()) {
                     continue;
                 }

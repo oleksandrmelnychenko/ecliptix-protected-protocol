@@ -17,6 +17,7 @@ TEST_CASE("SodiumInterop - Initialization", "[sodium][crypto]") {
         REQUIRE(result2.IsOk());
     }
 }
+
 TEST_CASE("SodiumInterop - Secure Wipe", "[sodium][crypto][security]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Wipe empty buffer succeeds") {
@@ -38,6 +39,7 @@ TEST_CASE("SodiumInterop - Secure Wipe", "[sodium][crypto][security]") {
         REQUIRE(SodiumInterop::MAX_BUFFER_SIZE > 0);
     }
 }
+
 TEST_CASE("SodiumInterop - Constant Time Comparison", "[sodium][crypto][security]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Equal buffers return true") {
@@ -69,6 +71,7 @@ TEST_CASE("SodiumInterop - Constant Time Comparison", "[sodium][crypto][security
         REQUIRE(result.Unwrap() == true);
     }
 }
+
 TEST_CASE("SodiumInterop - X25519 Key Generation", "[sodium][crypto][keygen]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Generate valid key pair") {
@@ -89,6 +92,7 @@ TEST_CASE("SodiumInterop - X25519 Key Generation", "[sodium][crypto][keygen]") {
         REQUIRE(pk1 != pk2);
     }
 }
+
 TEST_CASE("SodiumInterop - Ed25519 Key Generation", "[sodium][crypto][keygen]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Generate valid key pair") {
@@ -109,6 +113,7 @@ TEST_CASE("SodiumInterop - Ed25519 Key Generation", "[sodium][crypto][keygen]") 
         REQUIRE(pk1 != pk2);
     }
 }
+
 TEST_CASE("SodiumInterop - Random Number Generation", "[sodium][crypto][random]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("GetRandomBytes generates correct size") {

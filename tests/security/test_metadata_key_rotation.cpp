@@ -14,6 +14,27 @@ using namespace ecliptix::protocol::crypto;
 using namespace ecliptix::protocol::utilities;
 using namespace ecliptix::proto::common;
 
+// Helper to create unique nonces with proper chain index binding
+// nonce_counter: Unique monotonic counter for nonce uniqueness (bytes 0-7)
+// message_index: Message index within current chain (bytes 8-11)
+//
+// IMPORTANT: For replay protection to work correctly across DH ratchets:
+// - nonce_counter MUST be globally unique (never reset)
+// - message_index resets to 0 after each DH ratchet
+// - The combination (nonce_counter, message_index) must be unique
+static std::vector<uint8_t> MakeMetaNonce(uint64_t nonce_counter, uint32_t message_index) {
+    std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE, 0);
+    // Bytes 0-7: nonce counter for global uniqueness (NEVER resets)
+    for (size_t i = 0; i < 8; ++i) {
+        nonce[i] = static_cast<uint8_t>((nonce_counter >> (i * 8)) & 0xFF);
+    }
+    // Bytes 8-11: message index within current chain (resets on DH ratchet)
+    for (size_t i = 0; i < 4; ++i) {
+        nonce[8 + i] = static_cast<uint8_t>((message_index >> (i * 8)) & 0xFF);
+    }
+    return nonce;
+}
+
 TEST_CASE("Metadata Key Rotation - Basic Rotation on DH Ratchet", "[security][metadata_rotation]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
@@ -47,11 +68,34 @@ TEST_CASE("Metadata Key Rotation - Basic Rotation on DH Ratchet", "[security][me
         REQUIRE(encrypted1_result.IsOk());
         auto encrypted1 = std::move(encrypted1_result).Unwrap();
 
-        for (uint32_t i = 0; i < 100; ++i) {
+        uint64_t nonce_counter = 0;
+        bool ratchet_occurred = false;
+        uint32_t iteration_count = 0;
+        uint32_t last_index = 0;
+        // Loop to 101 to trigger DH ratchet at message index 100
+        for (uint32_t i = 0; i <= 100; ++i) {
+            iteration_count++;
             auto prepare = alice->PrepareNextSendMessage();
             REQUIRE(prepare.IsOk());
-            REQUIRE(bob->ProcessReceivedMessage(i).IsOk());
+            auto [alice_key, include_dh] = std::move(prepare).Unwrap();
+            last_index = alice_key.Index();
+            if (include_dh) {
+                ratchet_occurred = true;
+                auto alice_new_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
+                auto ratchet_result = bob->PerformReceivingRatchet(alice_new_dh);
+                if (ratchet_result.IsErr()) {
+                    FAIL(ratchet_result.UnwrapErr().message);
+                }
+            }
+            auto proc = bob->ProcessReceivedMessage(alice_key.Index(), MakeMetaNonce(nonce_counter++, alice_key.Index()));
+            if (proc.IsErr()) {
+                FAIL(proc.UnwrapErr().message);
+            }
         }
+
+        INFO("Iteration count: " << iteration_count << ", Last index: " << last_index);
+        REQUIRE(iteration_count == 101);
+        REQUIRE(ratchet_occurred);
 
         auto rotated_metadata_key = alice->GetMetadataEncryptionKey().Unwrap();
 
@@ -90,11 +134,18 @@ TEST_CASE("Metadata Key Rotation - Forward Secrecy", "[security][metadata_rotati
         std::vector<std::vector<uint8_t>> metadata_keys;
         metadata_keys.push_back(alice->GetMetadataEncryptionKey().Unwrap());
 
+        uint64_t nonce_counter = 0;
         for (uint32_t ratchet = 0; ratchet < 5; ++ratchet) {
-            for (uint32_t i = 0; i < 100; ++i) {
+            // Loop to 101 to trigger DH ratchet at message index 100
+            for (uint32_t i = 0; i <= 100; ++i) {
                 auto prepare = alice->PrepareNextSendMessage();
                 REQUIRE(prepare.IsOk());
-                REQUIRE(bob->ProcessReceivedMessage(i).IsOk());
+                auto [alice_key, include_dh] = std::move(prepare).Unwrap();
+                if (include_dh) {
+                    auto alice_new_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
+                    REQUIRE(bob->PerformReceivingRatchet(alice_new_dh).IsOk());
+                }
+                REQUIRE(bob->ProcessReceivedMessage(alice_key.Index(), MakeMetaNonce(nonce_counter++, alice_key.Index())).IsOk());
             }
             metadata_keys.push_back(alice->GetMetadataEncryptionKey().Unwrap());
         }
@@ -153,11 +204,18 @@ TEST_CASE("Metadata Key Rotation - Uniqueness Across Ratchets", "[security][meta
         std::set<std::vector<uint8_t>> observed_keys;
         observed_keys.insert(alice->GetMetadataEncryptionKey().Unwrap());
 
+        uint64_t nonce_counter = 0;
         for (uint32_t ratchet = 0; ratchet < 50; ++ratchet) {
-            for (uint32_t i = 0; i < 100; ++i) {
+            // Loop to 101 to trigger DH ratchet at message index 100
+            for (uint32_t i = 0; i <= 100; ++i) {
                 auto prepare = alice->PrepareNextSendMessage();
                 REQUIRE(prepare.IsOk());
-                auto process = bob->ProcessReceivedMessage(i);
+                auto [alice_key, include_dh] = std::move(prepare).Unwrap();
+                if (include_dh) {
+                    auto alice_new_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
+                    REQUIRE(bob->PerformReceivingRatchet(alice_new_dh).IsOk());
+                }
+                auto process = bob->ProcessReceivedMessage(alice_key.Index(), MakeMetaNonce(nonce_counter++, alice_key.Index()));
                 REQUIRE(process.IsOk());
             }
 
@@ -199,6 +257,7 @@ TEST_CASE("Metadata Key Rotation - Decryption Window", "[security][metadata_rota
 
         std::vector<EncryptedMessage> messages;
 
+        uint64_t nonce_counter = 0;
         for (uint32_t ratchet = 0; ratchet < 10; ++ratchet) {
             auto current_key = alice->GetMetadataEncryptionKey().Unwrap();
 
@@ -214,10 +273,16 @@ TEST_CASE("Metadata Key Rotation - Decryption Window", "[security][metadata_rota
 
             messages.push_back({encrypted, header_nonce, aad, current_key});
 
-            for (uint32_t i = 0; i < 100; ++i) {
+            // Loop to 101 to trigger DH ratchet at message index 100
+            for (uint32_t i = 0; i <= 100; ++i) {
                 auto prepare = alice->PrepareNextSendMessage();
                 REQUIRE(prepare.IsOk());
-                REQUIRE(bob->ProcessReceivedMessage(i).IsOk());
+                auto [alice_key, include_dh] = std::move(prepare).Unwrap();
+                if (include_dh) {
+                    auto alice_new_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
+                    REQUIRE(bob->PerformReceivingRatchet(alice_new_dh).IsOk());
+                }
+                REQUIRE(bob->ProcessReceivedMessage(alice_key.Index(), MakeMetaNonce(nonce_counter++, alice_key.Index())).IsOk());
             }
         }
 
@@ -270,11 +335,18 @@ TEST_CASE("Metadata Key Rotation - High-Frequency Ratchets", "[security][metadat
         auto initial_key = alice->GetMetadataEncryptionKey().Unwrap();
         observed_keys.insert(initial_key);
 
+        uint64_t nonce_counter = 0;
         for (uint32_t ratchet = 0; ratchet < 100; ++ratchet) {
-            for (uint32_t i = 0; i < 100; ++i) {
+            // Loop to 101 to trigger DH ratchet at message index 100
+            for (uint32_t i = 0; i <= 100; ++i) {
                 auto prepare = alice->PrepareNextSendMessage();
                 REQUIRE(prepare.IsOk());
-                REQUIRE(bob->ProcessReceivedMessage(i).IsOk());
+                auto [alice_key, include_dh] = std::move(prepare).Unwrap();
+                if (include_dh) {
+                    auto alice_new_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
+                    REQUIRE(bob->PerformReceivingRatchet(alice_new_dh).IsOk());
+                }
+                REQUIRE(bob->ProcessReceivedMessage(alice_key.Index(), MakeMetaNonce(nonce_counter++, alice_key.Index())).IsOk());
             }
 
             auto current_key = alice->GetMetadataEncryptionKey().Unwrap();
@@ -312,8 +384,12 @@ TEST_CASE("Metadata Key Rotation - Bidirectional Ratchets", "[security][metadata
         alice_keys.push_back(alice->GetMetadataEncryptionKey().Unwrap());
         bob_keys.push_back(bob->GetMetadataEncryptionKey().Unwrap());
 
+        uint64_t alice_nonce_counter = 0;
+        uint64_t bob_nonce_counter = 0;
+
         for (uint32_t round = 0; round < 20; ++round) {
-            for (uint32_t i = 0; i < 100; ++i) {
+            // Loop to 101 to trigger DH ratchet at message index 100
+            for (uint32_t i = 0; i <= 100; ++i) {
                 auto prepare = alice->PrepareNextSendMessage();
                 REQUIRE(prepare.IsOk());
                 auto [key, include_dh] = prepare.Unwrap();
@@ -321,11 +397,12 @@ TEST_CASE("Metadata Key Rotation - Bidirectional Ratchets", "[security][metadata
                     auto alice_new_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
                     REQUIRE(bob->PerformReceivingRatchet(alice_new_dh).IsOk());
                 }
-                REQUIRE(bob->ProcessReceivedMessage(i).IsOk());
+                REQUIRE(bob->ProcessReceivedMessage(key.Index(), MakeMetaNonce(alice_nonce_counter++, key.Index())).IsOk());
             }
             alice_keys.push_back(alice->GetMetadataEncryptionKey().Unwrap());
 
-            for (uint32_t i = 0; i < 100; ++i) {
+            // Loop to 101 to trigger DH ratchet at message index 100
+            for (uint32_t i = 0; i <= 100; ++i) {
                 auto prepare = bob->PrepareNextSendMessage();
                 REQUIRE(prepare.IsOk());
                 auto [key, include_dh] = prepare.Unwrap();
@@ -333,7 +410,7 @@ TEST_CASE("Metadata Key Rotation - Bidirectional Ratchets", "[security][metadata
                     auto bob_new_dh = bob->GetCurrentSenderDhPublicKey().Unwrap().value();
                     REQUIRE(alice->PerformReceivingRatchet(bob_new_dh).IsOk());
                 }
-                REQUIRE(alice->ProcessReceivedMessage(i).IsOk());
+                REQUIRE(alice->ProcessReceivedMessage(key.Index(), MakeMetaNonce(bob_nonce_counter++, key.Index())).IsOk());
             }
             bob_keys.push_back(bob->GetMetadataEncryptionKey().Unwrap());
         }
@@ -386,6 +463,7 @@ TEST_CASE("Metadata Key Rotation - Key Derivation Independence", "[security][met
         auto metadata_key_before = alice->GetMetadataEncryptionKey().Unwrap();
 
         std::vector<std::vector<uint8_t>> message_keys;
+        uint64_t nonce_counter = 0;
         for (uint32_t i = 0; i < 50; ++i) {
             auto prepare = alice->PrepareNextSendMessage();
             REQUIRE(prepare.IsOk());
@@ -401,7 +479,7 @@ TEST_CASE("Metadata Key Rotation - Key Derivation Independence", "[security][met
             REQUIRE(extract_result.IsOk());
             message_keys.push_back(std::move(extract_result).Unwrap());
 
-            REQUIRE(bob->ProcessReceivedMessage(i).IsOk());
+            REQUIRE(bob->ProcessReceivedMessage(key.Index(), MakeMetaNonce(nonce_counter++, key.Index())).IsOk());
         }
 
         auto metadata_key_after = alice->GetMetadataEncryptionKey().Unwrap();

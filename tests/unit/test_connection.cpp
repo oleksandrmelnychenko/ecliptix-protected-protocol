@@ -16,6 +16,25 @@ using namespace ecliptix::protocol::connection;
 using namespace ecliptix::protocol::crypto;
 using namespace ecliptix::protocol::models;
 using namespace ecliptix::protocol::enums;
+
+static std::vector<uint8_t> MakeTestNonce(uint64_t idx) {
+    // Nonce structure (12 bytes total):
+    // Bytes [0-7]: Monotonic counter (use idx for test simplicity)
+    // Bytes [8-11]: Message index in little-endian format
+    std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE, 0);
+
+    // Set monotonic counter (bytes 0-7)
+    for (size_t i = 0; i < 8; ++i) {
+        nonce[i] = static_cast<uint8_t>((idx >> (i * 8)) & 0xFF);
+    }
+
+    // Set message index in little-endian (bytes 8-11)
+    for (size_t i = 0; i < 4; ++i) {
+        nonce[8 + i] = static_cast<uint8_t>((idx >> (i * 8)) & 0xFF);
+    }
+
+    return nonce;
+}
 class MockEventHandler : public IProtocolEventHandler {
 public:
     void OnProtocolStateChanged(uint32_t connect_id) override {
@@ -241,7 +260,7 @@ TEST_CASE("EcliptixProtocolConnection - Message preparation", "[connection]") {
         auto prepare_result = conn->PrepareNextSendMessage();
         REQUIRE(prepare_result.IsOk());
         auto [ratchet_key, include_dh] = prepare_result.Unwrap();
-        REQUIRE(ratchet_key.Index() == 1);  
+        REQUIRE(ratchet_key.Index() == 0);  // First message has index 0  
     }
     SECTION("Multiple message preparation increments index") {
         auto conn_result = EcliptixProtocolConnection::Create(1, true);
@@ -259,9 +278,9 @@ TEST_CASE("EcliptixProtocolConnection - Message preparation", "[connection]") {
         REQUIRE(msg1.IsOk());
         REQUIRE(msg2.IsOk());
         REQUIRE(msg3.IsOk());
-        REQUIRE(msg1.Unwrap().first.Index() == 1);
-        REQUIRE(msg2.Unwrap().first.Index() == 2);
-        REQUIRE(msg3.Unwrap().first.Index() == 3);
+        REQUIRE(msg1.Unwrap().first.Index() == 0);  // Message indices start at 0
+        REQUIRE(msg2.Unwrap().first.Index() == 1);
+        REQUIRE(msg3.Unwrap().first.Index() == 2);
     }
 }
 TEST_CASE("EcliptixProtocolConnection - Message processing", "[connection]") {
@@ -270,7 +289,7 @@ TEST_CASE("EcliptixProtocolConnection - Message processing", "[connection]") {
         auto conn_result = EcliptixProtocolConnection::Create(1, false);
         REQUIRE(conn_result.IsOk());
         auto conn = std::move(conn_result).Unwrap();
-        auto process_result = conn->ProcessReceivedMessage(1);
+        auto process_result = conn->ProcessReceivedMessage(1, MakeTestNonce(1));
         REQUIRE(process_result.IsErr());
     }
     SECTION("Process message after finalization succeeds") {
@@ -283,7 +302,7 @@ TEST_CASE("EcliptixProtocolConnection - Message processing", "[connection]") {
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
         auto finalize_result = conn->FinalizeChainAndDhKeys(root_key, peer_pk);
         REQUIRE(finalize_result.IsOk());
-        auto process_result = conn->ProcessReceivedMessage(0);
+        auto process_result = conn->ProcessReceivedMessage(0, MakeTestNonce(0));
         REQUIRE(process_result.IsOk());
         auto ratchet_key = process_result.Unwrap();
         REQUIRE(ratchet_key.Index() == 0);
@@ -395,11 +414,11 @@ TEST_CASE("EcliptixProtocolConnection - SyncWithRemoteState", "[connection]") {
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
         auto finalize_result = conn->FinalizeChainAndDhKeys(root_key, peer_pk);
         REQUIRE(finalize_result.IsOk());
-        auto msg0 = conn->ProcessReceivedMessage(0);
+        auto msg0 = conn->ProcessReceivedMessage(0, MakeTestNonce(0));
         REQUIRE(msg0.IsOk());
         auto sync_result = conn->SyncWithRemoteState(10, 0);
         REQUIRE(sync_result.IsOk());
-        auto msg10 = conn->ProcessReceivedMessage(10);
+        auto msg10 = conn->ProcessReceivedMessage(10, MakeTestNonce(10));
         REQUIRE(msg10.IsOk());
     }
     SECTION("Sync advances sending chain") {
@@ -414,12 +433,12 @@ TEST_CASE("EcliptixProtocolConnection - SyncWithRemoteState", "[connection]") {
         REQUIRE(finalize_result.IsOk());
         auto msg1 = conn->PrepareNextSendMessage();
         REQUIRE(msg1.IsOk());
-        REQUIRE(msg1.Unwrap().first.Index() == 1);
+        REQUIRE(msg1.Unwrap().first.Index() == 0);  // First message has index 0
         auto sync_result = conn->SyncWithRemoteState(0, 6);
         REQUIRE(sync_result.IsOk());
         auto msg_next = conn->PrepareNextSendMessage();
         REQUIRE(msg_next.IsOk());
-        REQUIRE(msg_next.Unwrap().first.Index() == 7);
+        REQUIRE(msg_next.Unwrap().first.Index() == 6);  // Synced to index 6
     }
     SECTION("Reject sync with gap too large") {
         auto conn_result = EcliptixProtocolConnection::Create(1, true);
@@ -559,9 +578,9 @@ TEST_CASE("EcliptixProtocolConnection - Reflection Attack Protection", "[connect
         REQUIRE(finalize_result.IsOk());
     }
 }
-TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: Nonce Counter Reset After Ratchet", "[connection][security][sprint1.5b]") {
+TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: Nonce Counter Never Resets (CVE Fix)", "[connection][security][sprint1.5b]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
-    SECTION("Nonce counter resets to 0 after DH ratchet") {
+    SECTION("Nonce counter continues monotonically after DH ratchet (CVE-2024-XXXXX fix)") {
         auto conn_result = EcliptixProtocolConnection::Create(1, true);
         REQUIRE(conn_result.IsOk());
         auto conn = std::move(conn_result).Unwrap();
@@ -595,7 +614,10 @@ TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: Nonce Counter Reset After R
         for (size_t i = 0; i < 4; ++i) {
             counter_after_ratchet |= static_cast<uint32_t>(nonce2_bytes[8 + i]) << (i * 8);
         }
-        REQUIRE(counter_after_ratchet < 10);
+        // CVE FIX: Nonce counter MUST continue monotonically and NEVER reset
+        // This prevents nonce reuse across ratchet epochs which could break AEAD security
+        REQUIRE(counter_after_ratchet > counter_before_ratchet);
+        REQUIRE(counter_after_ratchet >= 101);
     }
     SECTION("Ratchet warning flag resets after DH ratchet") {
         auto handler = std::make_shared<MockEventHandler>();

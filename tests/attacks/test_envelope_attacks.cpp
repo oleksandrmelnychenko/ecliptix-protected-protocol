@@ -15,6 +15,14 @@ using namespace ecliptix::protocol::crypto;
 using namespace ecliptix::protocol::utilities;
 using namespace ecliptix::proto::common;
 
+static std::vector<uint8_t> MakeBoundNonce(uint32_t index, uint8_t fill = 0x42) {
+    std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE, fill);
+    for (size_t i = 0; i < 4; ++i) {
+        nonce[8 + i] = static_cast<uint8_t>((index >> (i * 8)) & 0xFF);
+    }
+    return nonce;
+}
+
 struct AttackTestContext {
     std::unique_ptr<EcliptixProtocolConnection> alice;
     std::unique_ptr<EcliptixProtocolConnection> bob;
@@ -247,15 +255,16 @@ TEST_CASE("Attacks - Envelope Replay Protection", "[attacks][envelope][replay]")
 
         for (uint32_t i = 0; i < MESSAGE_COUNT; ++i) {
             const uint32_t msg_index = i % 1000;
+            std::vector<uint8_t> nonce = MakeBoundNonce(msg_index, static_cast<uint8_t>(msg_index & 0xFF));
 
             if (processed_indices.find(msg_index) == processed_indices.end()) {
-                auto bob_key = ctx.bob->ProcessReceivedMessage(msg_index);
+                auto bob_key = ctx.bob->ProcessReceivedMessage(msg_index, nonce);
                 if (bob_key.IsOk()) {
                     ++successful_first_process;
                     processed_indices.insert(msg_index);
                 }
             } else {
-                auto bob_key_reuse = ctx.bob->ProcessReceivedMessage(msg_index);
+                auto bob_key_reuse = ctx.bob->ProcessReceivedMessage(msg_index, nonce);
                 if (bob_key_reuse.IsErr()) {
                     ++blocked_reuse_attempts;
                 }
@@ -350,7 +359,7 @@ TEST_CASE("Attacks - Payload Truncation and Padding", "[attacks][envelope][trunc
                 encrypted.resize(encrypted.size() / 2);
             }
 
-            auto bob_key_result = ctx.bob->ProcessReceivedMessage(i);
+            auto bob_key_result = ctx.bob->ProcessReceivedMessage(i, MakeBoundNonce(i, nonce[0]));
             REQUIRE(bob_key_result.IsOk());
             auto bob_key = std::move(bob_key_result).Unwrap();
 
@@ -399,7 +408,7 @@ TEST_CASE("Attacks - Payload Truncation and Padding", "[attacks][envelope][trunc
             encrypted.push_back(0xFE);
             encrypted.push_back(0xFD);
 
-            auto bob_key_result = ctx.bob->ProcessReceivedMessage(i);
+            auto bob_key_result = ctx.bob->ProcessReceivedMessage(i, MakeBoundNonce(i, nonce[0]));
             REQUIRE(bob_key_result.IsOk());
             auto bob_key = std::move(bob_key_result).Unwrap();
 

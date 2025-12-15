@@ -8,6 +8,8 @@
 #include <vector>
 #include <random>
 #include <cstring>
+#include <iomanip>
+#include <iostream>
 
 using namespace ecliptix::protocol;
 using namespace ecliptix::protocol::connection;
@@ -166,9 +168,22 @@ TEST_CASE("Fuzzing - Random Payload Sizes", "[fuzzing][envelope][payload]") {
             if (alice_prepare.IsErr()) continue;
             auto [alice_key, include_dh] = std::move(alice_prepare).Unwrap();
 
+            // Handle DH ratchet if needed (unlikely with MESSAGE_COUNT=100, but for correctness)
+            if (include_dh) {
+                auto alice_dh_pub = alice->GetCurrentSenderDhPublicKey();
+                if (alice_dh_pub.IsErr() || !alice_dh_pub.Unwrap().has_value()) continue;
+                auto ratchet_result = bob->PerformReceivingRatchet(*alice_dh_pub.Unwrap());
+                if (ratchet_result.IsErr()) continue;
+            }
+
             auto nonce_result = alice->GenerateNextNonce();
             if (nonce_result.IsErr()) continue;
             auto nonce = std::move(nonce_result).Unwrap();
+
+            // Embed chain index in nonce bytes 8-11 for nonce/index binding validation
+            for (size_t b = 0; b < 4 && b + 8 < nonce.size(); ++b) {
+                nonce[8 + b] = static_cast<uint8_t>((alice_key.Index() >> (b * 8)) & 0xFF);
+            }
 
             auto encrypted_result = alice_key.WithKeyMaterial<std::vector<uint8_t>>(
                 [&](std::span<const uint8_t> key) {
@@ -178,7 +193,7 @@ TEST_CASE("Fuzzing - Random Payload Sizes", "[fuzzing][envelope][payload]") {
             if (encrypted_result.IsErr()) continue;
             auto encrypted = std::move(encrypted_result).Unwrap();
 
-            auto bob_key_result = bob->ProcessReceivedMessage(i);
+            auto bob_key_result = bob->ProcessReceivedMessage(alice_key.Index(), nonce);
             if (bob_key_result.IsErr()) continue;
             auto bob_key = std::move(bob_key_result).Unwrap();
 
@@ -335,7 +350,8 @@ TEST_CASE("Fuzzing - Boundary Value Testing", "[fuzzing][envelope][boundaries]")
         uint32_t processed_edge_cases = 0;
 
         for (const uint32_t index : edge_indices) {
-            auto process_result = conn->ProcessReceivedMessage(index);
+            std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE, static_cast<uint8_t>(index & 0xFF));
+            auto process_result = conn->ProcessReceivedMessage(index, nonce);
             if (process_result.IsOk()) {
                 ++processed_edge_cases;
             }
@@ -376,9 +392,22 @@ TEST_CASE("Fuzzing - Random Bit Flips in Ciphertext", "[fuzzing][envelope][bitfl
             if (alice_prepare.IsErr()) continue;
             auto [alice_key, include_dh] = std::move(alice_prepare).Unwrap();
 
+            // Handle DH ratchet if needed
+            if (include_dh) {
+                auto alice_dh_pub = alice->GetCurrentSenderDhPublicKey();
+                if (alice_dh_pub.IsErr() || !alice_dh_pub.Unwrap().has_value()) continue;
+                auto ratchet_result = bob->PerformReceivingRatchet(*alice_dh_pub.Unwrap());
+                if (ratchet_result.IsErr()) continue;
+            }
+
             auto nonce_result = alice->GenerateNextNonce();
             if (nonce_result.IsErr()) continue;
             auto nonce = std::move(nonce_result).Unwrap();
+
+            // Embed chain index in nonce bytes 8-11 for nonce/index binding validation
+            for (size_t b = 0; b < 4 && b + 8 < nonce.size(); ++b) {
+                nonce[8 + b] = static_cast<uint8_t>((alice_key.Index() >> (b * 8)) & 0xFF);
+            }
 
             const std::vector<uint8_t> plaintext{0xDE, 0xAD, 0xBE, 0xEF};
 
@@ -399,7 +428,7 @@ TEST_CASE("Fuzzing - Random Bit Flips in Ciphertext", "[fuzzing][envelope][bitfl
 
                 encrypted[flip_byte] ^= (1 << flip_bit);
 
-                auto bob_key_result = bob->ProcessReceivedMessage(i);
+                auto bob_key_result = bob->ProcessReceivedMessage(alice_key.Index(), nonce);
                 if (bob_key_result.IsErr()) continue;
                 auto bob_key = std::move(bob_key_result).Unwrap();
 
@@ -444,30 +473,89 @@ TEST_CASE("Fuzzing - Empty and Null Inputs", "[fuzzing][envelope][empty]") {
 
         for (uint32_t i = 0; i < TEST_COUNT; ++i) {
             auto alice_prepare = alice->PrepareNextSendMessage();
-            if (alice_prepare.IsErr()) continue;
+            if (alice_prepare.IsErr()) break;
             auto [alice_key, include_dh] = std::move(alice_prepare).Unwrap();
 
+            // Handle DH ratchet if needed
+            if (include_dh) {
+                auto alice_dh_pub = alice->GetCurrentSenderDhPublicKey();
+                if (alice_dh_pub.IsErr() || !alice_dh_pub.Unwrap().has_value()) break;
+
+                auto ratchet_result = bob->PerformReceivingRatchet(*alice_dh_pub.Unwrap());
+                if (ratchet_result.IsErr()) break;
+            }
+
             auto nonce_result = alice->GenerateNextNonce();
-            if (nonce_result.IsErr()) continue;
+            if (nonce_result.IsErr()) break;
             auto nonce = std::move(nonce_result).Unwrap();
+
+            // Embed chain index in nonce bytes 8-11 for nonce/index binding validation
+            for (size_t b = 0; b < 4 && b + 8 < nonce.size(); ++b) {
+                nonce[8 + b] = static_cast<uint8_t>((alice_key.Index() >> (b * 8)) & 0xFF);
+            }
+
+            if (i >= 99 && i <= 102) {
+                std::cerr << "Nonce: ";
+                for (size_t j = 0; j < std::min(size_t(12), nonce.size()); ++j) {
+                    std::cerr << std::hex << std::setfill('0') << std::setw(2) << (int)nonce[j] << " ";
+                }
+                std::cerr << std::dec << std::endl;
+            }
 
             const std::vector<uint8_t> empty_payload{};
             const std::vector<uint8_t> empty_aad{};
 
+            // Capture Alice's encryption key
+            std::vector<uint8_t> alice_key_bytes;
             auto encrypted_result = alice_key.WithKeyMaterial<std::vector<uint8_t>>(
                 [&](std::span<const uint8_t> key) {
+                    if (i >= 99 && i <= 102) {
+                        alice_key_bytes.assign(key.begin(), key.end());
+                        std::cerr << "Alice encryption key (first 8 bytes): ";
+                        for (size_t j = 0; j < std::min(size_t(8), key.size()); ++j) {
+                            std::cerr << std::hex << std::setfill('0') << std::setw(2) << (int)key[j] << " ";
+                        }
+                        std::cerr << std::dec << std::endl;
+                    }
                     return AesGcm::Encrypt(key, nonce, empty_payload, empty_aad);
                 }
             );
-            if (encrypted_result.IsErr()) continue;
+            if (encrypted_result.IsErr()) {
+                if (i >= 99 && i <= 102) {
+                    std::cerr << "Encryption FAILED: " << encrypted_result.UnwrapErr().message << std::endl;
+                }
+                break;
+            }
             auto encrypted = std::move(encrypted_result).Unwrap();
 
-            auto bob_key_result = bob->ProcessReceivedMessage(i);
-            if (bob_key_result.IsErr()) continue;
+            if (i >= 99 && i <= 102) {
+                std::cerr << "Encrypted size: " << encrypted.size() << std::endl;
+            }
+
+            auto bob_key_result = bob->ProcessReceivedMessage(alice_key.Index(), nonce);
+            if (bob_key_result.IsErr()) {
+                if (i >= 99 && i <= 102) {
+                    std::cerr << "Bob ProcessReceivedMessage FAILED: " << bob_key_result.UnwrapErr().message << std::endl;
+                }
+                break;
+            }
             auto bob_key = std::move(bob_key_result).Unwrap();
 
+            // Capture Bob's decryption key
             auto decrypted_result = bob_key.WithKeyMaterial<std::vector<uint8_t>>(
                 [&](std::span<const uint8_t> key) {
+                    if (i >= 99 && i <= 102) {
+                        std::cerr << "Bob decryption key (first 8 bytes): ";
+                        for (size_t j = 0; j < std::min(size_t(8), key.size()); ++j) {
+                            std::cerr << std::hex << std::setfill('0') << std::setw(2) << (int)key[j] << " ";
+                        }
+                        std::cerr << std::dec << std::endl;
+
+                        // Compare keys
+                        bool keys_match = (key.size() == alice_key_bytes.size() &&
+                                         std::equal(key.begin(), key.end(), alice_key_bytes.begin()));
+                        std::cerr << "Keys match: " << (keys_match ? "YES" : "NO") << std::endl;
+                    }
                     return AesGcm::Decrypt(key, nonce, encrypted, empty_aad);
                 }
             );
@@ -476,6 +564,13 @@ TEST_CASE("Fuzzing - Empty and Null Inputs", "[fuzzing][envelope][empty]") {
                 auto decrypted = std::move(decrypted_result).Unwrap();
                 if (decrypted == empty_payload) {
                     ++successful_empty_payload;
+                    if (i >= 99 && i <= 102) {
+                        std::cerr << "Decryption SUCCESS" << std::endl;
+                    }
+                }
+            } else {
+                if (i >= 99 && i <= 102) {
+                    std::cerr << "Decryption FAILED: " << decrypted_result.UnwrapErr().message << std::endl;
                 }
             }
         }

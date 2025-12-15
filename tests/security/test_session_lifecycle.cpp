@@ -10,6 +10,25 @@ using namespace ecliptix::protocol;
 using namespace ecliptix::protocol::connection;
 using namespace ecliptix::protocol::crypto;
 
+static std::vector<uint8_t> MakeNonce(uint64_t idx) {
+    // Nonce structure (12 bytes total):
+    // Bytes [0-7]: Monotonic counter (use idx for test simplicity)
+    // Bytes [8-11]: Message index in little-endian format
+    std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE, 0);
+
+    // Set monotonic counter (bytes 0-7)
+    for (size_t i = 0; i < 8; ++i) {
+        nonce[i] = static_cast<uint8_t>((idx >> (i * 8)) & 0xFF);
+    }
+
+    // Set message index in little-endian (bytes 8-11)
+    for (size_t i = 0; i < 4; ++i) {
+        nonce[8 + i] = static_cast<uint8_t>((idx >> (i * 8)) & 0xFF);
+    }
+
+    return nonce;
+}
+
 TEST_CASE("Session Lifecycle - PrepareNextSendMessage Respects Timeout", "[security][session][timeout]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
@@ -88,7 +107,7 @@ TEST_CASE("Session Lifecycle - ProcessReceivedMessage Respects Timeout", "[secur
         REQUIRE(alice->FinalizeChainAndDhKeys(root_key, bob_dh).IsOk());
         REQUIRE(bob->FinalizeChainAndDhKeys(root_key, alice_dh).IsOk());
 
-        auto process_before = bob->ProcessReceivedMessage(0);
+        auto process_before = bob->ProcessReceivedMessage(0, MakeNonce(0x00));
         REQUIRE(process_before.IsOk());
 
 #ifdef ECLIPTIX_TEST_BUILD
@@ -97,7 +116,7 @@ TEST_CASE("Session Lifecycle - ProcessReceivedMessage Respects Timeout", "[secur
         std::this_thread::sleep_for(std::chrono::hours(24) + std::chrono::seconds(1));
 #endif
 
-        auto process_after = bob->ProcessReceivedMessage(1);
+        auto process_after = bob->ProcessReceivedMessage(1, MakeNonce(0x01));
         REQUIRE(process_after.IsErr());
     }
 }
@@ -129,7 +148,7 @@ TEST_CASE("Session Lifecycle - Multiple Operations Before Timeout", "[security][
             auto prepare = alice->PrepareNextSendMessage();
             REQUIRE(prepare.IsOk());
 
-            auto process = bob->ProcessReceivedMessage(i);
+            auto process = bob->ProcessReceivedMessage(i, MakeNonce(static_cast<uint8_t>(i & 0xFF)));
             REQUIRE(process.IsOk());
         }
     }
@@ -155,7 +174,11 @@ TEST_CASE("Session Lifecycle - All Operations Fail After Timeout", "[security][s
         REQUIRE(alice->FinalizeChainAndDhKeys(root_key, bob_dh).IsOk());
         REQUIRE(bob->FinalizeChainAndDhKeys(root_key, alice_dh).IsOk());
 
+#ifdef ECLIPTIX_TEST_BUILD
+        std::this_thread::sleep_for(std::chrono::seconds(6));
+#else
         std::this_thread::sleep_for(std::chrono::hours(24) + std::chrono::seconds(1));
+#endif
 
         auto nonce = alice->GenerateNextNonce();
         REQUIRE(nonce.IsErr());
@@ -163,7 +186,7 @@ TEST_CASE("Session Lifecycle - All Operations Fail After Timeout", "[security][s
         auto prepare = alice->PrepareNextSendMessage();
         REQUIRE(prepare.IsErr());
 
-        auto process = bob->ProcessReceivedMessage(0);
+        auto process = bob->ProcessReceivedMessage(0, MakeNonce(0x00));
         REQUIRE(process.IsErr());
     }
 }
@@ -183,7 +206,11 @@ TEST_CASE("Session Lifecycle - Timeout Boundary Test", "[security][session][time
 
         REQUIRE(conn->FinalizeChainAndDhKeys(root_key, peer_pk).IsOk());
 
+#ifdef ECLIPTIX_TEST_BUILD
+        std::this_thread::sleep_for(std::chrono::seconds(3));  // Well before 5-second timeout
+#else
         std::this_thread::sleep_for(std::chrono::hours(23) + std::chrono::minutes(59));
+#endif
 
         auto nonce = conn->GenerateNextNonce();
         REQUIRE(nonce.IsOk());
@@ -208,7 +235,11 @@ TEST_CASE("Session Lifecycle - Independent Connection Timeouts", "[security][ses
 
         REQUIRE(conn1->FinalizeChainAndDhKeys(root_key, peer1_pk).IsOk());
 
+#ifdef ECLIPTIX_TEST_BUILD
+        std::this_thread::sleep_for(std::chrono::seconds(6));
+#else
         std::this_thread::sleep_for(std::chrono::hours(24) + std::chrono::seconds(1));
+#endif
 
         auto conn2_result = EcliptixProtocolConnection::Create(2, false);
         REQUIRE(conn2_result.IsOk());
@@ -249,7 +280,11 @@ TEST_CASE("Session Lifecycle - Concurrent Timeout Checks", "[security][session][
 
         REQUIRE(conn->FinalizeChainAndDhKeys(root_key, peer_pk).IsOk());
 
+#ifdef ECLIPTIX_TEST_BUILD
+        std::this_thread::sleep_for(std::chrono::seconds(6));
+#else
         std::this_thread::sleep_for(std::chrono::hours(24) + std::chrono::seconds(1));
+#endif
 
         std::atomic<uint32_t> failed_operations{0};
         std::atomic<uint32_t> successful_operations{0};

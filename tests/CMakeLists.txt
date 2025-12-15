@@ -26,6 +26,8 @@ set(TEST_SOURCES
     unit/test_replay_protection.cpp
     unit/test_ratchet_recovery.cpp
     unit/test_connection.cpp
+    unit/test_kyber_interop_comprehensive.cpp
+    unit/test_protocol_config.cpp
 
     # Phase 1: Cryptographic Security Tests
     security/test_aes_gcm_attacks.cpp
@@ -53,6 +55,7 @@ set(TEST_SOURCES
     concurrency/test_concurrent_envelopes.cpp
     performance/test_envelope_performance.cpp
     fuzzing/test_envelope_fuzzing.cpp
+    benchmarks/bench_crypto_performance.cpp
 
     test_main.cpp
 )

@@ -200,7 +200,10 @@ namespace ecliptix::protocol::chain_step {
             SodiumInterop::SecureWipe(std::span(key_bytes));
             return result;
         }
-        if (index == current_index_) {
+        // UPDATED: Handle both in-order and skip cases:
+        // - In-order: current_index_ was incremented in GetOrDeriveKeyFor, so index + 1 == current_index_
+        // - Skip: current_index_ was set to index by SkipKeysUntil, so index == current_index_
+        if (index + 1 == current_index_ || index == current_index_) {
             auto chain_key_result = ConvertSodiumResult(chain_key_handle_.ReadBytes(Constants::X_25519_KEY_SIZE));
             if (chain_key_result.IsErr()) {
                 return Result<Unit, EcliptixProtocolFailure>::Err(chain_key_result.UnwrapErr());
@@ -226,12 +229,16 @@ namespace ecliptix::protocol::chain_step {
                 return Result<Unit, EcliptixProtocolFailure>::Err(
                     EcliptixProtocolFailure::Generic("Failed to update chain key"));
             }
-            current_index_++;
+            // For skip case, increment current_index_ after deriving the key
+            // For in-order case, it was already incremented in GetOrDeriveKeyFor
+            if (index == current_index_) {
+                current_index_++;
+            }
             auto result = operation(message_key);
             SodiumInterop::SecureWipe(std::span(message_key));
             return result;
         }
-        if (index > current_index_) {
+        if (index >= current_index_) {
             return Result<Unit, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic("Cannot access future key - call SkipKeysUntil first"));
         }
@@ -252,9 +259,21 @@ namespace ecliptix::protocol::chain_step {
                     std::to_string(index) + ", max: " + std::to_string(ProtocolConstants::MAX_CHAIN_LENGTH) + ")"));
         }
         if (index > current_index_) {
+            // Advance the chain state to the requested index, caching skipped keys
+            // and updating current_index_ so future gaps stay bounded.
             if (auto skip_result = SkipKeysUntil(index); skip_result.IsErr()) {
                 return Result<RatchetChainKey, EcliptixProtocolFailure>::Err(skip_result.UnwrapErr());
             }
+            // After SkipKeysUntil, current_index_ == index
+            // Don't increment here - ExecuteWithKey will increment after deriving the key
+        } else if (index == current_index_) {
+            // CRITICAL FIX: Increment current_index_ immediately when reserving the key for in-order delivery.
+            // This ensures GetCurrentIndex() returns the next expected index even before the key is used.
+            // The index must advance HERE, not in ExecuteWithKey, because:
+            // 1. PrepareNextSendMessage checks GetCurrentIndex() to decide if a ratchet is needed
+            // 2. If we don't increment here, GetCurrentIndex() always returns 0, preventing ratchets
+            // 3. The lazy RatchetChainKey is returned to the caller who may not use it immediately
+            current_index_++;
         }
         return Result<RatchetChainKey, EcliptixProtocolFailure>::Ok(
             RatchetChainKey(this, index)
@@ -304,7 +323,8 @@ namespace ecliptix::protocol::chain_step {
             return Result<Unit, EcliptixProtocolFailure>::Err(chain_key_result.UnwrapErr());
         }
         auto mut_chain_key = std::move(chain_key_result).Unwrap();
-        for (uint32_t i = current_index_ + 1; i < target_index; ++i) {
+        // Derive and cache message keys for every index up to (but not including) the target
+        for (uint32_t i = current_index_; i < target_index; ++i) {
             std::vector<uint8_t> message_key(Constants::X_25519_KEY_SIZE);
             std::vector<uint8_t> next_chain_key(Constants::X_25519_KEY_SIZE);
             if (auto derive_result = DeriveNextChainKeys(mut_chain_key, next_chain_key, message_key); derive_result.

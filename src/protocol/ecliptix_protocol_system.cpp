@@ -279,18 +279,9 @@ namespace ecliptix::protocol {
             std::vector<uint8_t> payload_nonce(
                 metadata.nonce().begin(),
                 metadata.nonce().end());
-            auto replay_result = connection->CheckReplayProtection(
-                payload_nonce,
-                metadata.ratchet_index());
-            if (replay_result.IsErr()) {
-                {
-                    auto _wipe = SodiumInterop::SecureWipe(std::span(payload_nonce));
-                    (void) _wipe;
-                }
-                return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                    replay_result.UnwrapErr());
-            }
-            auto message_key_result = connection->ProcessReceivedMessage(metadata.ratchet_index());
+            auto message_key_result = connection->ProcessReceivedMessage(
+                metadata.ratchet_index(),
+                payload_nonce);
             if (message_key_result.IsErr()) {
                 {
                     auto _wipe = SodiumInterop::SecureWipe(std::span(payload_nonce));

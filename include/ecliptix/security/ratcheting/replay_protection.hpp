@@ -17,7 +17,11 @@ public:
     explicit ReplayProtection(
         uint32_t initial_window_size,
         std::chrono::minutes cleanup_interval_minutes,
-        std::chrono::minutes nonce_lifetime_minutes);
+        std::chrono::minutes nonce_lifetime_minutes,
+        size_t max_tracked_nonces = ProtocolConstants::MAX_REPLAY_TRACKED_NONCES,
+        size_t max_tracked_chains = ProtocolConstants::MAX_REPLAY_CHAINS,
+        uint32_t session_scope = 0);
+    explicit ReplayProtection(uint32_t session_scope);
     ReplayProtection(const ReplayProtection&) = delete;
     ReplayProtection& operator=(const ReplayProtection&) = delete;
     ReplayProtection(ReplayProtection&&) = delete;
@@ -31,12 +35,15 @@ public:
     uint32_t GetWindowSize(uint64_t chain_index = 0) const;
     size_t GetTrackedNonceCount() const;
     void Reset();
+    void ResetMessageWindows();
 private:
     struct NonceKey {
         std::vector<uint8_t> nonce_bytes;
+        uint32_t session_scope;
         uint64_t chain_index;
         bool operator==(const NonceKey& other) const {
-            return chain_index == other.chain_index &&
+            return session_scope == other.session_scope &&
+                   chain_index == other.chain_index &&
                    nonce_bytes == other.nonce_bytes;
         }
         struct Hash {
@@ -49,11 +56,14 @@ private:
         uint32_t current_window_size;
         std::unordered_set<uint64_t> processed_indices;
         std::chrono::steady_clock::time_point last_adjustment;
+        std::chrono::steady_clock::time_point last_used;
         uint32_t messages_since_adjustment = 0;
         explicit MessageWindow(uint32_t window_size)
             : current_window_size(window_size)
-            , last_adjustment(std::chrono::steady_clock::now()) {}
+            , last_adjustment(std::chrono::steady_clock::now())
+            , last_used(std::chrono::steady_clock::now()) {}
     };
+    bool ValidateInput(std::span<const uint8_t> nonce, uint64_t chain_index) const;
     Result<Unit, EcliptixProtocolFailure> CheckMessageWindow(
         uint64_t chain_index,
         uint64_t message_index);
@@ -63,7 +73,12 @@ private:
     void AdjustWindowSize(MessageWindow& window) const;
     bool ShouldCleanup() const;
     void CleanupExpiredNoncesInternal();
+    void EvictOldestNonce();
+    void EvictOldestChainWindow();
     uint32_t initial_window_size_;
+    uint32_t session_scope_;
+    size_t max_tracked_nonces_;
+    size_t max_tracked_chains_;
     std::chrono::minutes cleanup_interval_;
     std::chrono::minutes nonce_lifetime_;
     mutable std::mutex lock_;

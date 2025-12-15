@@ -9,8 +9,8 @@ using namespace ecliptix::protocol;
 using namespace ecliptix::protocol::security;
 using namespace std::chrono_literals;
 std::vector<uint8_t> CreateNonce(uint64_t value) {
-    std::vector<uint8_t> nonce(16);
-    for (size_t i = 0; i < sizeof(uint64_t); ++i) {
+    std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE);
+    for (size_t i = 0; i < sizeof(uint64_t) && i < nonce.size(); ++i) {
         nonce[i] = static_cast<uint8_t>((value >> (i * 8)) & 0xFF);
     }
     return nonce;
@@ -202,6 +202,11 @@ TEST_CASE("ReplayProtection - Edge cases", "[replay_protection][security]") {
         auto result = protection.CheckAndRecordMessage(nonce, 0, 0);
         REQUIRE(result.IsOk());
     }
+    SECTION("Invalid nonce sizes are rejected") {
+        std::vector<uint8_t> short_nonce(4, 0xAA);
+        auto result = protection.CheckAndRecordMessage(short_nonce, 0, 0);
+        REQUIRE(result.IsErr());
+    }
     SECTION("Large message indices") {
         auto nonce = CreateNonce(1);
         uint64_t large_index = 1'000'000'000;
@@ -211,14 +216,26 @@ TEST_CASE("ReplayProtection - Edge cases", "[replay_protection][security]") {
     SECTION("Empty nonce is handled") {
         std::vector<uint8_t> empty_nonce;
         auto result = protection.CheckAndRecordMessage(empty_nonce, 0, 0);
-        REQUIRE(result.IsOk());
-        auto result2 = protection.CheckAndRecordMessage(empty_nonce, 1, 0);
-        REQUIRE(result2.IsErr());
+        REQUIRE(result.IsErr());
     }
     SECTION("Large chain indices") {
         auto nonce = CreateNonce(1);
         uint64_t large_chain = 1'000'000;
         auto result = protection.CheckAndRecordMessage(nonce, 0, large_chain);
-        REQUIRE(result.IsOk());
+        REQUIRE(result.IsErr());
+    }
+    SECTION("Capacity limits are enforced") {
+        ReplayProtection small_limits(10, 1min, 5min, 2, 1);
+        auto n1 = CreateNonce(1);
+        auto n2 = CreateNonce(2);
+        auto res1 = small_limits.CheckAndRecordMessage(n1, 0, 0);
+        REQUIRE(res1.IsOk());
+        auto res2 = small_limits.CheckAndRecordMessage(n2, 1, 0);
+        REQUIRE(res2.IsOk());
+        auto n3 = CreateNonce(3);
+        auto res3 = small_limits.CheckAndRecordMessage(n3, 2, 0);
+        REQUIRE(res3.IsOk());
+        // Oldest nonce should have been evicted to keep cache bounded
+        REQUIRE(small_limits.GetTrackedNonceCount() <= 2);
     }
 }

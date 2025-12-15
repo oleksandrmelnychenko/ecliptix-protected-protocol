@@ -93,7 +93,7 @@ namespace ecliptix::protocol::identity {
         auto secret_key = std::move(read_result).Unwrap();
         std::vector<uint8_t> signature(crypto_sign_BYTES);
         unsigned long long sig_len;
-        int result = crypto_sign_detached(
+        const int result = crypto_sign_detached(
             signature.data(),
             &sig_len,
             spk_public.data(),

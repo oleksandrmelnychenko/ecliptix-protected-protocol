@@ -76,6 +76,9 @@ find_package(PkgConfig REQUIRED)
 # libsodium - Core cryptographic library
 pkg_check_modules(LIBSODIUM REQUIRED libsodium)
 
+# liboqs - Post-quantum cryptography (Kyber)
+pkg_check_modules(LIBOQS REQUIRED liboqs)
+
 # OpenSSL - For HKDF implementation
 find_package(OpenSSL REQUIRED)
 
@@ -109,6 +112,7 @@ set(ECLIPTIX_SOURCES
     ${ECLIPTIX_SOURCE_DIR}/crypto/hkdf.cpp
     ${ECLIPTIX_SOURCE_DIR}/crypto/master_key_derivation.cpp
     ${ECLIPTIX_SOURCE_DIR}/crypto/aes_gcm.cpp
+    ${ECLIPTIX_SOURCE_DIR}/crypto/kyber_interop.cpp
 
     # Models - Phase 3
     ${ECLIPTIX_SOURCE_DIR}/models/key_materials/ed25519_key_material.cpp
@@ -167,6 +171,7 @@ target_include_directories(${PROJECT_NAME}
         $<BUILD_INTERFACE:${ECLIPTIX_INCLUDE_DIR}>
         $<INSTALL_INTERFACE:include>
         ${LIBSODIUM_INCLUDE_DIRS}
+        ${LIBOQS_INCLUDE_DIRS}
     PRIVATE
         ${ECLIPTIX_SOURCE_DIR}
 )
@@ -174,11 +179,13 @@ target_include_directories(${PROJECT_NAME}
 target_link_directories(${PROJECT_NAME}
     PUBLIC
         ${LIBSODIUM_LIBRARY_DIRS}
+        ${LIBOQS_LIBRARY_DIRS}
 )
 
 target_link_libraries(${PROJECT_NAME}
     PUBLIC
         ${LIBSODIUM_LIBRARIES}
+        ${LIBOQS_LIBRARIES}
         OpenSSL::Crypto
         Ecliptix::Proto
     PRIVATE
