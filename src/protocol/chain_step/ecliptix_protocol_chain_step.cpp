@@ -259,20 +259,10 @@ namespace ecliptix::protocol::chain_step {
                     std::to_string(index) + ", max: " + std::to_string(ProtocolConstants::MAX_CHAIN_LENGTH) + ")"));
         }
         if (index > current_index_) {
-            // Advance the chain state to the requested index, caching skipped keys
-            // and updating current_index_ so future gaps stay bounded.
             if (auto skip_result = SkipKeysUntil(index); skip_result.IsErr()) {
                 return Result<RatchetChainKey, EcliptixProtocolFailure>::Err(skip_result.UnwrapErr());
             }
-            // After SkipKeysUntil, current_index_ == index
-            // Don't increment here - ExecuteWithKey will increment after deriving the key
         } else if (index == current_index_) {
-            // CRITICAL FIX: Increment current_index_ immediately when reserving the key for in-order delivery.
-            // This ensures GetCurrentIndex() returns the next expected index even before the key is used.
-            // The index must advance HERE, not in ExecuteWithKey, because:
-            // 1. PrepareNextSendMessage checks GetCurrentIndex() to decide if a ratchet is needed
-            // 2. If we don't increment here, GetCurrentIndex() always returns 0, preventing ratchets
-            // 3. The lazy RatchetChainKey is returned to the caller who may not use it immediately
             current_index_++;
         }
         return Result<RatchetChainKey, EcliptixProtocolFailure>::Ok(
