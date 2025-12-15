@@ -3,15 +3,18 @@
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/crypto/hkdf.hpp"
 #include "ecliptix/crypto/master_key_derivation.hpp"
+#include "ecliptix/crypto/kyber_interop.hpp"
 #include <sodium.h>
 #include <algorithm>
 #include <unordered_set>
 
 namespace ecliptix::protocol::identity {
     using protocol::Constants;
+    using protocol::ProtocolConstants;
     using crypto::SodiumInterop;
     using crypto::MasterKeyDerivation;
     using crypto::Hkdf;
+    using crypto::KyberInterop;
     using models::SignedPreKeyMaterial;
     using models::OneTimePreKeyRecord;
 
@@ -25,6 +28,9 @@ namespace ecliptix::protocol::identity {
           , signed_pre_key_public_(std::move(material.signed_pre_key).TakePublicKey())
           , signed_pre_key_signature_(std::move(material.signed_pre_key).TakeSignature())
           , one_time_pre_keys_(std::move(material.one_time_pre_keys))
+          , kyber_secret_key_handle_(std::move(material.kyber_secret_key))
+          , kyber_public_key_(std::move(material.kyber_public_key))
+          , pending_kyber_handshake_(std::nullopt)
           , ephemeral_secret_key_handle_(std::nullopt)
           , ephemeral_x25519_public_key_(std::nullopt) {
     }
@@ -35,6 +41,32 @@ namespace ecliptix::protocol::identity {
 
     std::vector<uint8_t> EcliptixSystemIdentityKeys::GetIdentityEd25519PublicKeyCopy() const {
         return ed25519_public_key_;
+    }
+
+    std::vector<uint8_t> EcliptixSystemIdentityKeys::GetKyberPublicKeyCopy() const {
+        return kyber_public_key_;
+    }
+
+    Result<SecureMemoryHandle, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::CloneKyberSecretKey() const {
+        auto read_result = kyber_secret_key_handle_.ReadBytes(KyberInterop::KYBER_768_SECRET_KEY_SIZE);
+        if (read_result.IsErr()) {
+            return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::FromSodiumFailure(read_result.UnwrapErr()));
+        }
+        auto secret_bytes = read_result.Unwrap();
+        auto copy_alloc = SecureMemoryHandle::Allocate(KyberInterop::KYBER_768_SECRET_KEY_SIZE);
+        if (copy_alloc.IsErr()) {
+            return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::FromSodiumFailure(copy_alloc.UnwrapErr()));
+        }
+        auto copy_handle = std::move(copy_alloc).Unwrap();
+        if (auto write_result = copy_handle.Write(secret_bytes); write_result.IsErr()) {
+            return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::FromSodiumFailure(write_result.UnwrapErr()));
+        }
+        auto _wipe = SodiumInterop::SecureWipe(std::span(secret_bytes));
+        (void) _wipe;
+        return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Ok(std::move(copy_handle));
     }
 
     Result<Ed25519KeyMaterial, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::GenerateEd25519Keys() {
@@ -175,6 +207,12 @@ namespace ecliptix::protocol::identity {
                 opks_result.UnwrapErr());
         }
         auto opks = std::move(opks_result).Unwrap();
+        auto kyber_result = KyberInterop::GenerateKyber768KeyPair("identity-kyber");
+        if (kyber_result.IsErr()) {
+            return Result<EcliptixSystemIdentityKeys, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::FromSodiumFailure(kyber_result.UnwrapErr()));
+        }
+        auto [kyber_secret, kyber_public] = std::move(kyber_result).Unwrap();
         auto spk_material = SignedPreKeyMaterial(
             spk_id,
             std::move(spk_keys).TakeSecretKeyHandle(),
@@ -184,7 +222,9 @@ namespace ecliptix::protocol::identity {
             std::move(ed_keys),
             std::move(id_x_keys),
             std::move(spk_material),
-            std::move(opks));
+            std::move(opks),
+            std::move(kyber_secret),
+            std::move(kyber_public));
         return Result<EcliptixSystemIdentityKeys, EcliptixProtocolFailure>::Ok(
             EcliptixSystemIdentityKeys(std::move(material)));
     }
@@ -286,11 +326,19 @@ namespace ecliptix::protocol::identity {
                 opks_result.UnwrapErr());
         }
         auto opks = std::move(opks_result).Unwrap();
+        auto kyber_result = KyberInterop::GenerateKyber768KeyPair("identity-kyber");
+        if (kyber_result.IsErr()) {
+            return Result<EcliptixSystemIdentityKeys, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::FromSodiumFailure(kyber_result.UnwrapErr()));
+        }
+        auto [kyber_secret, kyber_public] = std::move(kyber_result).Unwrap();
         IdentityKeysMaterial material(
             std::move(ed_material),
             std::move(x_material),
             std::move(spk_material),
-            std::move(opks));
+            std::move(opks),
+            std::move(kyber_secret),
+            std::move(kyber_public));
         return Result<EcliptixSystemIdentityKeys, EcliptixProtocolFailure>::Ok(
             EcliptixSystemIdentityKeys(std::move(material)));
     }
@@ -308,7 +356,8 @@ namespace ecliptix::protocol::identity {
             signed_pre_key_public_,
             signed_pre_key_signature_,
             std::move(opk_records),
-            ephemeral_x25519_public_key_);
+            ephemeral_x25519_public_key_,
+            kyber_public_key_);
         return Result<LocalPublicKeyBundle, EcliptixProtocolFailure>::Ok(std::move(bundle));
     }
 
@@ -365,6 +414,11 @@ namespace ecliptix::protocol::identity {
         if (remote_bundle.GetSignedPreKeyPublic().size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
             return Result<Unit, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::PeerPubKey("Invalid remote signed pre-key public key"));
+        }
+        if (!remote_bundle.HasKyberKey() || !remote_bundle.GetKyberPublicKey().has_value() ||
+            remote_bundle.GetKyberPublicKey()->size() != KyberInterop::KYBER_768_PUBLIC_KEY_SIZE) {
+            return Result<Unit, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::PeerPubKey("Invalid remote Kyber-768 public key"));
         }
         return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
     }
@@ -457,6 +511,10 @@ namespace ecliptix::protocol::identity {
             return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
                 validation_result.UnwrapErr());
         }
+        if (!remote_bundle.HasKyberKey() || !remote_bundle.GetKyberPublicKey().has_value()) {
+            return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::InvalidInput("Remote Kyber public key required for hybrid X3DH"));
+        }
         auto eph_read_result = ephemeral_secret_key_handle_.value().ReadBytes(
             Constants::X_25519_PRIVATE_KEY_SIZE);
         if (eph_read_result.IsErr()) {
@@ -492,32 +550,89 @@ namespace ecliptix::protocol::identity {
         std::fill_n(ikm.begin(), Constants::X_25519_KEY_SIZE, CryptoHashConstants::FILL_BYTE);
         std::memcpy(ikm.data() + Constants::X_25519_KEY_SIZE, dh_results.data(), dh_offset);
         SodiumInterop::SecureWipe(std::span(dh_results));
-        std::vector<uint8_t> shared_secret(Constants::X_25519_KEY_SIZE);
-        auto hkdf_result = Hkdf::DeriveKey(ikm, shared_secret, {}, info);
+        std::vector<uint8_t> classical_shared(Constants::X_25519_KEY_SIZE);
+        auto hkdf_result = Hkdf::DeriveKey(ikm, classical_shared, {}, info);
         SodiumInterop::SecureWipe(std::span(ikm));
         if (hkdf_result.IsErr()) {
-            SodiumInterop::SecureWipe(std::span(shared_secret));
+            SodiumInterop::SecureWipe(std::span(classical_shared));
             return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
                 hkdf_result.UnwrapErr());
         }
-        auto handle_result = SecureMemoryHandle::Allocate(Constants::X_25519_KEY_SIZE);
-        if (handle_result.IsErr()) {
-            SodiumInterop::SecureWipe(std::span(shared_secret));
+        const auto &remote_kyber_public = remote_bundle.GetKyberPublicKey().value();
+        auto encaps_result = KyberInterop::Encapsulate(remote_kyber_public);
+        if (encaps_result.IsErr()) {
+            SodiumInterop::SecureWipe(std::span(classical_shared));
             return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(handle_result.UnwrapErr().message));
+                EcliptixProtocolFailure::FromSodiumFailure(encaps_result.UnwrapErr()));
         }
-        auto handle = std::move(handle_result).Unwrap();
-        auto write_result = handle.Write(std::span<const uint8_t>(shared_secret));
-        SodiumInterop::SecureWipe(std::span(shared_secret));
-        if (write_result.IsErr()) {
+        auto [kyber_ciphertext, kyber_ss_handle] = std::move(encaps_result).Unwrap();
+        auto kyber_ss_bytes_result = kyber_ss_handle.ReadBytes(KyberInterop::KYBER_768_SHARED_SECRET_SIZE);
+        if (kyber_ss_bytes_result.IsErr()) {
+            SodiumInterop::SecureWipe(std::span(classical_shared));
             return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(write_result.UnwrapErr().message));
+                EcliptixProtocolFailure::FromSodiumFailure(kyber_ss_bytes_result.UnwrapErr()));
         }
+        auto kyber_ss_bytes = kyber_ss_bytes_result.Unwrap();
+        auto hybrid_result = KyberInterop::CombineHybridSecrets(
+            classical_shared,
+            kyber_ss_bytes,
+            std::string(ProtocolConstants::X3DH_INFO));
+        auto _wipe_classical = SodiumInterop::SecureWipe(std::span(classical_shared));
+        (void) _wipe_classical;
+        if (hybrid_result.IsErr()) {
+            auto _wipe_pq = SodiumInterop::SecureWipe(std::span(kyber_ss_bytes));
+            (void) _wipe_pq;
+            return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
+                hybrid_result.UnwrapErr());
+        }
+        pending_kyber_handshake_ = HybridHandshakeArtifacts{
+            std::move(kyber_ciphertext),
+            kyber_ss_bytes
+        };
+        auto _wipe_pq = SodiumInterop::SecureWipe(std::span(kyber_ss_bytes));
+        (void) _wipe_pq;
+        auto handle = std::move(hybrid_result).Unwrap();
         ephemeral_secret_key_handle_.reset();
         if (ephemeral_x25519_public_key_.has_value()) {
             SodiumInterop::SecureWipe(std::span(ephemeral_x25519_public_key_.value()));
         }
         ephemeral_x25519_public_key_.reset();
         return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Ok(std::move(handle));
+    }
+
+    Result<EcliptixSystemIdentityKeys::HybridHandshakeArtifacts, EcliptixProtocolFailure>
+    EcliptixSystemIdentityKeys::ConsumePendingKyberHandshake() {
+        if (!pending_kyber_handshake_.has_value()) {
+            return Result<HybridHandshakeArtifacts, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::InvalidInput("No pending Kyber handshake data"));
+        }
+        auto artifacts = std::move(*pending_kyber_handshake_);
+        pending_kyber_handshake_.reset();
+        return Result<HybridHandshakeArtifacts, EcliptixProtocolFailure>::Ok(std::move(artifacts));
+    }
+
+    Result<EcliptixSystemIdentityKeys::HybridHandshakeArtifacts, EcliptixProtocolFailure>
+    EcliptixSystemIdentityKeys::DecapsulateKyberCiphertext(std::span<const uint8_t> ciphertext) const {
+        auto validate_result = KyberInterop::ValidateCiphertext(ciphertext);
+        if (validate_result.IsErr()) {
+            return Result<HybridHandshakeArtifacts, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::FromSodiumFailure(validate_result.UnwrapErr()));
+        }
+        auto decap_result = KyberInterop::Decapsulate(ciphertext, kyber_secret_key_handle_);
+        if (decap_result.IsErr()) {
+            return Result<HybridHandshakeArtifacts, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::FromSodiumFailure(decap_result.UnwrapErr()));
+        }
+        auto kyber_ss_handle = std::move(decap_result).Unwrap();
+        auto ss_bytes_result = kyber_ss_handle.ReadBytes(KyberInterop::KYBER_768_SHARED_SECRET_SIZE);
+        if (ss_bytes_result.IsErr()) {
+            return Result<HybridHandshakeArtifacts, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::FromSodiumFailure(ss_bytes_result.UnwrapErr()));
+        }
+        return Result<HybridHandshakeArtifacts, EcliptixProtocolFailure>::Ok(
+            HybridHandshakeArtifacts{
+                std::vector(ciphertext.begin(), ciphertext.end()),
+                ss_bytes_result.Unwrap()
+            });
     }
 }

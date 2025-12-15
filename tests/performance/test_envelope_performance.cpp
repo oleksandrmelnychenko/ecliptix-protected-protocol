@@ -4,6 +4,7 @@
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/utilities/envelope_builder.hpp"
 #include "ecliptix/core/constants.hpp"
+#include "helpers/hybrid_handshake.hpp"
 #include "common/secure_envelope.pb.h"
 #include <vector>
 #include <chrono>
@@ -14,15 +15,14 @@ using namespace ecliptix::protocol::connection;
 using namespace ecliptix::protocol::crypto;
 using namespace ecliptix::protocol::utilities;
 using namespace ecliptix::proto::common;
+using namespace ecliptix::protocol::test_helpers;
 
 TEST_CASE("Performance - High-Throughput Envelope Generation", "[performance][envelope][.slow]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Generate 1 million envelopes") {
         RatchetConfig perf_config(1'000'000);
-        auto conn_result = EcliptixProtocolConnection::Create(1, true, perf_config);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true, perf_config);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAB);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
@@ -86,13 +86,9 @@ TEST_CASE("Performance - Sustained Message Encryption", "[performance][envelope]
 
     SECTION("Encrypt and decrypt 500,000 messages") {
         RatchetConfig perf_config(1'000'000);
-        auto alice_result = EcliptixProtocolConnection::Create(1, true, perf_config);
-        REQUIRE(alice_result.IsOk());
-        auto alice = std::move(alice_result).Unwrap();
+        auto alice = CreatePreparedConnection(1, true, perf_config);
 
-        auto bob_result = EcliptixProtocolConnection::Create(2, false, perf_config);
-        REQUIRE(bob_result.IsOk());
-        auto bob = std::move(bob_result).Unwrap();
+        auto bob = CreatePreparedConnection(2, false, perf_config);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xCD);
 
@@ -115,7 +111,8 @@ TEST_CASE("Performance - Sustained Message Encryption", "[performance][envelope]
             if (include_dh) {
                 auto alice_dh_pub = alice->GetCurrentSenderDhPublicKey();
                 if (alice_dh_pub.IsErr() || !alice_dh_pub.Unwrap().has_value()) break;
-                auto ratchet_result = bob->PerformReceivingRatchet(*alice_dh_pub.Unwrap());
+                auto alice_ct = GetKyberCiphertextForSender(alice);
+                auto ratchet_result = bob->PerformReceivingRatchet(*alice_dh_pub.Unwrap(), alice_ct);
                 if (ratchet_result.IsErr()) break;
             }
 
@@ -176,9 +173,7 @@ TEST_CASE("Performance - Memory Efficiency Under Load", "[performance][envelope]
 
     SECTION("Process 100,000 envelopes without memory explosion") {
         RatchetConfig perf_config(1'000'000);
-        auto conn_result = EcliptixProtocolConnection::Create(1, true, perf_config);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true, perf_config);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xEF);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
@@ -228,9 +223,7 @@ TEST_CASE("Performance - Nonce Generation Throughput", "[performance][envelope][
 
     SECTION("Generate 1 million unique nonces") {
         RatchetConfig perf_config(1'000'000);
-        auto conn_result = EcliptixProtocolConnection::Create(1, true, perf_config);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true, perf_config);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x12);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
@@ -270,9 +263,7 @@ TEST_CASE("Performance - Bulk Metadata Encryption", "[performance][envelope][met
 
     SECTION("Encrypt 100,000 metadata blocks") {
         RatchetConfig perf_config(1'000'000);
-        auto conn_result = EcliptixProtocolConnection::Create(1, true, perf_config);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true, perf_config);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x34);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
@@ -326,13 +317,9 @@ TEST_CASE("Performance - Large Payload Throughput", "[performance][envelope][pay
         // because it takes >5 seconds and would exceed the test build session timeout.
         // Run explicitly with: ctest -R "Large Payload Throughput"
         RatchetConfig perf_config(1'000'000);
-        auto alice_result = EcliptixProtocolConnection::Create(1, true, perf_config);
-        REQUIRE(alice_result.IsOk());
-        auto alice = std::move(alice_result).Unwrap();
+        auto alice = CreatePreparedConnection(1, true, perf_config);
 
-        auto bob_result = EcliptixProtocolConnection::Create(2, false, perf_config);
-        REQUIRE(bob_result.IsOk());
-        auto bob = std::move(bob_result).Unwrap();
+        auto bob = CreatePreparedConnection(2, false, perf_config);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x56);
 
@@ -375,7 +362,8 @@ TEST_CASE("Performance - Large Payload Throughput", "[performance][envelope][pay
                     last_error = "Failed to read alice DH pub";
                     break;
                 }
-                auto ratchet_result = bob->PerformReceivingRatchet(*alice_dh_pub.Unwrap());
+                auto alice_ct = GetKyberCiphertextForSender(alice);
+                auto ratchet_result = bob->PerformReceivingRatchet(*alice_dh_pub.Unwrap(), alice_ct);
                 if (ratchet_result.IsErr()) {
                     last_error = ratchet_result.UnwrapErr().message;
                     break;

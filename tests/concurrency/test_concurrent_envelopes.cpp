@@ -4,6 +4,7 @@
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/utilities/envelope_builder.hpp"
 #include "ecliptix/core/constants.hpp"
+#include "helpers/hybrid_handshake.hpp"
 #include "common/secure_envelope.pb.h"
 #include <vector>
 #include <thread>
@@ -17,14 +18,13 @@ using namespace ecliptix::protocol::connection;
 using namespace ecliptix::protocol::crypto;
 using namespace ecliptix::protocol::utilities;
 using namespace ecliptix::proto::common;
+using namespace ecliptix::protocol::test_helpers;
 
 TEST_CASE("Concurrency - Parallel Nonce Generation", "[concurrency][envelope][nonce]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("100 threads generating 1000 nonces each - no collisions") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAB);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
@@ -78,9 +78,7 @@ TEST_CASE("Concurrency - Parallel Message Preparation", "[concurrency][envelope]
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("50 threads preparing 500 messages each") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xCD);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
@@ -138,9 +136,7 @@ TEST_CASE("Concurrency - Parallel Metadata Encryption", "[concurrency][envelope]
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("50 threads encrypting 1000 metadata blocks each") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xEF);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
@@ -210,13 +206,7 @@ TEST_CASE("Concurrency - Bidirectional Concurrent Communication", "[concurrency]
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("50 threads each direction - 1000 messages per thread") {
-        auto alice_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(alice_result.IsOk());
-        auto alice = std::move(alice_result).Unwrap();
-
-        auto bob_result = EcliptixProtocolConnection::Create(2, false);
-        REQUIRE(bob_result.IsOk());
-        auto bob = std::move(bob_result).Unwrap();
+        auto [alice, bob] = CreatePreparedPair(1, 2);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x12);
 
@@ -283,9 +273,7 @@ TEST_CASE("Concurrency - Race Condition Detection", "[concurrency][envelope][rac
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Stress test with 100 threads × 500 operations") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x34);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
@@ -331,9 +319,7 @@ TEST_CASE("Concurrency - Concurrent Replay Protection Checks", "[concurrency][en
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("100 threads checking replay protection for 500 unique nonces each") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, false);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, false);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x56);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
@@ -388,9 +374,7 @@ TEST_CASE("Concurrency - Concurrent Metadata Encryption and Decryption", "[concu
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("20 threads encrypting + 20 threads decrypting - 1000 envelopes each") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x78);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");

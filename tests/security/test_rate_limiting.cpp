@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "ecliptix/protocol/connection/ecliptix_protocol_connection.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
+#include "helpers/hybrid_handshake.hpp"
 #include "ecliptix/core/constants.hpp"
 #include <vector>
 #include <thread>
@@ -9,6 +10,7 @@
 using namespace ecliptix::protocol;
 using namespace ecliptix::protocol::connection;
 using namespace ecliptix::protocol::crypto;
+using namespace ecliptix::protocol::test_helpers;
 
 static std::vector<uint8_t> MakeRateNonce(uint64_t idx) {
     // Nonce structure (12 bytes total):
@@ -33,9 +35,7 @@ TEST_CASE("Rate Limiting - Nonce Generation Rate Limit", "[security][rate_limiti
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Nonce generation respects 1000/second rate limit") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
@@ -75,9 +75,7 @@ TEST_CASE("Rate Limiting - Nonce Rate Limit Resets After One Second", "[security
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Rate limit window resets after 1 second") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xBB);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
@@ -120,9 +118,7 @@ TEST_CASE("Rate Limiting - Concurrent Nonce Generation Respects Rate Limit", "[s
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Multiple threads respect shared rate limit") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xCC);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
@@ -171,13 +167,7 @@ TEST_CASE("Rate Limiting - DH Ratchet Flood Protection", "[security][rate_limiti
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("DH ratchet rate limited to prevent DoS") {
-        auto alice_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(alice_result.IsOk());
-        auto alice = std::move(alice_result).Unwrap();
-
-        auto bob_result = EcliptixProtocolConnection::Create(2, false);
-        REQUIRE(bob_result.IsOk());
-        auto bob = std::move(bob_result).Unwrap();
+        auto [alice, bob] = CreatePreparedPair(1, 2);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xDD);
 
@@ -215,13 +205,7 @@ TEST_CASE("Rate Limiting - DH Ratchet Rate Resets Per Minute", "[security][rate_
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("DH ratchet rate limit resets after 1 minute") {
-        auto alice_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(alice_result.IsOk());
-        auto alice = std::move(alice_result).Unwrap();
-
-        auto bob_result = EcliptixProtocolConnection::Create(2, false);
-        REQUIRE(bob_result.IsOk());
-        auto bob = std::move(bob_result).Unwrap();
+        auto [alice, bob] = CreatePreparedPair(1, 2);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xEE);
 
@@ -264,9 +248,7 @@ TEST_CASE("Rate Limiting - Nonce Burst Protection", "[security][rate_limiting][n
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Rapid nonce bursts are blocked after limit") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xFF);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
@@ -314,13 +296,7 @@ TEST_CASE("Rate Limiting - DH Ratchet Independent of Message Count", "[security]
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("DH ratchet rate limit independent of message throughput") {
-        auto alice_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(alice_result.IsOk());
-        auto alice = std::move(alice_result).Unwrap();
-
-        auto bob_result = EcliptixProtocolConnection::Create(2, false);
-        REQUIRE(bob_result.IsOk());
-        auto bob = std::move(bob_result).Unwrap();
+        auto [alice, bob] = CreatePreparedPair(1, 2);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x11);
 
@@ -364,13 +340,7 @@ TEST_CASE("Rate Limiting - Combined Nonce and DH Rate Limits", "[security][rate_
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Both rate limits enforced independently") {
-        auto alice_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(alice_result.IsOk());
-        auto alice = std::move(alice_result).Unwrap();
-
-        auto bob_result = EcliptixProtocolConnection::Create(2, false);
-        REQUIRE(bob_result.IsOk());
-        auto bob = std::move(bob_result).Unwrap();
+        auto [alice, bob] = CreatePreparedPair(1, 2);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x22);
 

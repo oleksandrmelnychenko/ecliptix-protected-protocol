@@ -7,6 +7,7 @@
 #include <sodium.h>
 #include <chrono>
 #include <format>
+#include <optional>
 
 namespace ecliptix::protocol {
     using Constants = Constants;
@@ -86,6 +87,7 @@ namespace ecliptix::protocol {
         std::vector<uint8_t> ad;
         std::vector<uint8_t> encrypted_payload;
         std::vector<uint8_t> sender_dh_key;
+        std::vector<uint8_t> kyber_ciphertext;
         std::vector<uint8_t> metadata_key;
         std::vector<uint8_t> encrypted_metadata;
         try {
@@ -95,7 +97,7 @@ namespace ecliptix::protocol {
                     prep_result.UnwrapErr());
             }
             auto [ratchet_key, include_dh] = prep_result.Unwrap();
-            auto nonce_result = connection->GenerateNextNonce();
+            auto nonce_result = connection->GenerateNextNonce(ratchet_key.Index());
             if (nonce_result.IsErr()) {
                 return Result<proto::common::SecureEnvelope, EcliptixProtocolFailure>::Err(
                     nonce_result.UnwrapErr());
@@ -109,6 +111,17 @@ namespace ecliptix::protocol {
                 }
                 if (const auto &dh_option = dh_result.Unwrap(); dh_option.has_value()) {
                     sender_dh_key = dh_option.value();
+                }
+                auto kyber_ct_result = connection->GetCurrentKyberCiphertext();
+                if (kyber_ct_result.IsErr()) {
+                    return Result<proto::common::SecureEnvelope, EcliptixProtocolFailure>::Err(
+                        kyber_ct_result.UnwrapErr());
+                }
+                if (auto kyber_opt = kyber_ct_result.Unwrap(); kyber_opt.has_value()) {
+                    kyber_ciphertext = kyber_opt.value();
+                } else {
+                    return Result<proto::common::SecureEnvelope, EcliptixProtocolFailure>::Err(
+                        EcliptixProtocolFailure::Generic("Kyber ciphertext missing for ratchet rotation"));
                 }
             }
             auto peer_bundle_result = connection->GetPeerBundle();
@@ -179,6 +192,9 @@ namespace ecliptix::protocol {
             if (!sender_dh_key.empty()) {
                 envelope.set_dh_public_key(sender_dh_key.data(), sender_dh_key.size());
             }
+            if (!kyber_ciphertext.empty()) {
+                envelope.set_kyber_ciphertext(kyber_ciphertext.data(), kyber_ciphertext.size());
+            }
             return Result<proto::common::SecureEnvelope, EcliptixProtocolFailure>::Ok(
                 std::move(envelope));
         } catch (const std::exception &ex) {
@@ -197,6 +213,9 @@ namespace ecliptix::protocol {
             } {
                 auto __wipe5 = SodiumInterop::SecureWipe(std::span(metadata_key));
                 (void) __wipe5;
+            } {
+                auto __wipe6 = SodiumInterop::SecureWipe(std::span(kyber_ciphertext));
+                (void) __wipe6;
             }
             return Result<proto::common::SecureEnvelope, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic(
@@ -216,6 +235,9 @@ namespace ecliptix::protocol {
         } {
             auto __wipe5 = SodiumInterop::SecureWipe(std::span(metadata_key));
             (void) __wipe5;
+        } {
+            auto __wipe6 = SodiumInterop::SecureWipe(std::span(kyber_ciphertext));
+            (void) __wipe6;
         }
     }
 
@@ -226,17 +248,15 @@ namespace ecliptix::protocol {
             return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic("Protocol connection not initialized"));
         }
-        std::vector<uint8_t> dh_public_key;
         std::vector<uint8_t> header_nonce;
         std::vector<uint8_t> metadata_key;
         std::vector<uint8_t> ad;
         std::vector<uint8_t> encrypted_metadata;
         std::vector<uint8_t> encrypted_payload;
+        std::vector<uint8_t> dh_public_key;
+        std::vector<uint8_t> kyber_ciphertext;
+        std::optional<connection::EcliptixProtocolConnection::ReceivingRatchetPreview> receiving_preview;
         try {
-            if (auto ratchet_result = HandleDhRatchetIfNeeded(envelope); ratchet_result.IsErr()) {
-                return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                    ratchet_result.UnwrapErr());
-            }
             if (envelope.header_nonce().size() != Constants::AES_GCM_NONCE_SIZE) {
                 return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
                     EcliptixProtocolFailure::Decode("Invalid or missing header nonce for metadata decryption"));
@@ -244,12 +264,6 @@ namespace ecliptix::protocol {
             header_nonce.assign(
                 envelope.header_nonce().begin(),
                 envelope.header_nonce().end());
-            auto metadata_key_result = connection->GetMetadataEncryptionKey();
-            if (metadata_key_result.IsErr()) {
-                return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                    metadata_key_result.UnwrapErr());
-            }
-            metadata_key = metadata_key_result.Unwrap();
             auto peer_bundle_result = connection->GetPeerBundle();
             if (peer_bundle_result.IsErr()) {
                 return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
@@ -263,15 +277,92 @@ namespace ecliptix::protocol {
             } else {
                 ad = CreateAssociatedData(peer_identity, local_identity);
             }
+            if (!envelope.dh_public_key().empty()) {
+                dh_public_key.assign(
+                    envelope.dh_public_key().begin(),
+                    envelope.dh_public_key().end());
+            }
+            if (!envelope.kyber_ciphertext().empty()) {
+                kyber_ciphertext.assign(
+                    envelope.kyber_ciphertext().begin(),
+                    envelope.kyber_ciphertext().end());
+            }
+            bool requires_receiving_ratchet = false;
+            if (!dh_public_key.empty()) {
+                auto current_key_result = connection->GetCurrentPeerDhPublicKey();
+                if (current_key_result.IsErr()) {
+                    {
+                        auto __wipe = SodiumInterop::SecureWipe(std::span(dh_public_key));
+                        (void) __wipe;
+                    }
+                    return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
+                        current_key_result.UnwrapErr());
+                }
+                if (auto current_key_option = current_key_result.Unwrap(); current_key_option.has_value()) {
+                    auto comparison_result = SodiumInterop::ConstantTimeEquals(
+                        dh_public_key,
+                        current_key_option.value());
+                    if (comparison_result.IsOk()) {
+                        requires_receiving_ratchet = !comparison_result.Unwrap();
+                    } else {
+                        requires_receiving_ratchet = true;
+                    }
+                } else {
+                    requires_receiving_ratchet = true;
+                }
+            }
+            if (requires_receiving_ratchet) {
+                if (kyber_ciphertext.empty()) {
+                    return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
+                        EcliptixProtocolFailure::Decode("Missing Kyber ciphertext for hybrid ratchet"));
+                }
+                auto preview_result = connection->PrepareReceivingRatchet(dh_public_key, kyber_ciphertext);
+                if (preview_result.IsErr()) {
+                    {
+                        auto __wipe = SodiumInterop::SecureWipe(std::span(dh_public_key));
+                        (void) __wipe;
+                        auto __wipe_ct = SodiumInterop::SecureWipe(std::span(kyber_ciphertext));
+                        (void) __wipe_ct;
+                    }
+                    return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
+                        preview_result.UnwrapErr());
+                }
+                receiving_preview = std::move(preview_result.Unwrap());
+            } else {
+                auto metadata_key_result = connection->GetMetadataEncryptionKey();
+                if (metadata_key_result.IsErr()) {
+                    return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
+                        metadata_key_result.UnwrapErr());
+                }
+                metadata_key = metadata_key_result.Unwrap();
+            }
             encrypted_metadata.assign(
                 envelope.meta_data().begin(),
                 envelope.meta_data().end());
             auto decrypt_metadata_result = EnvelopeBuilder::DecryptMetadata(
                 encrypted_metadata,
-                metadata_key,
+                receiving_preview ? std::span<const uint8_t>(receiving_preview->metadata_key)
+                                  : std::span<const uint8_t>(metadata_key),
                 header_nonce,
                 ad);
             if (decrypt_metadata_result.IsErr()) {
+                {
+                    auto _wipe_dh = SodiumInterop::SecureWipe(std::span(dh_public_key));
+                    (void) _wipe_dh;
+                } {
+                    auto _wipe_meta = SodiumInterop::SecureWipe(std::span(metadata_key));
+                    (void) _wipe_meta;
+                }
+                if (receiving_preview.has_value()) {
+                    auto _wipe_preview_meta = SodiumInterop::SecureWipe(
+                        std::span(receiving_preview->metadata_key));
+                    (void) _wipe_preview_meta;
+                    auto _wipe_preview_root = SodiumInterop::SecureWipe(
+                        std::span(receiving_preview->new_root_key));
+                    (void) _wipe_preview_root;
+                }
+                auto _wipe_ct = SodiumInterop::SecureWipe(std::span(kyber_ciphertext));
+                (void) _wipe_ct;
                 return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
                     decrypt_metadata_result.UnwrapErr());
             }
@@ -279,6 +370,12 @@ namespace ecliptix::protocol {
             std::vector<uint8_t> payload_nonce(
                 metadata.nonce().begin(),
                 metadata.nonce().end());
+            if (receiving_preview.has_value()) {
+                auto commit_result = connection->CommitReceivingRatchet(std::move(*receiving_preview));
+                if (commit_result.IsErr()) {
+                    return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(commit_result.UnwrapErr());
+                }
+            }
             auto message_key_result = connection->ProcessReceivedMessage(
                 metadata.ratchet_index(),
                 payload_nonce);
@@ -306,6 +403,18 @@ namespace ecliptix::protocol {
                 return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
                     decrypt_result.UnwrapErr());
             }
+            if (!metadata_key.empty()) {
+                auto __wipe_meta = SodiumInterop::SecureWipe(std::span(metadata_key));
+                (void) __wipe_meta;
+            }
+            if (!dh_public_key.empty()) {
+                auto __wipe_dh = SodiumInterop::SecureWipe(std::span(dh_public_key));
+                (void) __wipe_dh;
+            }
+            if (!kyber_ciphertext.empty()) {
+                auto __wipe_ct = SodiumInterop::SecureWipe(std::span(kyber_ciphertext));
+                (void) __wipe_ct;
+            }
             return decrypt_result;
         } catch (const std::exception &ex) {
             {
@@ -320,6 +429,17 @@ namespace ecliptix::protocol {
             } {
                 auto __wipe4 = SodiumInterop::SecureWipe(std::span(ad));
                 (void) __wipe4;
+            } {
+                auto __wipe5 = SodiumInterop::SecureWipe(std::span(kyber_ciphertext));
+                (void) __wipe5;
+            }
+            if (receiving_preview.has_value()) {
+                auto __wipe_meta_preview = SodiumInterop::SecureWipe(
+                    std::span(receiving_preview->metadata_key));
+                (void) __wipe_meta_preview;
+                auto __wipe_root_preview = SodiumInterop::SecureWipe(
+                    std::span(receiving_preview->new_root_key));
+                (void) __wipe_root_preview;
             }
             return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic(
@@ -336,6 +456,14 @@ namespace ecliptix::protocol {
         } {
             auto __wipe4 = SodiumInterop::SecureWipe(std::span(ad));
             (void) __wipe4;
+        }
+        if (receiving_preview.has_value()) {
+            auto __wipe_meta_preview = SodiumInterop::SecureWipe(
+                std::span(receiving_preview->metadata_key));
+            (void) __wipe_meta_preview;
+            auto __wipe_root_preview = SodiumInterop::SecureWipe(
+                std::span(receiving_preview->new_root_key));
+            (void) __wipe_root_preview;
         }
     }
 
@@ -373,12 +501,20 @@ namespace ecliptix::protocol {
         std::vector<uint8_t> received_dh_key(
             envelope.dh_public_key().begin(),
             envelope.dh_public_key().end());
+        std::vector<uint8_t> received_kyber_ciphertext;
+        if (!envelope.kyber_ciphertext().empty()) {
+            received_kyber_ciphertext.assign(
+                envelope.kyber_ciphertext().begin(),
+                envelope.kyber_ciphertext().end());
+        }
         try {
             auto current_key_result = connection->GetCurrentPeerDhPublicKey();
             if (current_key_result.IsErr()) {
                 {
                     auto __wipe = SodiumInterop::SecureWipe(std::span(received_dh_key));
                     (void) __wipe;
+                    auto __wipe_ct = SodiumInterop::SecureWipe(std::span(received_kyber_ciphertext));
+                    (void) __wipe_ct;
                 }
                 return Result<Unit, EcliptixProtocolFailure>::Err(
                     current_key_result.UnwrapErr());
@@ -392,19 +528,38 @@ namespace ecliptix::protocol {
                     {
                         auto __wipe = SodiumInterop::SecureWipe(std::span(received_dh_key));
                         (void) __wipe;
+                        auto __wipe_ct = SodiumInterop::SecureWipe(std::span(received_kyber_ciphertext));
+                        (void) __wipe_ct;
                     }
                     return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
                 }
             }
-            auto ratchet_result = connection->PerformReceivingRatchet(received_dh_key); {
+            if (received_kyber_ciphertext.empty()) {
+                {
+                    auto __wipe_dh = SodiumInterop::SecureWipe(std::span(received_dh_key));
+                    (void) __wipe_dh;
+                } {
+                    auto __wipe_ct = SodiumInterop::SecureWipe(std::span(received_kyber_ciphertext));
+                    (void) __wipe_ct;
+                }
+                return Result<Unit, EcliptixProtocolFailure>::Err(
+                    EcliptixProtocolFailure::Decode("Missing Kyber ciphertext for hybrid ratchet"));
+            }
+            auto ratchet_result = connection->PerformReceivingRatchet(
+                received_dh_key,
+                received_kyber_ciphertext); {
                 auto __wipe = SodiumInterop::SecureWipe(std::span(received_dh_key));
                 (void) __wipe;
+                auto __wipe_ct = SodiumInterop::SecureWipe(std::span(received_kyber_ciphertext));
+                (void) __wipe_ct;
             }
             return ratchet_result;
         } catch (const std::exception &ex) {
             {
                 auto __wipe = SodiumInterop::SecureWipe(std::span(received_dh_key));
                 (void) __wipe;
+                auto __wipe_ct = SodiumInterop::SecureWipe(std::span(received_kyber_ciphertext));
+                (void) __wipe_ct;
             }
             return Result<Unit, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic(

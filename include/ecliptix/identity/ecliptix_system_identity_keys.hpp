@@ -2,6 +2,7 @@
 #include "ecliptix/core/result.hpp"
 #include "ecliptix/core/failures.hpp"
 #include "ecliptix/crypto/sodium_secure_memory_handle.hpp"
+#include "ecliptix/crypto/kyber_interop.hpp"
 #include "ecliptix/models/bundles/local_public_key_bundle.hpp"
 #include "ecliptix/models/identity_keys_material.hpp"
 #include <vector>
@@ -21,6 +22,10 @@ using models::X25519KeyMaterial;
 using models::OneTimePreKeyLocal;
 class EcliptixSystemIdentityKeys {
 public:
+    struct HybridHandshakeArtifacts {
+        std::vector<uint8_t> kyber_ciphertext;
+        std::vector<uint8_t> kyber_shared_secret;
+    };
     [[nodiscard]] static Result<EcliptixSystemIdentityKeys, EcliptixProtocolFailure> Create(
         uint32_t one_time_key_count);
     [[nodiscard]] static Result<EcliptixSystemIdentityKeys, EcliptixProtocolFailure> CreateFromMasterKey(
@@ -29,11 +34,16 @@ public:
         uint32_t one_time_key_count);
     [[nodiscard]] std::vector<uint8_t> GetIdentityX25519PublicKeyCopy() const;
     [[nodiscard]] std::vector<uint8_t> GetIdentityEd25519PublicKeyCopy() const;
+    [[nodiscard]] std::vector<uint8_t> GetKyberPublicKeyCopy() const;
+    [[nodiscard]] Result<SecureMemoryHandle, EcliptixProtocolFailure> CloneKyberSecretKey() const;
     [[nodiscard]] Result<LocalPublicKeyBundle, EcliptixProtocolFailure> CreatePublicBundle() const;
     void GenerateEphemeralKeyPair();
     [[nodiscard]] Result<SecureMemoryHandle, EcliptixProtocolFailure> X3dhDeriveSharedSecret(
         const LocalPublicKeyBundle& remote_bundle,
         std::span<const uint8_t> info);
+    [[nodiscard]] Result<HybridHandshakeArtifacts, EcliptixProtocolFailure> ConsumePendingKyberHandshake();
+    [[nodiscard]] Result<HybridHandshakeArtifacts, EcliptixProtocolFailure> DecapsulateKyberCiphertext(
+        std::span<const uint8_t> ciphertext) const;
     [[nodiscard]] static Result<bool, EcliptixProtocolFailure> VerifyRemoteSpkSignature(
         std::span<const uint8_t> remote_identity_ed25519,
         std::span<const uint8_t> remote_spk_public,
@@ -77,6 +87,9 @@ private:
     std::vector<uint8_t> signed_pre_key_public_;
     std::vector<uint8_t> signed_pre_key_signature_;
     std::vector<OneTimePreKeyLocal> one_time_pre_keys_;
+    SecureMemoryHandle kyber_secret_key_handle_;
+    std::vector<uint8_t> kyber_public_key_;
+    std::optional<HybridHandshakeArtifacts> pending_kyber_handshake_;
     std::optional<SecureMemoryHandle> ephemeral_secret_key_handle_;
     std::optional<std::vector<uint8_t>> ephemeral_x25519_public_key_;
 };

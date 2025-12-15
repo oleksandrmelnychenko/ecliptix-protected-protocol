@@ -21,6 +21,7 @@ struct Constants {
     static constexpr std::string_view X3DH_INFO = "Ecliptix-X3DH-v1";
     static constexpr std::string_view MSG_INFO = "Ecliptix-Msg";
     static constexpr std::string_view CHAIN_INFO = "Ecliptix-Chain";
+    static constexpr std::string_view KYBER_SK_WRAP_INFO = "Ecliptix-Kyber-SK-Wrap-v1";
     static constexpr size_t SMALL_BUFFER_THRESHOLD = 1024;
     static constexpr uint32_t U_INT_32_LITTLE_ENDIAN_OFFSET = 8;
     static constexpr size_t CHANNEL_KEY_ID_SIZE = 16;
@@ -61,7 +62,7 @@ struct ProtocolConstants {
     static constexpr std::chrono::minutes WINDOW_ADJUSTMENT_INTERVAL{2};
     static constexpr std::chrono::hours DEFAULT_MAX_CHAIN_AGE{1};
     static constexpr int64_t INITIAL_NONCE_COUNTER = 0;
-    static constexpr uint64_t MAX_NONCE_COUNTER = 4'294'967'295ULL;
+    static constexpr uint64_t MAX_NONCE_COUNTER = 18'446'744'073'709'551'615ULL;
     static constexpr int RANDOM_NONCE_PREFIX_SIZE = 8;
     static constexpr uint32_t DEFAULT_CHAIN_INDEX = 0;
     static constexpr int HKDF_OUTPUT_BUFFER_MULTIPLIER = 2;
@@ -88,10 +89,12 @@ struct ProtocolConstants {
     static constexpr std::string_view CHAIN_INFO = "Ecliptix-Chain";
     static constexpr std::string_view DH_RATCHET_INFO = "Ecliptix-DH-Ratchet";
     static constexpr std::string_view HYBRID_DH_RATCHET_INFO = "Ecliptix-Hybrid-DH-Ratchet";  // Post-quantum hybrid ratchet (X25519 + Kyber-768)
+    static constexpr std::string_view HYBRID_PQ_FALLBACK_INFO = "Ecliptix-Hybrid-PQ-Fallback";
     static constexpr std::string_view INITIAL_SENDER_CHAIN_INFO = "Ecliptix-Initial-Sender";
     static constexpr std::string_view INITIAL_RECEIVER_CHAIN_INFO = "Ecliptix-Initial-Receiver";
     static constexpr std::string_view METADATA_ENCRYPTION_INFO = "ecliptix-metadata-v1";
     static constexpr std::string_view STATE_MAC_INFO = "ecliptix-state-mac-v1";
+    static constexpr std::string_view KYBER_SK_WRAP_INFO = "Ecliptix-Kyber-SK-Wrap-v1";
     static constexpr uint32_t DEFAULT_MESSAGE_COUNT_BEFORE_RATCHET = 100;
     static constexpr uint32_t HIGH_SECURITY_MESSAGE_COUNT_BEFORE_RATCHET = 50;
     static constexpr uint32_t HIGH_PERFORMANCE_MESSAGE_COUNT_BEFORE_RATCHET = 500;
@@ -101,7 +104,7 @@ struct ProtocolConstants {
     static constexpr size_t MAX_REPLAY_CHAINS = 1024;
     static constexpr uint32_t MAX_CHAIN_LENGTH = 10000;
     static constexpr uint32_t NONCE_RATE_LIMIT_PER_SECOND = 1000;
-    static constexpr uint32_t MAX_DH_RATCHETS_PER_MINUTE = 10;
+    static constexpr uint32_t MAX_DH_RATCHETS_PER_MINUTE = 1000;
 };
 struct ErrorMessages {
     static constexpr std::string_view SODIUM_INIT_FAILED = "Failed to initialize libsodium";

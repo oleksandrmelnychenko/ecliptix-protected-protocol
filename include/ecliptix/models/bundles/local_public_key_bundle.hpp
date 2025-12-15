@@ -13,7 +13,8 @@ public:
         std::vector<uint8_t> signed_pre_key_public,
         std::vector<uint8_t> signed_pre_key_signature,
         std::vector<OneTimePreKeyRecord> one_time_pre_keys,
-        std::optional<std::vector<uint8_t>> ephemeral_x25519_public = std::nullopt);
+        std::optional<std::vector<uint8_t>> ephemeral_x25519_public = std::nullopt,
+        std::optional<std::vector<uint8_t>> kyber_public_key = std::nullopt);
     LocalPublicKeyBundle(const LocalPublicKeyBundle&) = default;
     LocalPublicKeyBundle(LocalPublicKeyBundle&&) noexcept = default;
     LocalPublicKeyBundle& operator=(const LocalPublicKeyBundle&) = default;
@@ -55,6 +56,12 @@ public:
     [[nodiscard]] bool HasEphemeralKey() const noexcept {
         return ephemeral_x25519_public_.has_value();
     }
+    [[nodiscard]] const std::optional<std::vector<uint8_t>>& GetKyberPublicKey() const noexcept {
+        return kyber_public_key_;
+    }
+    [[nodiscard]] bool HasKyberKey() const noexcept {
+        return kyber_public_key_.has_value();
+    }
 private:
     std::vector<uint8_t> ed25519_public_;
     std::vector<uint8_t> identity_x25519_;
@@ -63,5 +70,6 @@ private:
     std::vector<uint8_t> signed_pre_key_signature_;
     std::vector<OneTimePreKeyRecord> one_time_pre_keys_;
     std::optional<std::vector<uint8_t>> ephemeral_x25519_public_;
+    std::optional<std::vector<uint8_t>> kyber_public_key_;
 };
 } 

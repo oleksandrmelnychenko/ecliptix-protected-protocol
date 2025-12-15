@@ -2,9 +2,13 @@
 #include "ecliptix/protocol/connection/ecliptix_protocol_connection.hpp"
 #include "ecliptix/crypto/aes_gcm.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
+#include "ecliptix/crypto/kyber_interop.hpp"
+#include "ecliptix/crypto/hkdf.hpp"
+#include "helpers/hybrid_handshake.hpp"
 #include "ecliptix/utilities/envelope_builder.hpp"
 #include "ecliptix/core/constants.hpp"
 #include "common/secure_envelope.pb.h"
+#include <sodium.h>
 #include <vector>
 #include <random>
 #include <cstring>
@@ -16,14 +20,13 @@ using namespace ecliptix::protocol::connection;
 using namespace ecliptix::protocol::crypto;
 using namespace ecliptix::protocol::utilities;
 using namespace ecliptix::proto::common;
+using namespace ecliptix::protocol::test_helpers;
 
 TEST_CASE("Fuzzing - Random Metadata Corruption", "[fuzzing][envelope][metadata]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Corrupt 10,000 encrypted metadata blocks at random positions") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAB);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
@@ -83,9 +86,7 @@ TEST_CASE("Fuzzing - Random Nonce Lengths", "[fuzzing][envelope][nonce]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Test 5000 nonces with random lengths from 0 to 100 bytes") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, false);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, false);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xCD);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
@@ -133,13 +134,7 @@ TEST_CASE("Fuzzing - Random Payload Sizes", "[fuzzing][envelope][payload]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Encrypt payloads with random sizes from 0 to 10MB") {
-        auto alice_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(alice_result.IsOk());
-        auto alice = std::move(alice_result).Unwrap();
-
-        auto bob_result = EcliptixProtocolConnection::Create(2, false);
-        REQUIRE(bob_result.IsOk());
-        auto bob = std::move(bob_result).Unwrap();
+        auto [alice, bob] = CreatePreparedPair(1, 2);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xEF);
 
@@ -172,7 +167,8 @@ TEST_CASE("Fuzzing - Random Payload Sizes", "[fuzzing][envelope][payload]") {
             if (include_dh) {
                 auto alice_dh_pub = alice->GetCurrentSenderDhPublicKey();
                 if (alice_dh_pub.IsErr() || !alice_dh_pub.Unwrap().has_value()) continue;
-                auto ratchet_result = bob->PerformReceivingRatchet(*alice_dh_pub.Unwrap());
+                auto alice_ct = GetKyberCiphertextForSender(alice);
+                auto ratchet_result = bob->PerformReceivingRatchet(*alice_dh_pub.Unwrap(), alice_ct);
                 if (ratchet_result.IsErr()) continue;
             }
 
@@ -227,9 +223,7 @@ TEST_CASE("Fuzzing - Invalid Key Sizes", "[fuzzing][envelope][keys]") {
         uint32_t accepted_valid_keys = 0;
 
         for (uint32_t i = 0; i < ATTEMPT_COUNT; ++i) {
-            auto conn_result = EcliptixProtocolConnection::Create(i, true);
-            REQUIRE(conn_result.IsOk());
-            auto conn = std::move(conn_result).Unwrap();
+            auto conn = CreatePreparedConnection(i, true);
 
             const size_t root_key_size = size_dist(gen);
             std::vector<uint8_t> random_root_key(root_key_size, 0xAB);
@@ -260,9 +254,7 @@ TEST_CASE("Fuzzing - Malformed AAD", "[fuzzing][envelope][aad]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Test 5000 random AAD sizes and contents") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x12);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
@@ -326,9 +318,7 @@ TEST_CASE("Fuzzing - Boundary Value Testing", "[fuzzing][envelope][boundaries]")
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Test edge case message indices: 0, 1, MAX_UINT32-1, MAX_UINT32") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, false);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, false);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x34);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
@@ -365,13 +355,7 @@ TEST_CASE("Fuzzing - Random Bit Flips in Ciphertext", "[fuzzing][envelope][bitfl
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Flip random bits in 10,000 encrypted payloads") {
-        auto alice_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(alice_result.IsOk());
-        auto alice = std::move(alice_result).Unwrap();
-
-        auto bob_result = EcliptixProtocolConnection::Create(2, false);
-        REQUIRE(bob_result.IsOk());
-        auto bob = std::move(bob_result).Unwrap();
+        auto [alice, bob] = CreatePreparedPair(1, 2);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x56);
 
@@ -396,7 +380,8 @@ TEST_CASE("Fuzzing - Random Bit Flips in Ciphertext", "[fuzzing][envelope][bitfl
             if (include_dh) {
                 auto alice_dh_pub = alice->GetCurrentSenderDhPublicKey();
                 if (alice_dh_pub.IsErr() || !alice_dh_pub.Unwrap().has_value()) continue;
-                auto ratchet_result = bob->PerformReceivingRatchet(*alice_dh_pub.Unwrap());
+                auto alice_ct = GetKyberCiphertextForSender(alice);
+                auto ratchet_result = bob->PerformReceivingRatchet(*alice_dh_pub.Unwrap(), alice_ct);
                 if (ratchet_result.IsErr()) continue;
             }
 
@@ -452,21 +437,27 @@ TEST_CASE("Fuzzing - Empty and Null Inputs", "[fuzzing][envelope][empty]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Test 1000 empty payloads, nonces, and AAD combinations") {
-        auto alice_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(alice_result.IsOk());
-        auto alice = std::move(alice_result).Unwrap();
-
-        auto bob_result = EcliptixProtocolConnection::Create(2, false);
-        REQUIRE(bob_result.IsOk());
-        auto bob = std::move(bob_result).Unwrap();
+        auto [alice, bob] = CreatePreparedPair(1, 2);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x78);
+
+        auto kyber_encapsulate = KyberInterop::Encapsulate(bob->GetKyberPublicKeyCopy());
+        REQUIRE(kyber_encapsulate.IsOk());
+        auto [kyber_ct, kyber_ss_handle] = std::move(kyber_encapsulate).Unwrap();
+        auto kyber_ss_bytes = kyber_ss_handle.ReadBytes(KyberInterop::KYBER_768_SHARED_SECRET_SIZE);
+        REQUIRE(kyber_ss_bytes.IsOk());
+        auto kyber_ss = kyber_ss_bytes.Unwrap();
+        REQUIRE(alice->SetHybridHandshakeSecrets(kyber_ct, kyber_ss).IsOk());
+        REQUIRE(bob->SetHybridHandshakeSecrets(kyber_ct, kyber_ss).IsOk());
+        REQUIRE(alice->DebugGetKyberSharedSecret() == kyber_ss);
+        REQUIRE(bob->DebugGetKyberSharedSecret() == kyber_ss);
 
         auto alice_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
         auto bob_dh = bob->GetCurrentSenderDhPublicKey().Unwrap().value();
 
         REQUIRE(alice->FinalizeChainAndDhKeys(root_key, bob_dh).IsOk());
         REQUIRE(bob->FinalizeChainAndDhKeys(root_key, alice_dh).IsOk());
+        REQUIRE(alice->DebugGetRootKey() == bob->DebugGetRootKey());
 
         constexpr uint32_t TEST_COUNT = 1000;
         uint32_t successful_empty_payload = 0;
@@ -475,14 +466,83 @@ TEST_CASE("Fuzzing - Empty and Null Inputs", "[fuzzing][envelope][empty]") {
             auto alice_prepare = alice->PrepareNextSendMessage();
             if (alice_prepare.IsErr()) break;
             auto [alice_key, include_dh] = std::move(alice_prepare).Unwrap();
+            if (i >= 99 && i <= 102) {
+                std::cerr << "include_dh=" << (include_dh ? "true" : "false")
+                          << " idx=" << alice_key.Index() << std::endl;
+            }
 
             // Handle DH ratchet if needed
             if (include_dh) {
                 auto alice_dh_pub = alice->GetCurrentSenderDhPublicKey();
                 if (alice_dh_pub.IsErr() || !alice_dh_pub.Unwrap().has_value()) break;
-
-                auto ratchet_result = bob->PerformReceivingRatchet(*alice_dh_pub.Unwrap());
+                auto pre_alice_root = alice->DebugGetRootKey();
+                auto pre_bob_root = bob->DebugGetRootKey();
+                auto alice_ct = GetKyberCiphertextForSender(alice);
+                auto ratchet_result = bob->PerformReceivingRatchet(*alice_dh_pub.Unwrap(), alice_ct);
                 if (ratchet_result.IsErr()) break;
+                if (i >= 99 && i <= 102) {
+                    auto alice_current_dh = alice->GetCurrentSenderDhPublicKey();
+                    auto bob_current_dh = bob->GetCurrentSenderDhPublicKey();
+                    auto alice_root = alice->DebugGetRootKey();
+                    auto bob_root = bob->DebugGetRootKey();
+                    auto alice_priv = alice->DebugGetCurrentDhPrivate();
+                    auto bob_priv = bob->DebugGetCurrentDhPrivate();
+                    std::vector<uint8_t> dh_a(Constants::X_25519_KEY_SIZE);
+                    std::vector<uint8_t> dh_b(Constants::X_25519_KEY_SIZE);
+                    if (alice_priv.size() == Constants::X_25519_PRIVATE_KEY_SIZE &&
+                        bob_current_dh.IsOk() && bob_current_dh.Unwrap().has_value()) {
+                        const int dh_ret = crypto_scalarmult(
+                            dh_a.data(), alice_priv.data(), bob_current_dh.Unwrap()->data());
+                        (void) dh_ret;
+                    }
+                    if (bob_priv.size() == Constants::X_25519_PRIVATE_KEY_SIZE &&
+                        alice_dh_pub.IsOk() && alice_dh_pub.Unwrap().has_value()) {
+                        const int dh_ret = crypto_scalarmult(
+                            dh_b.data(), bob_priv.data(), alice_dh_pub.Unwrap()->data());
+                        (void) dh_ret;
+                    }
+                    std::vector<uint8_t> expected_root;
+                    const auto alice_pq = alice->DebugGetKyberSharedSecret();
+                    const auto bob_pq = bob->DebugGetKyberSharedSecret();
+                    auto hybrid_result = KyberInterop::CombineHybridSecrets(
+                        dh_b,
+                        kyber_ss,
+                        ProtocolConstants::HYBRID_DH_RATCHET_INFO);
+                    if (hybrid_result.IsOk()) {
+                        auto hybrid_bytes_result = hybrid_result.Unwrap().ReadBytes(Constants::X_25519_KEY_SIZE);
+                        if (hybrid_bytes_result.IsOk()) {
+                            auto hkdf_output = Hkdf::DeriveKeyBytes(
+                                hybrid_bytes_result.Unwrap(),
+                                Constants::X_25519_KEY_SIZE * 2,
+                                pre_bob_root,
+                                std::vector<uint8_t>(ProtocolConstants::HYBRID_DH_RATCHET_INFO.begin(),
+                                                     ProtocolConstants::HYBRID_DH_RATCHET_INFO.end()));
+                            if (hkdf_output.IsOk()) {
+                                auto hkdf = hkdf_output.Unwrap();
+                                expected_root.assign(hkdf.begin(),
+                                                     hkdf.begin() + Constants::X_25519_KEY_SIZE);
+                            }
+                        }
+                    }
+                    std::cerr << "DH sizes - alice: "
+                              << (alice_current_dh.IsOk() && alice_current_dh.Unwrap().has_value()
+                                      ? std::to_string(alice_current_dh.Unwrap()->size()) : "err")
+                              << " bob: "
+                              << (bob_current_dh.IsOk() && bob_current_dh.Unwrap().has_value()
+                                      ? std::to_string(bob_current_dh.Unwrap()->size()) : "err")
+                              << " pre-root size " << pre_alice_root.size() << "/" << pre_bob_root.size()
+                              << " pre-root match: " << (pre_alice_root == pre_bob_root ? "YES" : "NO")
+                              << " root size " << alice_root.size() << "/" << bob_root.size()
+                              << " root match: " << (alice_root == bob_root ? "YES" : "NO")
+                              << " dh match: " << (dh_a == dh_b ? "YES" : "NO")
+                              << " expected root match: "
+                              << (!expected_root.empty() && expected_root == alice_root ? "YES" : "NO")
+                              << " expected vs bob: "
+                              << (!expected_root.empty() && expected_root == bob_root ? "YES" : "NO")
+                              << " pq align a/b: "
+                              << ((alice_pq == kyber_ss && bob_pq == kyber_ss) ? "YES" : "NO")
+                              << std::endl;
+                }
             }
 
             auto nonce_result = alice->GenerateNextNonce();
@@ -583,13 +643,7 @@ TEST_CASE("Fuzzing - Repeated Values Stress Test", "[fuzzing][envelope][repeated
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Send 5000 identical messages - ensure unique ciphertexts") {
-        auto alice_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(alice_result.IsOk());
-        auto alice = std::move(alice_result).Unwrap();
-
-        auto bob_result = EcliptixProtocolConnection::Create(2, false);
-        REQUIRE(bob_result.IsOk());
-        auto bob = std::move(bob_result).Unwrap();
+        auto [alice, bob] = CreatePreparedPair(1, 2);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x9A);
 

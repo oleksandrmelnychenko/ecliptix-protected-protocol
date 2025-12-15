@@ -2,10 +2,12 @@
 #include <catch2/matchers/catch_matchers_vector.hpp>
 #include "ecliptix/protocol/connection/ecliptix_protocol_connection.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
+#include "ecliptix/crypto/kyber_interop.hpp"
 #include "ecliptix/core/constants.hpp"
 #include "ecliptix/models/bundles/local_public_key_bundle.hpp"
 #include "ecliptix/interfaces/i_protocol_event_handler.hpp"
 #include "ecliptix/configuration/ratchet_config.hpp"
+#include "helpers/hybrid_handshake.hpp"
 #include <thread>
 #include <atomic>
 #include <unordered_set>
@@ -16,6 +18,8 @@ using namespace ecliptix::protocol::connection;
 using namespace ecliptix::protocol::crypto;
 using namespace ecliptix::protocol::models;
 using namespace ecliptix::protocol::enums;
+using namespace ecliptix::protocol::test_helpers;
+
 
 static std::vector<uint8_t> MakeTestNonce(uint64_t idx) {
     // Nonce structure (12 bytes total):
@@ -55,36 +59,33 @@ public:
 TEST_CASE("EcliptixProtocolConnection - Creation and initialization", "[connection]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Create initiator connection") {
-        auto result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(result.IsOk());
-        auto conn = std::move(result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         REQUIRE(conn->IsInitiator());
         REQUIRE(conn->ExchangeType() == PubKeyExchangeType::X3DH);
     }
     SECTION("Create responder connection") {
-        auto result = EcliptixProtocolConnection::Create(2, false);
-        REQUIRE(result.IsOk());
-        auto conn = std::move(result).Unwrap();
+        auto conn = CreatePreparedConnection(2, false);
         REQUIRE_FALSE(conn->IsInitiator());
         REQUIRE(conn->ExchangeType() == PubKeyExchangeType::X3DH);
     }
     SECTION("Connection IDs are unique") {
-        auto conn1_result = EcliptixProtocolConnection::Create(1, true);
-        auto conn2_result = EcliptixProtocolConnection::Create(2, true);
-        REQUIRE(conn1_result.IsOk());
-        REQUIRE(conn2_result.IsOk());
+        auto conn1 = CreatePreparedConnection(1, true);
+        auto conn2 = CreatePreparedConnection(2, true);
+        (void) conn1;
+        (void) conn2;
     }
 }
 TEST_CASE("EcliptixProtocolConnection - SetPeerBundle", "[connection]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Set peer bundle before finalization succeeds") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         std::vector<uint8_t> ed25519_pub(Constants::ED_25519_PUBLIC_KEY_SIZE, 0x01);
         std::vector<uint8_t> x25519_pub(Constants::X_25519_PUBLIC_KEY_SIZE, 0x02);
         std::vector<uint8_t> spk_pub(Constants::X_25519_PUBLIC_KEY_SIZE, 0x03);
         std::vector<uint8_t> spk_sig(Constants::ED_25519_SIGNATURE_SIZE, 0x04);
+        auto kyber_keypair = KyberInterop::GenerateKyber768KeyPair("peer-bundle");
+        REQUIRE(kyber_keypair.IsOk());
+        auto kyber_public = std::move(kyber_keypair.Unwrap().second);
         LocalPublicKeyBundle bundle(
             ed25519_pub,
             x25519_pub,
@@ -92,7 +93,8 @@ TEST_CASE("EcliptixProtocolConnection - SetPeerBundle", "[connection]") {
             spk_pub,
             spk_sig,
             {},
-            std::nullopt
+            std::nullopt,
+            kyber_public
         );
         auto set_result = conn->SetPeerBundle(bundle);
         REQUIRE(set_result.IsOk());
@@ -102,9 +104,7 @@ TEST_CASE("EcliptixProtocolConnection - SetPeerBundle", "[connection]") {
         REQUIRE(retrieved.GetEd25519Public() == ed25519_pub);
     }
     SECTION("Cannot set peer bundle after finalization") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
         std::vector<uint8_t> peer_dh_pub(Constants::X_25519_PUBLIC_KEY_SIZE, 0xBB);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer-dh");
@@ -116,6 +116,9 @@ TEST_CASE("EcliptixProtocolConnection - SetPeerBundle", "[connection]") {
         std::vector<uint8_t> x25519_pub(Constants::X_25519_PUBLIC_KEY_SIZE, 0x02);
         std::vector<uint8_t> spk_pub(Constants::X_25519_PUBLIC_KEY_SIZE, 0x03);
         std::vector<uint8_t> spk_sig(Constants::ED_25519_SIGNATURE_SIZE, 0x04);
+        auto kyber_keypair = KyberInterop::GenerateKyber768KeyPair("peer-bundle");
+        REQUIRE(kyber_keypair.IsOk());
+        auto kyber_public = std::move(kyber_keypair.Unwrap().second);
         LocalPublicKeyBundle bundle(
             ed25519_pub,
             x25519_pub,
@@ -123,7 +126,8 @@ TEST_CASE("EcliptixProtocolConnection - SetPeerBundle", "[connection]") {
             spk_pub,
             spk_sig,
             {},
-            std::nullopt
+            std::nullopt,
+            kyber_public
         );
         auto set_result = conn->SetPeerBundle(bundle);
         REQUIRE(set_result.IsErr());
@@ -132,9 +136,7 @@ TEST_CASE("EcliptixProtocolConnection - SetPeerBundle", "[connection]") {
 TEST_CASE("EcliptixProtocolConnection - Finalization", "[connection]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Successful finalization") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer-dh");
         REQUIRE(peer_keypair.IsOk());
@@ -143,9 +145,7 @@ TEST_CASE("EcliptixProtocolConnection - Finalization", "[connection]") {
         REQUIRE(finalize_result.IsOk());
     }
     SECTION("Cannot finalize twice") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
@@ -156,9 +156,7 @@ TEST_CASE("EcliptixProtocolConnection - Finalization", "[connection]") {
         REQUIRE(finalize2.IsErr());
     }
     SECTION("Reject invalid root key size") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         std::vector<uint8_t> bad_root_key(16, 0xAA);  
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
@@ -167,9 +165,7 @@ TEST_CASE("EcliptixProtocolConnection - Finalization", "[connection]") {
         REQUIRE(finalize_result.IsErr());
     }
     SECTION("Reject invalid peer DH public key size") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
         std::vector<uint8_t> bad_peer_pk(16, 0xBB);  
         auto finalize_result = conn->FinalizeChainAndDhKeys(root_key, bad_peer_pk);
@@ -179,18 +175,14 @@ TEST_CASE("EcliptixProtocolConnection - Finalization", "[connection]") {
 TEST_CASE("EcliptixProtocolConnection - Nonce generation", "[connection]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Generate valid nonce") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         auto nonce_result = conn->GenerateNextNonce();
         REQUIRE(nonce_result.IsOk());
         auto nonce = nonce_result.Unwrap();
         REQUIRE(nonce.size() == 12);  
     }
     SECTION("Nonces are unique") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         auto nonce1_result = conn->GenerateNextNonce();
         auto nonce2_result = conn->GenerateNextNonce();
         auto nonce3_result = conn->GenerateNextNonce();
@@ -203,9 +195,7 @@ TEST_CASE("EcliptixProtocolConnection - Nonce generation", "[connection]") {
         REQUIRE((nonce1 != nonce2 || nonce2 != nonce3));
     }
     SECTION("Counter increments") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         std::vector<std::vector<uint8_t>> nonces;
         for (int i = 0; i < 10; ++i) {
             auto nonce_result = conn->GenerateNextNonce();
@@ -222,17 +212,13 @@ TEST_CASE("EcliptixProtocolConnection - Nonce generation", "[connection]") {
 TEST_CASE("EcliptixProtocolConnection - Replay protection", "[connection]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Valid nonce size passes") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         std::vector<uint8_t> valid_nonce(12, 0x42);
         auto check_result = conn->CheckReplayProtection(valid_nonce, 1);
         REQUIRE(check_result.IsOk());
     }
     SECTION("Invalid nonce size fails") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         std::vector<uint8_t> bad_nonce(8, 0x42);  
         auto check_result = conn->CheckReplayProtection(bad_nonce, 1);
         REQUIRE(check_result.IsErr());
@@ -241,16 +227,12 @@ TEST_CASE("EcliptixProtocolConnection - Replay protection", "[connection]") {
 TEST_CASE("EcliptixProtocolConnection - Message preparation", "[connection]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Cannot prepare message before finalization") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         auto prepare_result = conn->PrepareNextSendMessage();
         REQUIRE(prepare_result.IsErr());
     }
     SECTION("Prepare message after finalization succeeds") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
@@ -263,9 +245,7 @@ TEST_CASE("EcliptixProtocolConnection - Message preparation", "[connection]") {
         REQUIRE(ratchet_key.Index() == 0);  // First message has index 0  
     }
     SECTION("Multiple message preparation increments index") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
@@ -286,16 +266,12 @@ TEST_CASE("EcliptixProtocolConnection - Message preparation", "[connection]") {
 TEST_CASE("EcliptixProtocolConnection - Message processing", "[connection]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Cannot process message before finalization") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, false);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, false);
         auto process_result = conn->ProcessReceivedMessage(1, MakeTestNonce(1));
         REQUIRE(process_result.IsErr());
     }
     SECTION("Process message after finalization succeeds") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, false);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, false);
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
@@ -311,9 +287,7 @@ TEST_CASE("EcliptixProtocolConnection - Message processing", "[connection]") {
 TEST_CASE("EcliptixProtocolConnection - DH ratchet operations", "[connection]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Perform receiving ratchet with valid key") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, false);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, false);
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
@@ -323,13 +297,14 @@ TEST_CASE("EcliptixProtocolConnection - DH ratchet operations", "[connection]") 
         auto new_keypair = SodiumInterop::GenerateX25519KeyPair("test-new-ephemeral");
         REQUIRE(new_keypair.IsOk());
         auto [new_sk, new_pk] = std::move(new_keypair).Unwrap();
-        auto ratchet_result = conn->PerformReceivingRatchet(new_pk);
+        auto kyber_encap = KyberInterop::Encapsulate(conn->GetKyberPublicKeyCopy());
+        REQUIRE(kyber_encap.IsOk());
+        auto [ct, ss_handle] = std::move(kyber_encap).Unwrap();
+        auto ratchet_result = conn->PerformReceivingRatchet(new_pk, ct);
         REQUIRE(ratchet_result.IsOk());
     }
     SECTION("Reject invalid DH key size") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, false);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, false);
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
@@ -337,22 +312,21 @@ TEST_CASE("EcliptixProtocolConnection - DH ratchet operations", "[connection]") 
         auto finalize_result = conn->FinalizeChainAndDhKeys(root_key, peer_pk);
         REQUIRE(finalize_result.IsOk());
         std::vector<uint8_t> bad_dh_key(16, 0xBB);  
-        auto ratchet_result = conn->PerformReceivingRatchet(bad_dh_key);
+        auto kyber_encap = KyberInterop::Encapsulate(conn->GetKyberPublicKeyCopy());
+        REQUIRE(kyber_encap.IsOk());
+        auto [ct, ss_handle] = std::move(kyber_encap).Unwrap();
+        auto ratchet_result = conn->PerformReceivingRatchet(bad_dh_key, ct);
         REQUIRE(ratchet_result.IsErr());
     }
     SECTION("NotifyRatchetRotation sets flag") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         conn->NotifyRatchetRotation();
     }
 }
 TEST_CASE("EcliptixProtocolConnection - State queries", "[connection]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Get current sender DH public key") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         auto key_result = conn->GetCurrentSenderDhPublicKey();
         REQUIRE(key_result.IsOk());
         auto key_opt = key_result.Unwrap();
@@ -360,16 +334,12 @@ TEST_CASE("EcliptixProtocolConnection - State queries", "[connection]") {
         REQUIRE(key_opt->size() == Constants::X_25519_PUBLIC_KEY_SIZE);
     }
     SECTION("Get metadata encryption key before finalization fails") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         auto key_result = conn->GetMetadataEncryptionKey();
         REQUIRE(key_result.IsErr());
     }
     SECTION("Get metadata encryption key after finalization succeeds") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
@@ -385,16 +355,12 @@ TEST_CASE("EcliptixProtocolConnection - State queries", "[connection]") {
 TEST_CASE("EcliptixProtocolConnection - SyncWithRemoteState", "[connection]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Cannot sync before finalization") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         auto sync_result = conn->SyncWithRemoteState(10, 10);
         REQUIRE(sync_result.IsErr());
     }
     SECTION("Successful sync with remote state") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
@@ -405,9 +371,7 @@ TEST_CASE("EcliptixProtocolConnection - SyncWithRemoteState", "[connection]") {
         REQUIRE(sync_result.IsOk());
     }
     SECTION("Sync advances receiving chain") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, false);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, false);
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
@@ -422,9 +386,7 @@ TEST_CASE("EcliptixProtocolConnection - SyncWithRemoteState", "[connection]") {
         REQUIRE(msg10.IsOk());
     }
     SECTION("Sync advances sending chain") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
@@ -441,9 +403,7 @@ TEST_CASE("EcliptixProtocolConnection - SyncWithRemoteState", "[connection]") {
         REQUIRE(msg_next.Unwrap().first.Index() == 6);  // Synced to index 6
     }
     SECTION("Reject sync with gap too large") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
@@ -458,9 +418,7 @@ TEST_CASE("EcliptixProtocolConnection - Event Handler", "[connection]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Event handler is called on finalization") {
         auto handler = std::make_shared<MockEventHandler>();
-        auto conn_result = EcliptixProtocolConnection::Create(42, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(42, true);
         conn->SetEventHandler(handler);
         REQUIRE(handler->call_count == 0);
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x11);
@@ -474,9 +432,7 @@ TEST_CASE("EcliptixProtocolConnection - Event Handler", "[connection]") {
     }
     SECTION("Event handler is called on message preparation") {
         auto handler = std::make_shared<MockEventHandler>();
-        auto conn_result = EcliptixProtocolConnection::Create(99, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(99, true);
         conn->SetEventHandler(handler);
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x22);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
@@ -492,9 +448,7 @@ TEST_CASE("EcliptixProtocolConnection - Event Handler", "[connection]") {
     }
     SECTION("Event handler can be set to nullptr") {
         auto handler = std::make_shared<MockEventHandler>();
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         conn->SetEventHandler(handler);
         conn->SetEventHandler(nullptr);
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x33);
@@ -506,12 +460,8 @@ TEST_CASE("EcliptixProtocolConnection - Event Handler", "[connection]") {
         REQUIRE(handler->call_count == 0);
     }
     SECTION("Event handler is called on receiving ratchet") {
-        auto alice_result = EcliptixProtocolConnection::Create(1, true);
-        auto bob_result = EcliptixProtocolConnection::Create(2, false);
-        REQUIRE(alice_result.IsOk());
-        REQUIRE(bob_result.IsOk());
-        auto alice = std::move(alice_result).Unwrap();
-        auto bob = std::move(bob_result).Unwrap();
+        auto [alice, bob] = CreatePreparedPair(1, 2);
+        PrepareHybridHandshake(alice, bob);
         auto handler = std::make_shared<MockEventHandler>();
         alice->SetEventHandler(handler);
         auto alice_dh_result = alice->GetCurrentSenderDhPublicKey();
@@ -529,7 +479,8 @@ TEST_CASE("EcliptixProtocolConnection - Event Handler", "[connection]") {
         auto new_bob_keypair = SodiumInterop::GenerateX25519KeyPair("bob-new");
         REQUIRE(new_bob_keypair.IsOk());
         auto [new_bob_sk, new_bob_pk] = std::move(new_bob_keypair).Unwrap();
-        auto ratchet_result = alice->PerformReceivingRatchet(new_bob_pk);
+        auto kyber_ct = EncapsulateTo(alice->GetKyberPublicKeyCopy());
+        auto ratchet_result = alice->PerformReceivingRatchet(new_bob_pk, kyber_ct);
         REQUIRE(ratchet_result.IsOk());
         REQUIRE(handler->call_count > calls_after_finalize);
         REQUIRE(handler->last_connect_id == 1);
@@ -538,9 +489,7 @@ TEST_CASE("EcliptixProtocolConnection - Event Handler", "[connection]") {
 TEST_CASE("EcliptixProtocolConnection - Nonce Counter Overflow Protection", "[connection][security]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Nonce generation succeeds for reasonable message counts") {
-        auto result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(result.IsOk());
-        auto conn = std::move(result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         for (int i = 0; i < 500; ++i) {
             auto nonce_result = conn->GenerateNextNonce();
             REQUIRE(nonce_result.IsOk());
@@ -552,9 +501,7 @@ TEST_CASE("EcliptixProtocolConnection - Nonce Counter Overflow Protection", "[co
 TEST_CASE("EcliptixProtocolConnection - Reflection Attack Protection", "[connection][security]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Detect reflection attack - peer echoes our DH key") {
-        auto alice_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(alice_result.IsOk());
-        auto alice = std::move(alice_result).Unwrap();
+        auto alice = CreatePreparedConnection(1, true);
         auto alice_dh_key = alice->GetCurrentSenderDhPublicKey();
         REQUIRE(alice_dh_key.IsOk());
         auto alice_dh_option = std::move(alice_dh_key).Unwrap();
@@ -567,9 +514,7 @@ TEST_CASE("EcliptixProtocolConnection - Reflection Attack Protection", "[connect
         REQUIRE(error.message.find("reflection attack") != std::string::npos);
     }
     SECTION("Allow valid DH key exchange") {
-        auto alice_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(alice_result.IsOk());
-        auto alice = std::move(alice_result).Unwrap();
+        auto alice = CreatePreparedConnection(1, true);
         auto bob_keypair = SodiumInterop::GenerateX25519KeyPair("bob");
         REQUIRE(bob_keypair.IsOk());
         auto [bob_sk, bob_pk] = std::move(bob_keypair).Unwrap();
@@ -581,9 +526,7 @@ TEST_CASE("EcliptixProtocolConnection - Reflection Attack Protection", "[connect
 TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: Nonce Counter Never Resets (CVE Fix)", "[connection][security][sprint1.5b]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Nonce counter continues monotonically after DH ratchet (CVE-2024-XXXXX fix)") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
@@ -605,7 +548,8 @@ TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: Nonce Counter Never Resets 
         auto new_peer_keypair = SodiumInterop::GenerateX25519KeyPair("new-peer");
         REQUIRE(new_peer_keypair.IsOk());
         auto [new_peer_sk, new_peer_pk] = std::move(new_peer_keypair).Unwrap();
-        auto ratchet_result = conn->PerformReceivingRatchet(new_peer_pk);
+        auto kyber_ct = EncapsulateTo(conn->GetKyberPublicKeyCopy());
+        auto ratchet_result = conn->PerformReceivingRatchet(new_peer_pk, kyber_ct);
         REQUIRE(ratchet_result.IsOk());
         auto nonce2 = conn->GenerateNextNonce();
         REQUIRE(nonce2.IsOk());
@@ -621,9 +565,7 @@ TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: Nonce Counter Never Resets 
     }
     SECTION("Ratchet warning flag resets after DH ratchet") {
         auto handler = std::make_shared<MockEventHandler>();
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         conn->SetEventHandler(handler);
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
@@ -641,9 +583,7 @@ TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: Nonce Counter Never Resets 
 TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: Nonce Uniqueness Across Ratchet", "[connection][security][sprint1.5b]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("No nonce reuse across DH ratchet boundary") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
@@ -662,7 +602,8 @@ TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: Nonce Uniqueness Across Rat
         auto new_peer_keypair = SodiumInterop::GenerateX25519KeyPair("new-peer");
         REQUIRE(new_peer_keypair.IsOk());
         auto [new_peer_sk, new_peer_pk] = std::move(new_peer_keypair).Unwrap();
-        auto ratchet_result = conn->PerformReceivingRatchet(new_peer_pk);
+        auto kyber_ct = EncapsulateTo(conn->GetKyberPublicKeyCopy());
+        auto ratchet_result = conn->PerformReceivingRatchet(new_peer_pk, kyber_ct);
         REQUIRE(ratchet_result.IsOk());
         for (int i = 0; i < 200; ++i) {
             auto nonce_result = conn->GenerateNextNonce();
@@ -678,9 +619,7 @@ TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: Nonce Uniqueness Across Rat
 TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: Concurrent Send + Ratchet Stress Test", "[connection][security][sprint1.5b][stress]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("No nonce collisions under concurrent load") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xBB);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
@@ -723,9 +662,7 @@ TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: MAX_CHAIN_LENGTH Enforcemen
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Chain length enforcement triggers ratchet requirement") {
         RatchetConfig config(50000);
-        auto conn_result = EcliptixProtocolConnection::Create(1, true, config);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true, config);
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xCC);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
@@ -750,9 +687,7 @@ TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: Ratchet Warning Reset", "[c
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Ratchet warning can trigger again after reset") {
         auto handler = std::make_shared<MockEventHandler>();
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
         conn->SetEventHandler(handler);
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xDD);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");

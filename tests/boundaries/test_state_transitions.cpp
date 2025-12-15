@@ -1,8 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
 #include "ecliptix/protocol/connection/ecliptix_protocol_connection.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
+#include "ecliptix/crypto/kyber_interop.hpp"
 #include "ecliptix/core/constants.hpp"
 #include "ecliptix/models/bundles/local_public_key_bundle.hpp"
+#include "helpers/hybrid_handshake.hpp"
 #include <sodium.h>
 #include <thread>
 #include <vector>
@@ -12,6 +14,7 @@ using namespace ecliptix::protocol::connection;
 using namespace ecliptix::protocol::crypto;
 using namespace ecliptix::protocol;
 using namespace ecliptix::protocol::models;
+using namespace ecliptix::protocol::test_helpers;
 
 namespace {
 
@@ -22,6 +25,7 @@ struct TestKeyMaterial {
     std::vector<uint8_t> identity_x25519_pub;
     std::vector<uint8_t> signed_pre_key_pub;
     std::vector<uint8_t> signed_pre_key_sig;
+    std::vector<uint8_t> kyber_public_key;
 
     LocalPublicKeyBundle GetBundle() const {
         return LocalPublicKeyBundle(
@@ -30,7 +34,9 @@ struct TestKeyMaterial {
             1,
             signed_pre_key_pub,
             signed_pre_key_sig,
-            {}
+            {},
+            std::nullopt,
+            kyber_public_key
         );
     }
 
@@ -50,15 +56,16 @@ struct TestKeyMaterial {
         material.identity_x25519_pub = SodiumInterop::GetRandomBytes(Constants::X_25519_PUBLIC_KEY_SIZE);
         material.signed_pre_key_pub = material.peer_dh_public_key;
         material.signed_pre_key_sig = SodiumInterop::GetRandomBytes(Constants::ED_25519_SIGNATURE_SIZE);
+        auto kyber_pair = KyberInterop::GenerateKyber768KeyPair("test-bundle");
+        REQUIRE(kyber_pair.IsOk());
+        material.kyber_public_key = std::move(kyber_pair.Unwrap().second);
 
         return material;
     }
 };
 
 auto CreateUnfinalizedConnection() {
-    auto result = EcliptixProtocolConnection::Create(1, true);
-    REQUIRE(result.IsOk());
-    return std::move(result).Unwrap();
+    return CreatePreparedConnection(1, true);
 }
 
 auto CreateFinalizedConnection(const TestKeyMaterial& material) {
@@ -225,7 +232,8 @@ TEST_CASE("State Transitions - Unfinalized Violations: PerformReceivingRatchet",
     SECTION("PerformReceivingRatchet before finalization must fail") {
         std::vector<uint8_t> fake_dh_key(Constants::X_25519_PUBLIC_KEY_SIZE, 0x42);
 
-        auto result = conn->PerformReceivingRatchet(fake_dh_key);
+        auto kyber_ct = EncapsulateTo(conn->GetKyberPublicKeyCopy());
+        auto result = conn->PerformReceivingRatchet(fake_dh_key, kyber_ct);
         REQUIRE(result.IsErr());
 
         auto err = std::move(result).UnwrapErr();
@@ -239,7 +247,8 @@ TEST_CASE("State Transitions - Unfinalized Violations: PerformReceivingRatchet",
         REQUIRE(peer_result.IsOk());
 
         std::vector<uint8_t> fake_dh_key(Constants::X_25519_PUBLIC_KEY_SIZE, 0x42);
-        auto ratchet_result = conn->PerformReceivingRatchet(fake_dh_key);
+        auto kyber_ct = EncapsulateTo(conn->GetKyberPublicKeyCopy());
+        auto ratchet_result = conn->PerformReceivingRatchet(fake_dh_key, kyber_ct);
         REQUIRE(ratchet_result.IsErr());
 
         auto err = std::move(ratchet_result).UnwrapErr();

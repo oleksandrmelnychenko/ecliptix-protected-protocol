@@ -40,5 +40,11 @@ message PublicKeyBundle {
   bytes identity_x25519_public_key = 6;
 
   bytes ephemeral_x25519_public_key = 7;
-}
 
+  // Post-quantum Kyber-768 public key (1184 bytes). Always required in hybrid mode.
+  bytes kyber_public_key = 8;
+
+  // Optional Kyber ciphertext for initial encapsulation (1088 bytes).
+  // Present when the initiator encapsulates to the responder's Kyber key as part of the handshake.
+  bytes kyber_ciphertext = 9;
+}

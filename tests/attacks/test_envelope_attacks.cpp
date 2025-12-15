@@ -4,6 +4,7 @@
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/utilities/envelope_builder.hpp"
 #include "ecliptix/core/constants.hpp"
+#include "helpers/hybrid_handshake.hpp"
 #include "common/secure_envelope.pb.h"
 #include <vector>
 #include <unordered_set>
@@ -14,6 +15,7 @@ using namespace ecliptix::protocol::connection;
 using namespace ecliptix::protocol::crypto;
 using namespace ecliptix::protocol::utilities;
 using namespace ecliptix::proto::common;
+using namespace ecliptix::protocol::test_helpers;
 
 static std::vector<uint8_t> MakeBoundNonce(uint32_t index, uint8_t fill = 0x42) {
     std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE, fill);
@@ -32,19 +34,9 @@ struct AttackTestContext {
     [[nodiscard]] static Result<AttackTestContext, EcliptixProtocolFailure> Create() {
         AttackTestContext ctx;
 
-        auto alice_result = EcliptixProtocolConnection::Create(1, true);
-        if (alice_result.IsErr()) {
-            return Result<AttackTestContext, EcliptixProtocolFailure>::Err(
-                std::move(alice_result).UnwrapErr());
-        }
-        ctx.alice = std::move(alice_result).Unwrap();
-
-        auto bob_result = EcliptixProtocolConnection::Create(2, false);
-        if (bob_result.IsErr()) {
-            return Result<AttackTestContext, EcliptixProtocolFailure>::Err(
-                std::move(bob_result).UnwrapErr());
-        }
-        ctx.bob = std::move(bob_result).Unwrap();
+        auto [alice, bob] = CreatePreparedPair(1, 2);
+        ctx.alice = std::move(alice);
+        ctx.bob = std::move(bob);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAB);
 
@@ -431,17 +423,9 @@ TEST_CASE("Attacks - Wrong Key Decryption Attempts", "[attacks][envelope][key-co
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Detect wrong metadata key usage in 1000 envelopes") {
-        auto alice_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(alice_result.IsOk());
-        auto alice = std::move(alice_result).Unwrap();
+        auto [alice, bob] = CreatePreparedPair(1, 2);
 
-        auto bob_result = EcliptixProtocolConnection::Create(2, false);
-        REQUIRE(bob_result.IsOk());
-        auto bob = std::move(bob_result).Unwrap();
-
-        auto eve_result = EcliptixProtocolConnection::Create(3, false);
-        REQUIRE(eve_result.IsOk());
-        auto eve = std::move(eve_result).Unwrap();
+        auto eve = CreatePreparedConnection(3, false);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x11);
 

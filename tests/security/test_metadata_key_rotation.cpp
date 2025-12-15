@@ -2,6 +2,7 @@
 #include "ecliptix/protocol/connection/ecliptix_protocol_connection.hpp"
 #include "ecliptix/crypto/aes_gcm.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
+#include "helpers/hybrid_handshake.hpp"
 #include "ecliptix/utilities/envelope_builder.hpp"
 #include "ecliptix/core/constants.hpp"
 #include "common/secure_envelope.pb.h"
@@ -13,6 +14,7 @@ using namespace ecliptix::protocol::connection;
 using namespace ecliptix::protocol::crypto;
 using namespace ecliptix::protocol::utilities;
 using namespace ecliptix::proto::common;
+using namespace ecliptix::protocol::test_helpers;
 
 // Helper to create unique nonces with proper chain index binding
 // nonce_counter: Unique monotonic counter for nonce uniqueness (bytes 0-7)
@@ -39,13 +41,7 @@ TEST_CASE("Metadata Key Rotation - Basic Rotation on DH Ratchet", "[security][me
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Metadata key rotates on DH ratchet") {
-        auto alice_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(alice_result.IsOk());
-        auto alice = std::move(alice_result).Unwrap();
-
-        auto bob_result = EcliptixProtocolConnection::Create(2, false);
-        REQUIRE(bob_result.IsOk());
-        auto bob = std::move(bob_result).Unwrap();
+        auto [alice, bob] = CreatePreparedPair(1, 2);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
 
@@ -82,7 +78,8 @@ TEST_CASE("Metadata Key Rotation - Basic Rotation on DH Ratchet", "[security][me
             if (include_dh) {
                 ratchet_occurred = true;
                 auto alice_new_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
-                auto ratchet_result = bob->PerformReceivingRatchet(alice_new_dh);
+                auto alice_ct = GetKyberCiphertextForSender(alice);
+                auto ratchet_result = bob->PerformReceivingRatchet(alice_new_dh, alice_ct);
                 if (ratchet_result.IsErr()) {
                     FAIL(ratchet_result.UnwrapErr().message);
                 }
@@ -115,13 +112,7 @@ TEST_CASE("Metadata Key Rotation - Forward Secrecy", "[security][metadata_rotati
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Old metadata keys cannot decrypt new messages after rotation") {
-        auto alice_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(alice_result.IsOk());
-        auto alice = std::move(alice_result).Unwrap();
-
-        auto bob_result = EcliptixProtocolConnection::Create(2, false);
-        REQUIRE(bob_result.IsOk());
-        auto bob = std::move(bob_result).Unwrap();
+        auto [alice, bob] = CreatePreparedPair(1, 2);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xBB);
 
@@ -143,7 +134,8 @@ TEST_CASE("Metadata Key Rotation - Forward Secrecy", "[security][metadata_rotati
                 auto [alice_key, include_dh] = std::move(prepare).Unwrap();
                 if (include_dh) {
                     auto alice_new_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
-                    REQUIRE(bob->PerformReceivingRatchet(alice_new_dh).IsOk());
+                    auto alice_ct = GetKyberCiphertextForSender(alice);
+                    REQUIRE(bob->PerformReceivingRatchet(alice_new_dh, alice_ct).IsOk());
                 }
                 REQUIRE(bob->ProcessReceivedMessage(alice_key.Index(), MakeMetaNonce(nonce_counter++, alice_key.Index())).IsOk());
             }
@@ -185,13 +177,7 @@ TEST_CASE("Metadata Key Rotation - Uniqueness Across Ratchets", "[security][meta
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Each DH ratchet produces unique metadata key") {
-        auto alice_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(alice_result.IsOk());
-        auto alice = std::move(alice_result).Unwrap();
-
-        auto bob_result = EcliptixProtocolConnection::Create(2, false);
-        REQUIRE(bob_result.IsOk());
-        auto bob = std::move(bob_result).Unwrap();
+        auto [alice, bob] = CreatePreparedPair(1, 2);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xCC);
 
@@ -213,7 +199,8 @@ TEST_CASE("Metadata Key Rotation - Uniqueness Across Ratchets", "[security][meta
                 auto [alice_key, include_dh] = std::move(prepare).Unwrap();
                 if (include_dh) {
                     auto alice_new_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
-                    REQUIRE(bob->PerformReceivingRatchet(alice_new_dh).IsOk());
+                    auto alice_ct = GetKyberCiphertextForSender(alice);
+                    REQUIRE(bob->PerformReceivingRatchet(alice_new_dh, alice_ct).IsOk());
                 }
                 auto process = bob->ProcessReceivedMessage(alice_key.Index(), MakeMetaNonce(nonce_counter++, alice_key.Index()));
                 REQUIRE(process.IsOk());
@@ -232,13 +219,7 @@ TEST_CASE("Metadata Key Rotation - Decryption Window", "[security][metadata_rota
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Messages encrypted with rotated key cannot be decrypted with old key") {
-        auto alice_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(alice_result.IsOk());
-        auto alice = std::move(alice_result).Unwrap();
-
-        auto bob_result = EcliptixProtocolConnection::Create(2, false);
-        REQUIRE(bob_result.IsOk());
-        auto bob = std::move(bob_result).Unwrap();
+        auto [alice, bob] = CreatePreparedPair(1, 2);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xDD);
 
@@ -280,7 +261,8 @@ TEST_CASE("Metadata Key Rotation - Decryption Window", "[security][metadata_rota
                 auto [alice_key, include_dh] = std::move(prepare).Unwrap();
                 if (include_dh) {
                     auto alice_new_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
-                    REQUIRE(bob->PerformReceivingRatchet(alice_new_dh).IsOk());
+                    auto alice_ct = GetKyberCiphertextForSender(alice);
+                    REQUIRE(bob->PerformReceivingRatchet(alice_new_dh, alice_ct).IsOk());
                 }
                 REQUIRE(bob->ProcessReceivedMessage(alice_key.Index(), MakeMetaNonce(nonce_counter++, alice_key.Index())).IsOk());
             }
@@ -315,13 +297,7 @@ TEST_CASE("Metadata Key Rotation - High-Frequency Ratchets", "[security][metadat
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Metadata key remains unique under high-frequency ratcheting") {
-        auto alice_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(alice_result.IsOk());
-        auto alice = std::move(alice_result).Unwrap();
-
-        auto bob_result = EcliptixProtocolConnection::Create(2, false);
-        REQUIRE(bob_result.IsOk());
-        auto bob = std::move(bob_result).Unwrap();
+        auto [alice, bob] = CreatePreparedPair(1, 2);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xEE);
 
@@ -344,7 +320,8 @@ TEST_CASE("Metadata Key Rotation - High-Frequency Ratchets", "[security][metadat
                 auto [alice_key, include_dh] = std::move(prepare).Unwrap();
                 if (include_dh) {
                     auto alice_new_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
-                    REQUIRE(bob->PerformReceivingRatchet(alice_new_dh).IsOk());
+                    auto alice_ct = GetKyberCiphertextForSender(alice);
+                    REQUIRE(bob->PerformReceivingRatchet(alice_new_dh, alice_ct).IsOk());
                 }
                 REQUIRE(bob->ProcessReceivedMessage(alice_key.Index(), MakeMetaNonce(nonce_counter++, alice_key.Index())).IsOk());
             }
@@ -362,13 +339,7 @@ TEST_CASE("Metadata Key Rotation - Bidirectional Ratchets", "[security][metadata
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Both sides maintain independent metadata key rotation") {
-        auto alice_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(alice_result.IsOk());
-        auto alice = std::move(alice_result).Unwrap();
-
-        auto bob_result = EcliptixProtocolConnection::Create(2, false);
-        REQUIRE(bob_result.IsOk());
-        auto bob = std::move(bob_result).Unwrap();
+        auto [alice, bob] = CreatePreparedPair(1, 2);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xFF);
 
@@ -395,7 +366,8 @@ TEST_CASE("Metadata Key Rotation - Bidirectional Ratchets", "[security][metadata
                 auto [key, include_dh] = prepare.Unwrap();
                 if (include_dh) {
                     auto alice_new_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
-                    REQUIRE(bob->PerformReceivingRatchet(alice_new_dh).IsOk());
+                    auto alice_ct = GetKyberCiphertextForSender(alice);
+                    REQUIRE(bob->PerformReceivingRatchet(alice_new_dh, alice_ct).IsOk());
                 }
                 REQUIRE(bob->ProcessReceivedMessage(key.Index(), MakeMetaNonce(alice_nonce_counter++, key.Index())).IsOk());
             }
@@ -408,7 +380,8 @@ TEST_CASE("Metadata Key Rotation - Bidirectional Ratchets", "[security][metadata
                 auto [key, include_dh] = prepare.Unwrap();
                 if (include_dh) {
                     auto bob_new_dh = bob->GetCurrentSenderDhPublicKey().Unwrap().value();
-                    REQUIRE(alice->PerformReceivingRatchet(bob_new_dh).IsOk());
+                    auto bob_ct = GetKyberCiphertextForSender(bob);
+                    REQUIRE(alice->PerformReceivingRatchet(bob_new_dh, bob_ct).IsOk());
                 }
                 REQUIRE(alice->ProcessReceivedMessage(key.Index(), MakeMetaNonce(bob_nonce_counter++, key.Index())).IsOk());
             }
@@ -444,13 +417,7 @@ TEST_CASE("Metadata Key Rotation - Key Derivation Independence", "[security][met
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Metadata keys derived independently from message keys") {
-        auto alice_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(alice_result.IsOk());
-        auto alice = std::move(alice_result).Unwrap();
-
-        auto bob_result = EcliptixProtocolConnection::Create(2, false);
-        REQUIRE(bob_result.IsOk());
-        auto bob = std::move(bob_result).Unwrap();
+        auto [alice, bob] = CreatePreparedPair(1, 2);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x11);
 
@@ -504,13 +471,9 @@ TEST_CASE("Metadata Key Rotation - Cross-Connection Independence", "[security][m
     SECTION("Different connections produce different metadata keys") {
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x22);
 
-        auto conn1_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn1_result.IsOk());
-        auto conn1 = std::move(conn1_result).Unwrap();
+        auto conn1 = CreatePreparedConnection(1, true);
 
-        auto conn2_result = EcliptixProtocolConnection::Create(2, false);
-        REQUIRE(conn2_result.IsOk());
-        auto conn2 = std::move(conn2_result).Unwrap();
+        auto conn2 = CreatePreparedConnection(2, false);
 
         auto conn1_peer = SodiumInterop::GenerateX25519KeyPair("peer1");
         REQUIRE(conn1_peer.IsOk());

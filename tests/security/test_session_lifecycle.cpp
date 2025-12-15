@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "ecliptix/protocol/connection/ecliptix_protocol_connection.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
+#include "helpers/hybrid_handshake.hpp"
 #include "ecliptix/core/constants.hpp"
 #include <vector>
 #include <thread>
@@ -9,6 +10,7 @@
 using namespace ecliptix::protocol;
 using namespace ecliptix::protocol::connection;
 using namespace ecliptix::protocol::crypto;
+using namespace ecliptix::protocol::test_helpers;
 
 static std::vector<uint8_t> MakeNonce(uint64_t idx) {
     // Nonce structure (12 bytes total):
@@ -33,9 +35,7 @@ TEST_CASE("Session Lifecycle - PrepareNextSendMessage Respects Timeout", "[secur
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("PrepareNextSendMessage fails after 24 hour timeout") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
@@ -62,9 +62,7 @@ TEST_CASE("Session Lifecycle - GenerateNextNonce Respects Timeout", "[security][
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("GenerateNextNonce fails after 24 hour timeout") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xBB);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
@@ -91,13 +89,7 @@ TEST_CASE("Session Lifecycle - ProcessReceivedMessage Respects Timeout", "[secur
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("ProcessReceivedMessage fails after 24 hour timeout") {
-        auto alice_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(alice_result.IsOk());
-        auto alice = std::move(alice_result).Unwrap();
-
-        auto bob_result = EcliptixProtocolConnection::Create(2, false);
-        REQUIRE(bob_result.IsOk());
-        auto bob = std::move(bob_result).Unwrap();
+        auto [alice, bob] = CreatePreparedPair(1, 2);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xCC);
 
@@ -125,13 +117,7 @@ TEST_CASE("Session Lifecycle - Multiple Operations Before Timeout", "[security][
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("All operations succeed within 24 hour window") {
-        auto alice_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(alice_result.IsOk());
-        auto alice = std::move(alice_result).Unwrap();
-
-        auto bob_result = EcliptixProtocolConnection::Create(2, false);
-        REQUIRE(bob_result.IsOk());
-        auto bob = std::move(bob_result).Unwrap();
+        auto [alice, bob] = CreatePreparedPair(1, 2);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xDD);
 
@@ -158,13 +144,7 @@ TEST_CASE("Session Lifecycle - All Operations Fail After Timeout", "[security][s
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("All operations fail after 24 hour timeout") {
-        auto alice_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(alice_result.IsOk());
-        auto alice = std::move(alice_result).Unwrap();
-
-        auto bob_result = EcliptixProtocolConnection::Create(2, false);
-        REQUIRE(bob_result.IsOk());
-        auto bob = std::move(bob_result).Unwrap();
+        auto [alice, bob] = CreatePreparedPair(1, 2);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xEE);
 
@@ -195,9 +175,7 @@ TEST_CASE("Session Lifecycle - Timeout Boundary Test", "[security][session][time
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Operations succeed just before timeout") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xFF);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
@@ -224,9 +202,7 @@ TEST_CASE("Session Lifecycle - Independent Connection Timeouts", "[security][ses
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Each connection has independent timeout") {
-        auto conn1_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn1_result.IsOk());
-        auto conn1 = std::move(conn1_result).Unwrap();
+        auto conn1 = CreatePreparedConnection(1, true);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x11);
         auto peer1 = SodiumInterop::GenerateX25519KeyPair("peer1");
@@ -241,9 +217,7 @@ TEST_CASE("Session Lifecycle - Independent Connection Timeouts", "[security][ses
         std::this_thread::sleep_for(std::chrono::hours(24) + std::chrono::seconds(1));
 #endif
 
-        auto conn2_result = EcliptixProtocolConnection::Create(2, false);
-        REQUIRE(conn2_result.IsOk());
-        auto conn2 = std::move(conn2_result).Unwrap();
+        auto conn2 = CreatePreparedConnection(2, false);
 
         auto peer2 = SodiumInterop::GenerateX25519KeyPair("peer2");
         REQUIRE(peer2.IsOk());
@@ -269,9 +243,7 @@ TEST_CASE("Session Lifecycle - Concurrent Timeout Checks", "[security][session][
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Concurrent operations all respect timeout") {
-        auto conn_result = EcliptixProtocolConnection::Create(1, true);
-        REQUIRE(conn_result.IsOk());
-        auto conn = std::move(conn_result).Unwrap();
+        auto conn = CreatePreparedConnection(1, true);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x22);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");

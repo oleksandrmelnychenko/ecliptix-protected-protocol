@@ -7,6 +7,7 @@
 #include "ecliptix/core/constants.hpp"
 #include "ecliptix/configuration/ratchet_config.hpp"
 #include "ecliptix/configuration/protocol_config.hpp"
+#include "helpers/hybrid_handshake.hpp"
 #include "common/secure_envelope.pb.h"
 #include <vector>
 #include <map>
@@ -20,6 +21,7 @@ using namespace ecliptix::protocol::crypto;
 using namespace ecliptix::protocol::utilities;
 using namespace ecliptix::protocol::configuration;
 using namespace ecliptix::proto::common;
+using namespace ecliptix::protocol::test_helpers;
 
 struct EndToEndTestContext {
     std::unique_ptr<EcliptixSystemIdentityKeys> alice_identity;
@@ -54,6 +56,13 @@ struct EndToEndTestContext {
 
         ctx.alice_identity->GenerateEphemeralKeyPair();
 
+        auto alice_bundle_result = ctx.alice_identity->CreatePublicBundle();
+        if (alice_bundle_result.IsErr()) {
+            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+                std::move(alice_bundle_result).UnwrapErr());
+        }
+        auto alice_bundle = std::move(alice_bundle_result).Unwrap();
+
         const std::vector<uint8_t> info(
             Constants::X3DH_INFO.begin(),
             Constants::X3DH_INFO.end());
@@ -72,29 +81,79 @@ struct EndToEndTestContext {
                         root_key_result.UnwrapErr().message)));
         }
         ctx.shared_root_key = std::move(root_key_result).Unwrap();
+        auto kyber_artifacts_result = ctx.alice_identity->ConsumePendingKyberHandshake();
+        if (kyber_artifacts_result.IsErr()) {
+            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+                kyber_artifacts_result.UnwrapErr());
+        }
+        auto kyber_artifacts = std::move(kyber_artifacts_result).Unwrap();
+        auto bob_identity_decap = ctx.bob_identity->DecapsulateKyberCiphertext(kyber_artifacts.kyber_ciphertext);
+        if (bob_identity_decap.IsErr()) {
+            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+                bob_identity_decap.UnwrapErr());
+        }
+        if (bob_identity_decap.Unwrap().kyber_shared_secret != kyber_artifacts.kyber_shared_secret) {
+            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::Generic("Kyber shared secret mismatch between initiator/responder"));
+        }
 
         // Use a large ratchet window so integration flows stay on a single DH chain
         RatchetConfig no_dh_ratchet_config(100000);
 
-        auto alice_conn_result = EcliptixProtocolConnection::Create(
-            1,
-            true,
-            no_dh_ratchet_config);
-        if (alice_conn_result.IsErr()) {
-            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
-                std::move(alice_conn_result).UnwrapErr());
-        }
-        ctx.alice_connection = std::move(alice_conn_result).Unwrap();
+        ctx.alice_connection = CreatePreparedConnection(1, true, no_dh_ratchet_config);
+        ctx.bob_connection = CreatePreparedConnection(2, false, no_dh_ratchet_config);
+        PrepareHybridHandshake(ctx.alice_connection, ctx.bob_connection);
 
-        auto bob_conn_result = EcliptixProtocolConnection::Create(
-            2,
-            false,
-            no_dh_ratchet_config);
-        if (bob_conn_result.IsErr()) {
+        auto alice_kyber_clone = ctx.alice_identity->CloneKyberSecretKey();
+        if (alice_kyber_clone.IsErr()) {
             return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
-                std::move(bob_conn_result).UnwrapErr());
+                alice_kyber_clone.UnwrapErr());
         }
-        ctx.bob_connection = std::move(bob_conn_result).Unwrap();
+        auto alice_kyber_set = ctx.alice_connection->SetLocalKyberKeyPair(
+            std::move(alice_kyber_clone).Unwrap(),
+            ctx.alice_identity->GetKyberPublicKeyCopy());
+        if (alice_kyber_set.IsErr()) {
+            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+                alice_kyber_set.UnwrapErr());
+        }
+        auto bob_kyber_clone = ctx.bob_identity->CloneKyberSecretKey();
+        if (bob_kyber_clone.IsErr()) {
+            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+                bob_kyber_clone.UnwrapErr());
+        }
+        auto bob_kyber_set = ctx.bob_connection->SetLocalKyberKeyPair(
+            std::move(bob_kyber_clone).Unwrap(),
+            ctx.bob_identity->GetKyberPublicKeyCopy());
+        if (bob_kyber_set.IsErr()) {
+            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+                bob_kyber_set.UnwrapErr());
+        }
+
+        auto alice_peer_result = ctx.alice_connection->SetPeerBundle(bob_bundle);
+        if (alice_peer_result.IsErr()) {
+            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+                alice_peer_result.UnwrapErr());
+        }
+        auto bob_peer_result = ctx.bob_connection->SetPeerBundle(alice_bundle);
+        if (bob_peer_result.IsErr()) {
+            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+                bob_peer_result.UnwrapErr());
+        }
+
+        auto set_kyber_handshake = ctx.alice_connection->SetHybridHandshakeSecrets(
+            kyber_artifacts.kyber_ciphertext,
+            kyber_artifacts.kyber_shared_secret);
+        if (set_kyber_handshake.IsErr()) {
+            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+                set_kyber_handshake.UnwrapErr());
+        }
+        auto set_bob_handshake = ctx.bob_connection->SetHybridHandshakeSecrets(
+            kyber_artifacts.kyber_ciphertext,
+            kyber_artifacts.kyber_shared_secret);
+        if (set_bob_handshake.IsErr()) {
+            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+                set_bob_handshake.UnwrapErr());
+        }
 
         auto alice_dh_result = ctx.alice_connection->GetCurrentSenderDhPublicKey();
         if (alice_dh_result.IsErr()) {
@@ -133,6 +192,20 @@ struct EndToEndTestContext {
             return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
                 std::move(bob_finalize_result).UnwrapErr());
         }
+        auto alice_metadata_key_check = ctx.alice_connection->GetMetadataEncryptionKey();
+        if (alice_metadata_key_check.IsErr()) {
+            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+                alice_metadata_key_check.UnwrapErr());
+        }
+        auto bob_metadata_key_check = ctx.bob_connection->GetMetadataEncryptionKey();
+        if (bob_metadata_key_check.IsErr()) {
+            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+                bob_metadata_key_check.UnwrapErr());
+        }
+        if (alice_metadata_key_check.Unwrap() != bob_metadata_key_check.Unwrap()) {
+            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::Generic("Metadata keys diverged immediately after finalize"));
+        }
 
         return Result<EndToEndTestContext, EcliptixProtocolFailure>::Ok(std::move(ctx));
     }
@@ -143,6 +216,9 @@ TEST_CASE("Integration - Complete X3DH to Envelope Flow", "[integration][envelop
 
     SECTION("Full workflow: X3DH → Connection → Envelope → Encryption → Decryption") {
         auto ctx_result = EndToEndTestContext::Create();
+        if (ctx_result.IsErr()) {
+            FAIL(ctx_result.UnwrapErr().message);
+        }
         REQUIRE(ctx_result.IsOk());
         auto ctx = std::move(ctx_result).Unwrap();
 
@@ -295,21 +371,8 @@ TEST_CASE("Integration - Bidirectional Communication with DH Ratcheting", "[inte
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("1000 bidirectional round-trips with automatic DH ratchet") {
-        RatchetConfig config(100000);
-
-        auto alice_conn_result = EcliptixProtocolConnection::Create(
-            1,
-            true,
-            config);
-        REQUIRE(alice_conn_result.IsOk());
-        auto alice_connection = std::move(alice_conn_result).Unwrap();
-
-        auto bob_conn_result = EcliptixProtocolConnection::Create(
-            2,
-            false,
-            config);
-        REQUIRE(bob_conn_result.IsOk());
-        auto bob_connection = std::move(bob_conn_result).Unwrap();
+        auto [alice_connection, bob_connection] = CreatePreparedPair(1, 2);
+        REQUIRE(alice_connection->DebugGetKyberSharedSecret() == bob_connection->DebugGetKyberSharedSecret());
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAB);
 
@@ -326,18 +389,37 @@ TEST_CASE("Integration - Bidirectional Communication with DH Ratcheting", "[inte
 
         auto bob_finalize = bob_connection->FinalizeChainAndDhKeys(root_key, alice_dh);
         REQUIRE(bob_finalize.IsOk());
+        REQUIRE(alice_connection->DebugGetRootKey() == bob_connection->DebugGetRootKey());
+        REQUIRE(alice_connection->GetMetadataEncryptionKey().Unwrap() ==
+                bob_connection->GetMetadataEncryptionKey().Unwrap());
 
         constexpr uint32_t ROUND_TRIP_COUNT = 1000;
         uint32_t successful_alice_to_bob = 0;
         uint32_t successful_bob_to_alice = 0;
+        uint32_t executed_rounds = 0;
 
         for (uint32_t round = 0; round < ROUND_TRIP_COUNT; ++round) {
+            ++executed_rounds;
             auto alice_prepare = alice_connection->PrepareNextSendMessage();
-            if (alice_prepare.IsErr()) break;
+            REQUIRE(alice_prepare.IsOk());
             auto [alice_key, alice_include_dh] = std::move(alice_prepare).Unwrap();
+            const uint32_t alice_index = alice_key.Index();
+            if (alice_include_dh) {
+                auto alice_pub = alice_connection->GetCurrentSenderDhPublicKey();
+                REQUIRE(alice_pub.IsOk());
+                auto alice_pub_opt = alice_pub.Unwrap();
+                REQUIRE(alice_pub_opt.has_value());
+                auto alice_ct = alice_connection->GetCurrentKyberCiphertext();
+                REQUIRE(alice_ct.IsOk());
+                auto alice_ct_opt = alice_ct.Unwrap();
+                REQUIRE(alice_ct_opt.has_value());
+                REQUIRE(bob_connection->PerformReceivingRatchet(*alice_pub_opt, alice_ct_opt.value()).IsOk());
+            }
 
             auto alice_nonce = alice_connection->GenerateNextNonce();
-            if (alice_nonce.IsErr()) break;
+            if (alice_nonce.IsErr()) {
+                FAIL("Alice nonce generation failed: " + alice_nonce.UnwrapErr().message);
+            }
             auto a_nonce = std::move(alice_nonce).Unwrap();
 
             const std::vector<uint8_t> alice_plaintext{0xA1, 0xA2, static_cast<uint8_t>(round & 0xFF)};
@@ -347,10 +429,12 @@ TEST_CASE("Integration - Bidirectional Communication with DH Ratcheting", "[inte
                     return AesGcm::Encrypt(key, a_nonce, alice_plaintext, {});
                 }
             );
-            if (alice_encrypted.IsErr()) break;
+            REQUIRE(alice_encrypted.IsOk());
 
-            auto bob_process = bob_connection->ProcessReceivedMessage(round, a_nonce);
-            if (bob_process.IsErr()) break;
+            auto bob_process = bob_connection->ProcessReceivedMessage(alice_index, a_nonce);
+            if (bob_process.IsErr()) {
+                FAIL("Bob failed to process Alice message: " + bob_process.UnwrapErr().message);
+            }
             auto bob_key = std::move(bob_process).Unwrap();
 
             auto bob_decrypted = bob_key.WithKeyMaterial<std::vector<uint8_t>>(
@@ -358,16 +442,31 @@ TEST_CASE("Integration - Bidirectional Communication with DH Ratcheting", "[inte
                     return AesGcm::Decrypt(key, a_nonce, alice_encrypted.Unwrap(), {});
                 }
             );
-            if (bob_decrypted.IsOk() && bob_decrypted.Unwrap() == alice_plaintext) {
-                ++successful_alice_to_bob;
-            }
+            REQUIRE(bob_decrypted.IsOk());
+            auto bob_plain = bob_decrypted.Unwrap();
+            REQUIRE(bob_plain == alice_plaintext);
+            ++successful_alice_to_bob;
 
             auto bob_prepare = bob_connection->PrepareNextSendMessage();
-            if (bob_prepare.IsErr()) break;
+            REQUIRE(bob_prepare.IsOk());
             auto [bob_send_key, bob_include_dh] = std::move(bob_prepare).Unwrap();
+            const uint32_t bob_index = bob_send_key.Index();
+            if (bob_include_dh) {
+                auto bob_pub = bob_connection->GetCurrentSenderDhPublicKey();
+                REQUIRE(bob_pub.IsOk());
+                auto bob_pub_opt = bob_pub.Unwrap();
+                REQUIRE(bob_pub_opt.has_value());
+                auto bob_ct = bob_connection->GetCurrentKyberCiphertext();
+                REQUIRE(bob_ct.IsOk());
+                auto bob_ct_opt = bob_ct.Unwrap();
+                REQUIRE(bob_ct_opt.has_value());
+                REQUIRE(alice_connection->PerformReceivingRatchet(*bob_pub_opt, bob_ct_opt.value()).IsOk());
+            }
 
             auto bob_nonce = bob_connection->GenerateNextNonce();
-            if (bob_nonce.IsErr()) break;
+            if (bob_nonce.IsErr()) {
+                FAIL("Bob nonce generation failed: " + bob_nonce.UnwrapErr().message);
+            }
             auto b_nonce = std::move(bob_nonce).Unwrap();
 
             const std::vector<uint8_t> bob_plaintext{0xB1, 0xB2, static_cast<uint8_t>(round & 0xFF)};
@@ -377,9 +476,9 @@ TEST_CASE("Integration - Bidirectional Communication with DH Ratcheting", "[inte
                     return AesGcm::Encrypt(key, b_nonce, bob_plaintext, {});
                 }
             );
-            if (bob_encrypted.IsErr()) break;
+            REQUIRE(bob_encrypted.IsOk());
 
-            auto alice_process = alice_connection->ProcessReceivedMessage(round, b_nonce);
+            auto alice_process = alice_connection->ProcessReceivedMessage(bob_index, b_nonce);
             if (alice_process.IsErr()) break;
             auto alice_recv_key = std::move(alice_process).Unwrap();
 
@@ -388,11 +487,16 @@ TEST_CASE("Integration - Bidirectional Communication with DH Ratcheting", "[inte
                     return AesGcm::Decrypt(key, b_nonce, bob_encrypted.Unwrap(), {});
                 }
             );
-            if (alice_decrypted.IsOk() && alice_decrypted.Unwrap() == bob_plaintext) {
-                ++successful_bob_to_alice;
-            }
+            REQUIRE(alice_decrypted.IsOk());
+            auto alice_plain = alice_decrypted.Unwrap();
+            REQUIRE(alice_plain == bob_plaintext);
+            ++successful_bob_to_alice;
         }
 
+        INFO("Executed rounds: " << executed_rounds
+             << " success A->B: " << successful_alice_to_bob
+             << " success B->A: " << successful_bob_to_alice);
+        REQUIRE(executed_rounds > 0);
         REQUIRE(successful_alice_to_bob == ROUND_TRIP_COUNT);
         REQUIRE(successful_bob_to_alice == ROUND_TRIP_COUNT);
     }

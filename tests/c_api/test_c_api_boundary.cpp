@@ -1,6 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_template_test_macros.hpp>
 #include "ecliptix/c_api/ecliptix_c_api.h"
+#include "common/secure_envelope.pb.h"
+#include "ecliptix/core/constants.hpp"
 #include <cstring>
 #include <vector>
 #include <thread>
@@ -693,5 +695,37 @@ TEST_CASE("C API - Deterministic Key Generation from Seed", "[c_api][boundary][d
         ecliptix_identity_keys_destroy(handle2);
     }
 
+    ecliptix_shutdown();
+}
+
+TEST_CASE("C API - Hybrid ratchet requires Kyber ciphertext with DH", "[c_api][boundary][hybrid][pq]") {
+    REQUIRE(ecliptix_initialize() == ECLIPTIX_SUCCESS);
+
+    EcliptixIdentityKeysHandle* keys = nullptr;
+    REQUIRE(ecliptix_identity_keys_create(&keys, nullptr) == ECLIPTIX_SUCCESS);
+
+    EcliptixProtocolSystemHandle* system = nullptr;
+    REQUIRE(ecliptix_protocol_system_create(keys, &system, nullptr) == ECLIPTIX_SUCCESS);
+
+    ecliptix::proto::common::SecureEnvelope envelope;
+    std::vector<uint8_t> dh(ecliptix::protocol::Constants::X_25519_PUBLIC_KEY_SIZE, 0x01);
+    envelope.set_dh_public_key(dh.data(), dh.size());
+    const std::string serialized = envelope.SerializeAsString();
+
+    EcliptixBuffer plaintext{};
+    EcliptixError error{};
+    const auto result = ecliptix_protocol_system_receive_message(
+        system,
+        reinterpret_cast<const uint8_t*>(serialized.data()),
+        serialized.size(),
+        &plaintext,
+        &error);
+
+    REQUIRE(result == ECLIPTIX_ERROR_DECODE);
+    REQUIRE(error.message != nullptr);
+    ecliptix_error_free(&error);
+
+    ecliptix_protocol_system_destroy(system);
+    ecliptix_identity_keys_destroy(keys);
     ecliptix_shutdown();
 }

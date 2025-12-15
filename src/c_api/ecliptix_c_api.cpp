@@ -9,12 +9,14 @@
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <span>
 #include <string>
 
 using namespace ecliptix::protocol;
 using namespace ecliptix::protocol::connection;
 using namespace ecliptix::protocol::identity;
 using namespace ecliptix::protocol::crypto;
+using ecliptix::proto::common::SecureEnvelope;
 
 struct EcliptixProtocolSystemHandle {
     std::unique_ptr<EcliptixProtocolSystem> system;
@@ -113,6 +115,22 @@ namespace {
             fill_error(out_error, ECLIPTIX_ERROR_NULL_POINTER, "Output handle pointer is null");
             return false;
         }
+        return true;
+    }
+
+    bool copy_to_buffer(std::span<const uint8_t> input, EcliptixBuffer* out_buffer, EcliptixError* out_error) {
+        if (!out_buffer) {
+            fill_error(out_error, ECLIPTIX_ERROR_NULL_POINTER, "Output buffer is null");
+            return false;
+        }
+        auto* data = new(std::nothrow) uint8_t[input.size()];
+        if (!data) {
+            fill_error(out_error, ECLIPTIX_ERROR_OUT_OF_MEMORY, "Failed to allocate output buffer");
+            return false;
+        }
+        std::memcpy(data, input.data(), input.size());
+        out_buffer->data = data;
+        out_buffer->length = input.size();
         return true;
     }
 }
@@ -286,6 +304,22 @@ EcliptixErrorCode ecliptix_protocol_system_create(
         return ECLIPTIX_ERROR_OUT_OF_MEMORY;
     }
 
+    if (!identity_keys->identity_keys) {
+        delete handle;
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_STATE, "Identity keys handle is uninitialized");
+        return ECLIPTIX_ERROR_INVALID_STATE;
+    }
+
+    auto system_result = EcliptixProtocolSystem::Create(std::move(identity_keys->identity_keys));
+    if (system_result.IsErr()) {
+        delete handle;
+        fill_error_from_failure(out_error, std::move(system_result).UnwrapErr());
+        return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
+    }
+
+    handle->system = std::move(system_result).Unwrap();
+    identity_keys->identity_keys.reset();
+
     *out_handle = handle;
     return ECLIPTIX_SUCCESS;
 }
@@ -321,6 +355,80 @@ EcliptixErrorCode ecliptix_protocol_system_set_callbacks(
 
 void ecliptix_protocol_system_destroy(EcliptixProtocolSystemHandle* handle) {
     delete handle;
+}
+
+EcliptixErrorCode ecliptix_protocol_system_send_message(
+    EcliptixProtocolSystemHandle* handle,
+    const uint8_t* plaintext,
+    size_t plaintext_length,
+    EcliptixBuffer* out_encrypted_envelope,
+    EcliptixError* out_error) {
+
+    if (!handle || !handle->system) {
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_STATE, "Protocol system handle is null or uninitialized");
+        return ECLIPTIX_ERROR_INVALID_STATE;
+    }
+    if (!validate_buffer_param(plaintext, plaintext_length, out_error) ||
+        !validate_output_handle(out_encrypted_envelope, out_error)) {
+        return out_error ? out_error->code : ECLIPTIX_ERROR_NULL_POINTER;
+    }
+
+    auto send_result = handle->system->SendMessage(std::span<const uint8_t>(plaintext, plaintext_length));
+    if (send_result.IsErr()) {
+        fill_error_from_failure(out_error, std::move(send_result).UnwrapErr());
+        return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
+    }
+
+    const SecureEnvelope& envelope = send_result.Unwrap();
+    const std::string serialized = envelope.SerializeAsString();
+    if (!copy_to_buffer(
+        std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(serialized.data()), serialized.size()),
+        out_encrypted_envelope,
+        out_error)) {
+        return out_error ? out_error->code : ECLIPTIX_ERROR_OUT_OF_MEMORY;
+    }
+
+    return ECLIPTIX_SUCCESS;
+}
+
+EcliptixErrorCode ecliptix_protocol_system_receive_message(
+    EcliptixProtocolSystemHandle* handle,
+    const uint8_t* encrypted_envelope,
+    size_t encrypted_envelope_length,
+    EcliptixBuffer* out_plaintext,
+    EcliptixError* out_error) {
+
+    if (!handle || !handle->system) {
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_STATE, "Protocol system handle is null or uninitialized");
+        return ECLIPTIX_ERROR_INVALID_STATE;
+    }
+    if (!validate_buffer_param(encrypted_envelope, encrypted_envelope_length, out_error) ||
+        !validate_output_handle(out_plaintext, out_error)) {
+        return out_error ? out_error->code : ECLIPTIX_ERROR_NULL_POINTER;
+    }
+
+    SecureEnvelope envelope;
+    if (!envelope.ParseFromArray(encrypted_envelope, static_cast<int>(encrypted_envelope_length))) {
+        fill_error(out_error, ECLIPTIX_ERROR_DECODE, "Failed to parse envelope");
+        return ECLIPTIX_ERROR_DECODE;
+    }
+    if (envelope.dh_public_key().size() > 0 && envelope.kyber_ciphertext().empty()) {
+        fill_error(out_error, ECLIPTIX_ERROR_DECODE, "Missing Kyber ciphertext for hybrid ratchet");
+        return ECLIPTIX_ERROR_DECODE;
+    }
+
+    auto receive_result = handle->system->ReceiveMessage(envelope);
+    if (receive_result.IsErr()) {
+        fill_error_from_failure(out_error, std::move(receive_result).UnwrapErr());
+        return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
+    }
+
+    const auto& plaintext = receive_result.Unwrap();
+    if (!copy_to_buffer(std::span<const uint8_t>(plaintext.data(), plaintext.size()), out_plaintext, out_error)) {
+        return out_error ? out_error->code : ECLIPTIX_ERROR_OUT_OF_MEMORY;
+    }
+
+    return ECLIPTIX_SUCCESS;
 }
 
 EcliptixBuffer* ecliptix_buffer_allocate(size_t capacity) {

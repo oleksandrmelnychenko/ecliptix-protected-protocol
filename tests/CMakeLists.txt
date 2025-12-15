@@ -33,6 +33,7 @@ set(TEST_SOURCES
     security/test_aes_gcm_attacks.cpp
     security/test_hkdf_security.cpp
     security/test_metadata_key_rotation.cpp
+    security/test_persistence_pq.cpp
     security/test_rate_limiting.cpp
     security/test_session_lifecycle.cpp
 
