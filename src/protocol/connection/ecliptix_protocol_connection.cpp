@@ -183,6 +183,7 @@ namespace ecliptix::protocol::connection {
           , received_new_dh_key_(false)
           , ratchet_warning_triggered_(false)
           , receiving_ratchet_epoch_(0)
+          , sending_ratchet_epoch_(0)
           , event_handler_(nullptr) {
     }
 
@@ -247,6 +248,7 @@ namespace ecliptix::protocol::connection {
           , received_new_dh_key_(false)
           , ratchet_warning_triggered_(false)
           , receiving_ratchet_epoch_(0)
+          , sending_ratchet_epoch_(0)
           , event_handler_(nullptr) {
     }
 
@@ -886,6 +888,14 @@ namespace ecliptix::protocol::connection {
     }
 
     EcliptixProtocolConnection::~EcliptixProtocolConnection() {
+    }
+
+    uint64_t EcliptixProtocolConnection::GetSendingRatchetEpoch() const noexcept {
+        return sending_ratchet_epoch_.load(std::memory_order_acquire);
+    }
+
+    uint64_t EcliptixProtocolConnection::GetReceivingRatchetEpoch() const noexcept {
+        return receiving_ratchet_epoch_.load(std::memory_order_acquire);
     }
 
     Result<Unit, EcliptixProtocolFailure>
@@ -2007,6 +2017,7 @@ EcliptixProtocolConnection::GetCurrentKyberCiphertext() const {
                 }
                 current_sending_dh_private_handle_ = std::move(new_dh_handle);
                 current_sending_dh_public_ = std::move(new_dh_public);
+                sending_ratchet_epoch_.fetch_add(1, std::memory_order_release);
             } else {
                 if (!receiving_step_.has_value()) {
                     {
@@ -2319,6 +2330,8 @@ EcliptixProtocolConnection::GetCurrentKyberCiphertext() const {
                 }
                 *proto.mutable_receiving_step() = receiving_step_result.Unwrap();
             }
+            proto.set_receiving_ratchet_epoch(receiving_ratchet_epoch_.load(std::memory_order_acquire));
+            proto.set_sending_ratchet_epoch(sending_ratchet_epoch_.load(std::memory_order_acquire));
             auto mac_key_result = DeriveStateMacKey(
                 root_key_bytes,
                 session_id_,
@@ -2622,6 +2635,14 @@ EcliptixProtocolConnection::GetCurrentKyberCiphertext() const {
                 connection->initial_sending_dh_private_handle_ = std::move(initial_priv);
             }
             connection->current_sending_dh_public_ = std::move(current_sending_dh_public);
+            if (proto.has_receiving_ratchet_epoch()) {
+                connection->receiving_ratchet_epoch_.store(
+                    proto.receiving_ratchet_epoch(), std::memory_order_release);
+            }
+            if (proto.has_sending_ratchet_epoch()) {
+                connection->sending_ratchet_epoch_.store(
+                    proto.sending_ratchet_epoch(), std::memory_order_release);
+            }
             auto metadata_result = connection->DeriveMetadataEncryptionKey();
             if (metadata_result.IsErr()) {
                 return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(

@@ -146,6 +146,11 @@ namespace ecliptix::protocol::connection {
         [[nodiscard]] Result<Unit, EcliptixProtocolFailure> DebugSetPeerKyberPublicKey(
             std::span<const uint8_t> peer_kyber_public_key);
 #endif
+
+        [[nodiscard]] uint64_t GetSendingRatchetEpoch() const noexcept;
+
+        [[nodiscard]] uint64_t GetReceivingRatchetEpoch() const noexcept;
+
         [[nodiscard]] Result<proto::protocol::RatchetState, EcliptixProtocolFailure>
         ToProtoState() const;
 
@@ -295,6 +300,7 @@ namespace ecliptix::protocol::connection {
         std::atomic<bool> received_new_dh_key_;
         std::atomic<bool> ratchet_warning_triggered_;
         std::atomic<uint64_t> receiving_ratchet_epoch_; // Increments with each receiving DH ratchet
+        std::atomic<uint64_t> sending_ratchet_epoch_;   // Increments with each sending DH ratchet
         std::shared_ptr<IProtocolEventHandler> event_handler_;
     };
 }

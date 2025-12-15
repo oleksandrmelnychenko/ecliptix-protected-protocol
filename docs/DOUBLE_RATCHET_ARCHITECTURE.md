@@ -121,6 +121,7 @@ HKDF-SHA256(
 2. Message key is used for AES-256-GCM encryption
 3. Chain key is immediately replaced and never reused
 4. Old message keys can be cached for out-of-order delivery
+5. Each DH ratchet increments a monotonic `ratchet_epoch`; envelopes carry this epoch so receivers can reject stale state (e.g., after restoring an old snapshot) and trigger re-establish.
 
 ### 1.4 Asymmetric Ratchet (Periodic DH Key Rotation)
 

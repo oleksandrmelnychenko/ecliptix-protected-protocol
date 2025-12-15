@@ -195,6 +195,7 @@ namespace ecliptix::protocol {
             if (!kyber_ciphertext.empty()) {
                 envelope.set_kyber_ciphertext(kyber_ciphertext.data(), kyber_ciphertext.size());
             }
+            envelope.set_ratchet_epoch(connection->GetSendingRatchetEpoch());
             return Result<proto::common::SecureEnvelope, EcliptixProtocolFailure>::Ok(
                 std::move(envelope));
         } catch (const std::exception &ex) {
@@ -247,6 +248,16 @@ namespace ecliptix::protocol {
         if (!connection) {
             return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic("Protocol connection not initialized"));
+        }
+        if (!envelope.has_ratchet_epoch()) {
+            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::Decode("Missing ratchet epoch"));
+        }
+        const uint64_t envelope_epoch = envelope.ratchet_epoch();
+        const uint64_t current_epoch = connection->GetReceivingRatchetEpoch();
+        if (envelope_epoch < current_epoch) {
+            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::Decode("Stale ratchet epoch; re-establish session"));
         }
         std::vector<uint8_t> header_nonce;
         std::vector<uint8_t> metadata_key;

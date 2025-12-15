@@ -711,6 +711,7 @@ TEST_CASE("C API - Hybrid ratchet requires Kyber ciphertext with DH", "[c_api][b
     ecliptix::proto::common::SecureEnvelope envelope;
     std::vector<uint8_t> dh(ecliptix::protocol::Constants::X_25519_PUBLIC_KEY_SIZE, 0x01);
     envelope.set_dh_public_key(dh.data(), dh.size());
+    envelope.set_ratchet_epoch(0);
     const std::string serialized = envelope.SerializeAsString();
 
     EcliptixBuffer plaintext{};
@@ -740,6 +741,7 @@ TEST_CASE("C API - Envelope validation prefilter enforces hybrid ciphertext", "[
     SECTION("Rejects DH without Kyber") {
         ecliptix::proto::common::SecureEnvelope envelope;
         envelope.set_dh_public_key(dh.data(), dh.size());
+        envelope.set_ratchet_epoch(0);
         const std::string serialized = envelope.SerializeAsString();
 
         EcliptixError error{};
@@ -757,6 +759,7 @@ TEST_CASE("C API - Envelope validation prefilter enforces hybrid ciphertext", "[
         ecliptix::proto::common::SecureEnvelope envelope;
         envelope.set_dh_public_key(dh.data(), dh.size());
         envelope.set_kyber_ciphertext(kyber.data(), kyber.size());
+        envelope.set_ratchet_epoch(0);
         const std::string serialized = envelope.SerializeAsString();
 
         const auto result = ecliptix_envelope_validate_hybrid_requirements(
@@ -772,6 +775,7 @@ TEST_CASE("C API - Envelope validation prefilter enforces hybrid ciphertext", "[
         envelope.set_dh_public_key(dh.data(), dh.size());
         std::vector<uint8_t> short_ct(10, 0x03);
         envelope.set_kyber_ciphertext(short_ct.data(), short_ct.size());
+        envelope.set_ratchet_epoch(0);
         const std::string serialized = envelope.SerializeAsString();
 
         EcliptixError error{};
