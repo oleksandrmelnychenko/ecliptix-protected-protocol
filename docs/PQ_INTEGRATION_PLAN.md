@@ -844,11 +844,18 @@ KyberPublicKey::FromProto(const proto::pq::KyberPublicKey& proto) {
         return Err("Kyber public key validation failed");
     }
 
-    KyberPublicKey key;
+KyberPublicKey key;
     key.key_bytes.assign(proto.key_bytes().begin(), proto.key_bytes().end());
     return Ok(std::move(key));
 }
 ```
+
+### 9.3 Implementation Status (Hybrid Transport + Validation)
+
+- `SecureEnvelope` carries `kyber_ciphertext` alongside `dh_public_key`; receive paths reject envelopes that include a DH key without the Kyber ciphertext. C API surfaces `ECLIPTIX_ERROR_PQ_MISSING` for this case.
+- Envelope prefilter `ecliptix_envelope_validate_hybrid_requirements` performs early parse + size checks for Kyber ciphertexts (1088 bytes) before deeper processing in untrusted queues.
+- Persisted ratchet state seals the Kyber secret key (AES-GCM) and MACs Kyber artifacts; tampering or missing PQ fields causes deserialization failure.
+- Peer bundles must include Kyber public keys; finalization fails fast otherwise. PQ fallback is disabled.
 
 ---
 

@@ -53,6 +53,11 @@ namespace ecliptix::protocol::connection {
             RatchetConfig ratchet_config,
             PubKeyExchangeType exchange_type);
 
+        [[nodiscard]] static Result<std::vector<uint8_t>, EcliptixProtocolFailure>
+        DeriveOpaqueMessagingRoot(
+            std::span<const uint8_t> opaque_session_key,
+            std::span<const uint8_t> user_context);
+
         [[nodiscard]] Result<Unit, EcliptixProtocolFailure> SetPeerBundle(
             const LocalPublicKeyBundle &peer_bundle);
 

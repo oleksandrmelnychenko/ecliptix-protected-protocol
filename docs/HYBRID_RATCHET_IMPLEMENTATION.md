@@ -110,6 +110,13 @@ bool is_hybrid_mode = (peer_pq_dh_public_key_.has_value() &&
 
 **Note**: The receiver needs the Kyber ciphertext from the message header to decapsulate.
 
+### Wire Format and Validation
+
+- `SecureEnvelope` now carries `kyber_ciphertext` (1088 bytes). Any envelope that includes a DH public key **must** include this ciphertext; missing CTs are rejected as `ECLIPTIX_ERROR_PQ_MISSING` at the C API boundary and as decode errors in the core receive path.
+- Sender path publishes the current Kyber CT whenever a DH ratchet is included. Receiver path decapsulates before deriving the hybrid secret.
+- C API prefilter `ecliptix_envelope_validate_hybrid_requirements` performs early validation (parsing + Kyber size check) for untrusted queues.
+- Persisted state stores Kyber SK sealed with AES-GCM and MACs all Kyber artifacts; tampering or absent PQ material causes deserialization failure.
+
 ### 4. Code Structure
 
 ```cpp

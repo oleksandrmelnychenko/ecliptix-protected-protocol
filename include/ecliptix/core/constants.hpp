@@ -93,6 +93,7 @@ struct ProtocolConstants {
     static constexpr std::string_view INITIAL_SENDER_CHAIN_INFO = "Ecliptix-Initial-Sender";
     static constexpr std::string_view INITIAL_RECEIVER_CHAIN_INFO = "Ecliptix-Initial-Receiver";
     static constexpr std::string_view METADATA_ENCRYPTION_INFO = "ecliptix-metadata-v1";
+    static constexpr std::string_view OPAQUE_MSG_ROOT_INFO = "Ecliptix-OPAQUE-Root-v1";
     static constexpr std::string_view STATE_MAC_INFO = "ecliptix-state-mac-v1";
     static constexpr std::string_view KYBER_SK_WRAP_INFO = "Ecliptix-Kyber-SK-Wrap-v1";
     static constexpr uint32_t DEFAULT_MESSAGE_COUNT_BEFORE_RATCHET = 100;

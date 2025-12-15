@@ -350,6 +350,33 @@ namespace ecliptix::protocol::connection {
         }
     }
 
+    Result<std::vector<uint8_t>, EcliptixProtocolFailure>
+    EcliptixProtocolConnection::DeriveOpaqueMessagingRoot(
+        std::span<const uint8_t> opaque_session_key,
+        std::span<const uint8_t> user_context) {
+        if (opaque_session_key.size() != Constants::X_25519_KEY_SIZE) {
+            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::InvalidInput(
+                    std::format("OPAQUE session key must be {} bytes, got {}",
+                                Constants::X_25519_KEY_SIZE, opaque_session_key.size())));
+        }
+        if (user_context.empty()) {
+            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::InvalidInput("OPAQUE user context must not be empty"));
+        }
+        auto root_result = Hkdf::DeriveKeyBytes(
+            opaque_session_key,
+            Constants::X_25519_KEY_SIZE,
+            user_context,
+            std::span(reinterpret_cast<const uint8_t *>(ProtocolConstants::OPAQUE_MSG_ROOT_INFO.data()),
+                      ProtocolConstants::OPAQUE_MSG_ROOT_INFO.size()));
+        if (root_result.IsErr()) {
+            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
+                std::move(root_result).UnwrapErr());
+        }
+        return root_result;
+    }
+
     Result<Unit, EcliptixProtocolFailure>
     EcliptixProtocolConnection::FinalizeChainAndDhKeys(
         std::span<const uint8_t> initial_root_key,

@@ -181,6 +181,66 @@ public sealed class EcliptixProtocolSystemWrapper : IDisposable
 
     public EcliptixIdentityKeysWrapper GetIdentityKeys() => _identityKeys;
 
+    public static Result<Unit, EcliptixProtocolFailure> ValidateEnvelopeHybridRequirements(byte[] encryptedEnvelope)
+    {
+        if (encryptedEnvelope == null)
+        {
+            return Result<Unit, EcliptixProtocolFailure>.Err(
+                EcliptixProtocolFailure.InvalidInput("Encrypted envelope is null"));
+        }
+
+        EcliptixErrorCode result = EcliptixNativeInterop.ecliptix_envelope_validate_hybrid_requirements(
+            encryptedEnvelope,
+            (nuint)encryptedEnvelope.Length,
+            out EcliptixError error);
+
+        if (result != EcliptixErrorCode.Success)
+        {
+            string errorMessage = error.GetMessage();
+            EcliptixNativeInterop.ecliptix_error_free(ref error);
+            return Result<Unit, EcliptixProtocolFailure>.Err(
+                ConvertError(result, errorMessage));
+        }
+
+        return Result<Unit, EcliptixProtocolFailure>.Ok(Unit.Value);
+    }
+
+    public static Result<byte[], EcliptixProtocolFailure> DeriveRootFromOpaqueSessionKey(
+        byte[] opaqueSessionKey,
+        byte[] userContext)
+    {
+        if (opaqueSessionKey == null)
+        {
+            return Result<byte[], EcliptixProtocolFailure>.Err(
+                EcliptixProtocolFailure.InvalidInput("OPAQUE session key is null"));
+        }
+        if (userContext == null || userContext.Length == 0)
+        {
+            return Result<byte[], EcliptixProtocolFailure>.Err(
+                EcliptixProtocolFailure.InvalidInput("OPAQUE user context is missing"));
+        }
+
+        byte[] rootKey = new byte[32];
+        EcliptixErrorCode result = EcliptixNativeInterop.ecliptix_derive_root_from_opaque_session_key(
+            opaqueSessionKey,
+            (nuint)opaqueSessionKey.Length,
+            userContext,
+            (nuint)userContext.Length,
+            rootKey,
+            (nuint)rootKey.Length,
+            out EcliptixError error);
+
+        if (result != EcliptixErrorCode.Success)
+        {
+            string errorMessage = error.GetMessage();
+            EcliptixNativeInterop.ecliptix_error_free(ref error);
+            return Result<byte[], EcliptixProtocolFailure>.Err(
+                ConvertError(result, errorMessage));
+        }
+
+        return Result<byte[], EcliptixProtocolFailure>.Ok(rootKey);
+    }
+
     private static EcliptixProtocolFailure ConvertError(EcliptixErrorCode code, string message)
     {
         return code switch
@@ -192,6 +252,7 @@ public sealed class EcliptixProtocolSystemWrapper : IDisposable
             EcliptixErrorCode.ErrorEncryption => EcliptixProtocolFailure.Encryption(message),
             EcliptixErrorCode.ErrorDecryption => EcliptixProtocolFailure.Decryption(message),
             EcliptixErrorCode.ErrorDecode => EcliptixProtocolFailure.Decode(message),
+            EcliptixErrorCode.ErrorPqMissing => EcliptixProtocolFailure.Decode(message),
             EcliptixErrorCode.ErrorBufferTooSmall => EcliptixProtocolFailure.BUFFER_TOO_SMALL(message),
             EcliptixErrorCode.ErrorObjectDisposed => EcliptixProtocolFailure.OBJECT_DISPOSED(message),
             EcliptixErrorCode.ErrorPrepareLocal => EcliptixProtocolFailure.PrepareLocal(message),

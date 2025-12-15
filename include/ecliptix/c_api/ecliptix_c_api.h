@@ -31,7 +31,8 @@ typedef enum {
     ECLIPTIX_ERROR_NULL_POINTER = 15,
     ECLIPTIX_ERROR_INVALID_STATE = 16,
     ECLIPTIX_ERROR_REPLAY_ATTACK = 17,
-    ECLIPTIX_ERROR_SESSION_EXPIRED = 18
+    ECLIPTIX_ERROR_SESSION_EXPIRED = 18,
+    ECLIPTIX_ERROR_PQ_MISSING = 19
 } EcliptixErrorCode;
 
 typedef struct EcliptixProtocolSystemHandle EcliptixProtocolSystemHandle;
@@ -121,6 +122,20 @@ EcliptixErrorCode ecliptix_protocol_system_receive_message(
     const uint8_t* encrypted_envelope,
     size_t encrypted_envelope_length,
     EcliptixBuffer* out_plaintext,
+    EcliptixError* out_error);
+
+EcliptixErrorCode ecliptix_envelope_validate_hybrid_requirements(
+    const uint8_t* encrypted_envelope,
+    size_t encrypted_envelope_length,
+    EcliptixError* out_error);
+
+EcliptixErrorCode ecliptix_derive_root_from_opaque_session_key(
+    const uint8_t* opaque_session_key,
+    size_t opaque_session_key_length,
+    const uint8_t* user_context,
+    size_t user_context_length,
+    uint8_t* out_root_key,
+    size_t out_root_key_length,
     EcliptixError* out_error);
 
 EcliptixErrorCode ecliptix_protocol_system_has_connection(

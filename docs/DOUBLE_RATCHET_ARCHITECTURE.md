@@ -70,6 +70,26 @@ Step 4: Assign Based on Role
 - Alice's sending chain = Bob's receiving chain
 - Alice's receiving chain = Bob's sending chain
 
+### 1.2b OPAQUE-Derived Initialization (Desktop Login)
+
+When the application authenticates via OPAQUE, reuse the session key only as input to a fresh messaging root:
+
+```
+Input: opaque_session_key (32 bytes), user_context (non-empty, e.g., user id hash)
+Root = HKDF-SHA256(
+    IKM  = opaque_session_key,
+    salt = user_context,
+    info = "Ecliptix-OPAQUE-Root-v1",
+    output_length = 32 bytes
+)
+```
+
+Guidelines:
+- Require the 32-byte session key; reject other sizes.
+- Always supply a non-empty, user-bound context to prevent cross-user reuse on shared devices.
+- Use `DeriveOpaqueMessagingRoot()` (C++) or `ecliptix_derive_root_from_opaque_session_key()` (C API) to get the root, then call `FinalizeChainAndDhKeys(root, peer_dh_pk)`.
+- Wipe the OPAQUE session key and derived root after seeding the ratchet; do not persist the session key or reuse a previous messaging root across logins/resumptions.
+
 ### 1.3 Symmetric Ratchet (Per-Message Key Derivation)
 
 Every time a message is sent or received, the chain key advances:

@@ -2,6 +2,7 @@
 #include <catch2/catch_template_test_macros.hpp>
 #include "ecliptix/c_api/ecliptix_c_api.h"
 #include "common/secure_envelope.pb.h"
+#include "ecliptix/crypto/kyber_interop.hpp"
 #include "ecliptix/core/constants.hpp"
 #include <cstring>
 #include <vector>
@@ -721,11 +722,130 @@ TEST_CASE("C API - Hybrid ratchet requires Kyber ciphertext with DH", "[c_api][b
         &plaintext,
         &error);
 
-    REQUIRE(result == ECLIPTIX_ERROR_DECODE);
+    REQUIRE(result == ECLIPTIX_ERROR_PQ_MISSING);
     REQUIRE(error.message != nullptr);
     ecliptix_error_free(&error);
 
     ecliptix_protocol_system_destroy(system);
     ecliptix_identity_keys_destroy(keys);
+    ecliptix_shutdown();
+}
+
+TEST_CASE("C API - Envelope validation prefilter enforces hybrid ciphertext", "[c_api][boundary][hybrid][pq]") {
+    REQUIRE(ecliptix_initialize() == ECLIPTIX_SUCCESS);
+
+    std::vector<uint8_t> dh(ecliptix::protocol::Constants::X_25519_PUBLIC_KEY_SIZE, 0x01);
+    std::vector<uint8_t> kyber(ecliptix::protocol::crypto::KyberInterop::KYBER_768_CIPHERTEXT_SIZE, 0x02);
+
+    SECTION("Rejects DH without Kyber") {
+        ecliptix::proto::common::SecureEnvelope envelope;
+        envelope.set_dh_public_key(dh.data(), dh.size());
+        const std::string serialized = envelope.SerializeAsString();
+
+        EcliptixError error{};
+        const auto result = ecliptix_envelope_validate_hybrid_requirements(
+            reinterpret_cast<const uint8_t*>(serialized.data()),
+            serialized.size(),
+            &error);
+
+        REQUIRE(result == ECLIPTIX_ERROR_PQ_MISSING);
+        REQUIRE(error.message != nullptr);
+        ecliptix_error_free(&error);
+    }
+
+    SECTION("Accepts DH with Kyber") {
+        ecliptix::proto::common::SecureEnvelope envelope;
+        envelope.set_dh_public_key(dh.data(), dh.size());
+        envelope.set_kyber_ciphertext(kyber.data(), kyber.size());
+        const std::string serialized = envelope.SerializeAsString();
+
+        const auto result = ecliptix_envelope_validate_hybrid_requirements(
+            reinterpret_cast<const uint8_t*>(serialized.data()),
+            serialized.size(),
+            nullptr);
+
+        REQUIRE(result == ECLIPTIX_SUCCESS);
+    }
+
+    SECTION("Rejects bad Kyber size") {
+        ecliptix::proto::common::SecureEnvelope envelope;
+        envelope.set_dh_public_key(dh.data(), dh.size());
+        std::vector<uint8_t> short_ct(10, 0x03);
+        envelope.set_kyber_ciphertext(short_ct.data(), short_ct.size());
+        const std::string serialized = envelope.SerializeAsString();
+
+        EcliptixError error{};
+        const auto result = ecliptix_envelope_validate_hybrid_requirements(
+            reinterpret_cast<const uint8_t*>(serialized.data()),
+            serialized.size(),
+            &error);
+
+        REQUIRE(result == ECLIPTIX_ERROR_DECODE);
+        REQUIRE(error.message != nullptr);
+        ecliptix_error_free(&error);
+    }
+
+    ecliptix_shutdown();
+}
+
+TEST_CASE("C API - Derive root from OPAQUE session key", "[c_api][boundary][opaque]") {
+    REQUIRE(ecliptix_initialize() == ECLIPTIX_SUCCESS);
+
+    uint8_t session_key[32] = {};
+    for (size_t i = 0; i < sizeof(session_key); ++i) {
+        session_key[i] = static_cast<uint8_t>(i + 1);
+    }
+    std::vector<uint8_t> context{0xAA, 0xBB, 0xCC};
+    uint8_t root_key[32] = {};
+    EcliptixError error{};
+
+    SECTION("Succeeds with valid inputs") {
+        const auto result = ecliptix_derive_root_from_opaque_session_key(
+            session_key,
+            sizeof(session_key),
+            context.data(),
+            context.size(),
+            root_key,
+            sizeof(root_key),
+            &error);
+
+        REQUIRE(result == ECLIPTIX_SUCCESS);
+        bool any_non_zero = false;
+        for (auto b : root_key) {
+            any_non_zero = any_non_zero || (b != 0);
+        }
+        REQUIRE(any_non_zero);
+    }
+
+    SECTION("Rejects wrong session key length") {
+        const auto result = ecliptix_derive_root_from_opaque_session_key(
+            session_key,
+            16,
+            context.data(),
+            context.size(),
+            root_key,
+            sizeof(root_key),
+            &error);
+        REQUIRE(result == ECLIPTIX_ERROR_INVALID_INPUT);
+        if (error.message) {
+            ecliptix_error_free(&error);
+        }
+    }
+
+    SECTION("Rejects empty context") {
+        const auto result = ecliptix_derive_root_from_opaque_session_key(
+            session_key,
+            sizeof(session_key),
+            nullptr,
+            0,
+            root_key,
+            sizeof(root_key),
+            &error);
+        REQUIRE(result == ECLIPTIX_ERROR_INVALID_INPUT);
+        if (error.message) {
+            ecliptix_error_free(&error);
+        }
+    }
+
     ecliptix_shutdown();
 }

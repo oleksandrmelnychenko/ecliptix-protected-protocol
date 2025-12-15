@@ -22,7 +22,8 @@ public enum EcliptixErrorCode
     ErrorNullPointer = 14,
     ErrorInvalidState = 15,
     ErrorReplayAttack = 16,
-    ErrorSessionExpired = 17
+    ErrorSessionExpired = 17,
+    ErrorPqMissing = 19
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -122,6 +123,22 @@ public static class EcliptixNativeInterop
         [In] byte[] encryptedEnvelope,
         nuint encryptedEnvelopeLength,
         out EcliptixBuffer outPlaintext,
+        out EcliptixError outError);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern EcliptixErrorCode ecliptix_envelope_validate_hybrid_requirements(
+        [In] byte[] encryptedEnvelope,
+        nuint encryptedEnvelopeLength,
+        out EcliptixError outError);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern EcliptixErrorCode ecliptix_derive_root_from_opaque_session_key(
+        [In] byte[] opaqueSessionKey,
+        nuint opaqueSessionKeyLength,
+        [In] byte[] userContext,
+        nuint userContextLength,
+        [Out] byte[] outRootKey,
+        nuint outRootKeyLength,
         out EcliptixError outError);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]

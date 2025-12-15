@@ -3,6 +3,7 @@
 #include "ecliptix/protocol/connection/ecliptix_protocol_connection.hpp"
 #include "ecliptix/identity/ecliptix_system_identity_keys.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
+#include "ecliptix/crypto/kyber_interop.hpp"
 #include "ecliptix/core/result.hpp"
 #include "ecliptix/core/constants.hpp"
 #include "common/secure_envelope.pb.h"
@@ -17,6 +18,7 @@ using namespace ecliptix::protocol::connection;
 using namespace ecliptix::protocol::identity;
 using namespace ecliptix::protocol::crypto;
 using ecliptix::proto::common::SecureEnvelope;
+using crypto::KyberInterop;
 
 struct EcliptixProtocolSystemHandle {
     std::unique_ptr<EcliptixProtocolSystem> system;
@@ -413,8 +415,8 @@ EcliptixErrorCode ecliptix_protocol_system_receive_message(
         return ECLIPTIX_ERROR_DECODE;
     }
     if (envelope.dh_public_key().size() > 0 && envelope.kyber_ciphertext().empty()) {
-        fill_error(out_error, ECLIPTIX_ERROR_DECODE, "Missing Kyber ciphertext for hybrid ratchet");
-        return ECLIPTIX_ERROR_DECODE;
+        fill_error(out_error, ECLIPTIX_ERROR_PQ_MISSING, "Missing Kyber ciphertext for hybrid ratchet");
+        return ECLIPTIX_ERROR_PQ_MISSING;
     }
 
     auto receive_result = handle->system->ReceiveMessage(envelope);
@@ -428,6 +430,81 @@ EcliptixErrorCode ecliptix_protocol_system_receive_message(
         return out_error ? out_error->code : ECLIPTIX_ERROR_OUT_OF_MEMORY;
     }
 
+    return ECLIPTIX_SUCCESS;
+}
+
+EcliptixErrorCode ecliptix_envelope_validate_hybrid_requirements(
+    const uint8_t* encrypted_envelope,
+    size_t encrypted_envelope_length,
+    EcliptixError* out_error) {
+
+    if (!validate_buffer_param(encrypted_envelope, encrypted_envelope_length, out_error)) {
+        return out_error ? out_error->code : ECLIPTIX_ERROR_NULL_POINTER;
+    }
+
+    SecureEnvelope envelope;
+    if (!envelope.ParseFromArray(encrypted_envelope, static_cast<int>(encrypted_envelope_length))) {
+        fill_error(out_error, ECLIPTIX_ERROR_DECODE, "Failed to parse envelope");
+        return ECLIPTIX_ERROR_DECODE;
+    }
+
+    if (!envelope.dh_public_key().empty() && envelope.kyber_ciphertext().empty()) {
+        fill_error(out_error, ECLIPTIX_ERROR_PQ_MISSING, "Missing Kyber ciphertext for hybrid ratchet");
+        return ECLIPTIX_ERROR_PQ_MISSING;
+    }
+
+    if (!envelope.kyber_ciphertext().empty()) {
+        const auto& ct = envelope.kyber_ciphertext();
+        if (ct.size() != KyberInterop::KYBER_768_CIPHERTEXT_SIZE) {
+            fill_error(out_error, ECLIPTIX_ERROR_DECODE, "Invalid Kyber ciphertext size");
+            return ECLIPTIX_ERROR_DECODE;
+        }
+    }
+
+    return ECLIPTIX_SUCCESS;
+}
+
+EcliptixErrorCode ecliptix_derive_root_from_opaque_session_key(
+    const uint8_t* opaque_session_key,
+    size_t opaque_session_key_length,
+    const uint8_t* user_context,
+    size_t user_context_length,
+    uint8_t* out_root_key,
+    size_t out_root_key_length,
+    EcliptixError* out_error) {
+
+    if (!validate_buffer_param(opaque_session_key, opaque_session_key_length, out_error) ||
+        !validate_buffer_param(user_context, user_context_length, out_error) ||
+        !validate_buffer_param(out_root_key, out_root_key_length, out_error)) {
+        return out_error ? out_error->code : ECLIPTIX_ERROR_NULL_POINTER;
+    }
+
+    if (opaque_session_key_length != Constants::X_25519_KEY_SIZE) {
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_INPUT,
+                   "OPAQUE session key must be 32 bytes");
+        return ECLIPTIX_ERROR_INVALID_INPUT;
+    }
+    if (user_context_length == 0) {
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_INPUT, "OPAQUE user context must not be empty");
+        return ECLIPTIX_ERROR_INVALID_INPUT;
+    }
+    if (out_root_key_length < Constants::X_25519_KEY_SIZE) {
+        fill_error(out_error, ECLIPTIX_ERROR_BUFFER_TOO_SMALL,
+                   "Output buffer too small for derived root key");
+        return ECLIPTIX_ERROR_BUFFER_TOO_SMALL;
+    }
+
+    auto root_result = EcliptixProtocolConnection::DeriveOpaqueMessagingRoot(
+        std::span<const uint8_t>(opaque_session_key, opaque_session_key_length),
+        std::span<const uint8_t>(user_context, user_context_length));
+    if (root_result.IsErr()) {
+        fill_error_from_failure(out_error, std::move(root_result).UnwrapErr());
+        return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
+    }
+    auto root = root_result.Unwrap();
+    std::memcpy(out_root_key, root.data(), Constants::X_25519_KEY_SIZE);
+    auto _wipe = SodiumInterop::SecureWipe(std::span(root));
+    (void) _wipe;
     return ECLIPTIX_SUCCESS;
 }
 
@@ -489,6 +566,7 @@ const char* ecliptix_error_code_to_string(EcliptixErrorCode code) {
         case ECLIPTIX_ERROR_INVALID_STATE: return "Invalid state";
         case ECLIPTIX_ERROR_REPLAY_ATTACK: return "Replay attack detected";
         case ECLIPTIX_ERROR_SESSION_EXPIRED: return "Session expired";
+        case ECLIPTIX_ERROR_PQ_MISSING: return "Hybrid PQ material missing";
         default: return "Unknown error";
     }
 }
