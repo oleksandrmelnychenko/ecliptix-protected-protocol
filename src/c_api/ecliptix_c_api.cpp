@@ -9,6 +9,7 @@
 #include "common/secure_envelope.pb.h"
 #include "protocol/protocol_state.pb.h"
 #include "protocol/key_exchange.pb.h"
+#include <atomic>
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -39,6 +40,22 @@ struct EcliptixIdentityKeysHandle {
 };
 
 namespace {
+    // Thread-safe auto-initialization helper
+    // Ensures libsodium is initialized on first use of any C API function
+    inline EcliptixErrorCode EnsureInitialized() {
+        static std::once_flag init_flag;
+        static std::atomic<bool> init_success{false};
+
+        std::call_once(init_flag, [] {
+            auto result = SodiumInterop::Initialize();
+            init_success.store(result.IsOk(), std::memory_order_release);
+        });
+
+        return init_success.load(std::memory_order_acquire)
+            ? ECLIPTIX_SUCCESS
+            : ECLIPTIX_ERROR_SODIUM_FAILURE;
+    }
+
     class CApiEventHandler : public IProtocolEventHandler {
     public:
         CApiEventHandler(EcliptixProtocolEventCallback callback, void *user_data)
@@ -214,6 +231,10 @@ void ecliptix_shutdown(void) {
 EcliptixErrorCode ecliptix_identity_keys_create(
     EcliptixIdentityKeysHandle **out_handle,
     EcliptixError *out_error) {
+    if (auto err = EnsureInitialized(); err != ECLIPTIX_SUCCESS) {
+        fill_error(out_error, err, "Failed to initialize libsodium");
+        return err;
+    }
     if (!validate_output_handle(out_handle, out_error)) {
         return ECLIPTIX_ERROR_NULL_POINTER;
     }
@@ -243,6 +264,10 @@ EcliptixErrorCode ecliptix_identity_keys_create_from_seed(
     size_t seed_length,
     EcliptixIdentityKeysHandle **out_handle,
     EcliptixError *out_error) {
+    if (auto err = EnsureInitialized(); err != ECLIPTIX_SUCCESS) {
+        fill_error(out_error, err, "Failed to initialize libsodium");
+        return err;
+    }
     if (!validate_output_handle(out_handle, out_error) ||
         !validate_buffer_param(seed, seed_length, out_error)) {
         return out_error ? out_error->code : ECLIPTIX_ERROR_NULL_POINTER;
@@ -290,6 +315,10 @@ EcliptixErrorCode ecliptix_identity_keys_create_from_seed_with_context(
     size_t membership_id_length,
     EcliptixIdentityKeysHandle **out_handle,
     EcliptixError *out_error) {
+    if (auto err = EnsureInitialized(); err != ECLIPTIX_SUCCESS) {
+        fill_error(out_error, err, "Failed to initialize libsodium");
+        return err;
+    }
     if (!validate_output_handle(out_handle, out_error) ||
         !validate_buffer_param(seed, seed_length, out_error)) {
         return out_error ? out_error->code : ECLIPTIX_ERROR_NULL_POINTER;
@@ -394,6 +423,10 @@ EcliptixErrorCode ecliptix_protocol_system_create(
     EcliptixIdentityKeysHandle *identity_keys,
     EcliptixProtocolSystemHandle **out_handle,
     EcliptixError *out_error) {
+    if (auto err = EnsureInitialized(); err != ECLIPTIX_SUCCESS) {
+        fill_error(out_error, err, "Failed to initialize libsodium");
+        return err;
+    }
     if (!identity_keys || !identity_keys->identity_keys) {
         fill_error(out_error, ECLIPTIX_ERROR_NULL_POINTER, "Identity keys handle is null");
         return ECLIPTIX_ERROR_NULL_POINTER;
@@ -468,6 +501,10 @@ EcliptixErrorCode ecliptix_protocol_system_begin_handshake(
     EcliptixBuffer *out_handshake_message,
     EcliptixError *out_error) {
     (void) connection_id;
+    if (auto err = EnsureInitialized(); err != ECLIPTIX_SUCCESS) {
+        fill_error(out_error, err, "Failed to initialize libsodium");
+        return err;
+    }
     if (!handle || !handle->system) {
         fill_error(out_error, ECLIPTIX_ERROR_INVALID_STATE, "Protocol system handle is null or uninitialized");
         return ECLIPTIX_ERROR_INVALID_STATE;
@@ -475,6 +512,9 @@ EcliptixErrorCode ecliptix_protocol_system_begin_handshake(
     if (!validate_output_handle(out_handshake_message, out_error)) {
         return out_error ? out_error->code : ECLIPTIX_ERROR_NULL_POINTER;
     }
+
+    // Generate ephemeral key pair for X3DH handshake
+    handle->system->GetIdentityKeysMutable().GenerateEphemeralKeyPair();
 
     auto bundle_result = handle->system->GetIdentityKeys().CreatePublicBundle();
     if (bundle_result.IsErr()) {
@@ -587,6 +627,10 @@ EcliptixErrorCode ecliptix_protocol_system_complete_handshake_auto(
     const uint8_t *peer_handshake_message,
     size_t peer_handshake_message_length,
     EcliptixError *out_error) {
+    if (auto err = EnsureInitialized(); err != ECLIPTIX_SUCCESS) {
+        fill_error(out_error, err, "Failed to initialize libsodium");
+        return err;
+    }
     if (!handle || !handle->system) {
         fill_error(out_error, ECLIPTIX_ERROR_INVALID_STATE, "Protocol system handle is null or uninitialized");
         return ECLIPTIX_ERROR_INVALID_STATE;
@@ -594,6 +638,9 @@ EcliptixErrorCode ecliptix_protocol_system_complete_handshake_auto(
     if (!validate_buffer_param(peer_handshake_message, peer_handshake_message_length, out_error)) {
         return out_error ? out_error->code : ECLIPTIX_ERROR_NULL_POINTER;
     }
+
+    // Ensure ephemeral key is generated for X3DH (in case BeginHandshake wasn't called)
+    handle->system->GetIdentityKeysMutable().GenerateEphemeralKeyPair();
 
     PubKeyExchange peer_exchange;
     if (!peer_exchange.ParseFromArray(peer_handshake_message, static_cast<int>(peer_handshake_message_length))) {
@@ -770,6 +817,10 @@ EcliptixErrorCode ecliptix_protocol_system_create_from_root(
     bool is_initiator,
     EcliptixProtocolSystemHandle **out_handle,
     EcliptixError *out_error) {
+    if (auto err = EnsureInitialized(); err != ECLIPTIX_SUCCESS) {
+        fill_error(out_error, err, "Failed to initialize libsodium");
+        return err;
+    }
     if (!identity_keys || !identity_keys->identity_keys) {
         fill_error(out_error, ECLIPTIX_ERROR_NULL_POINTER, "Identity keys handle is null");
         return ECLIPTIX_ERROR_NULL_POINTER;
@@ -851,6 +902,10 @@ EcliptixErrorCode ecliptix_protocol_system_import_state(
     size_t state_bytes_length,
     EcliptixProtocolSystemHandle **out_handle,
     EcliptixError *out_error) {
+    if (auto err = EnsureInitialized(); err != ECLIPTIX_SUCCESS) {
+        fill_error(out_error, err, "Failed to initialize libsodium");
+        return err;
+    }
     if (!identity_keys || !identity_keys->identity_keys) {
         fill_error(out_error, ECLIPTIX_ERROR_NULL_POINTER, "Identity keys handle is null");
         return ECLIPTIX_ERROR_NULL_POINTER;
@@ -929,6 +984,10 @@ EcliptixErrorCode ecliptix_derive_root_from_opaque_session_key(
     uint8_t *out_root_key,
     size_t out_root_key_length,
     EcliptixError *out_error) {
+    if (auto err = EnsureInitialized(); err != ECLIPTIX_SUCCESS) {
+        fill_error(out_error, err, "Failed to initialize libsodium");
+        return err;
+    }
     if (!validate_buffer_param(opaque_session_key, opaque_session_key_length, out_error) ||
         !validate_buffer_param(user_context, user_context_length, out_error) ||
         !validate_buffer_param(out_root_key, out_root_key_length, out_error)) {
