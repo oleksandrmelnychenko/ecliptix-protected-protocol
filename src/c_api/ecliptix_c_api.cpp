@@ -571,6 +571,10 @@ EcliptixErrorCode ecliptix_protocol_system_complete_handshake(
     const uint8_t *root_key,
     size_t root_key_length,
     EcliptixError *out_error) {
+    if (auto err = EnsureInitialized(); err != ECLIPTIX_SUCCESS) {
+        fill_error(out_error, err, "Failed to initialize libsodium");
+        return err;
+    }
     if (!handle || !handle->system) {
         fill_error(out_error, ECLIPTIX_ERROR_INVALID_STATE, "Protocol system handle is null or uninitialized");
         return ECLIPTIX_ERROR_INVALID_STATE;
@@ -584,6 +588,56 @@ EcliptixErrorCode ecliptix_protocol_system_complete_handshake(
         return ECLIPTIX_ERROR_INVALID_INPUT;
     }
 
+    // Helper lambda to perform Kyber encapsulation and finalize with hybrid PQ
+    auto finalize_with_kyber = [&](const ecliptix::proto::protocol::PublicKeyBundle &bundle) -> EcliptixErrorCode {
+        // Check if peer has Kyber public key for hybrid PQ mode
+        if (bundle.kyber_public_key().empty()) {
+            fill_error(out_error, ECLIPTIX_ERROR_PQ_MISSING, "Peer bundle missing Kyber public key for hybrid PQ mode");
+            return ECLIPTIX_ERROR_PQ_MISSING;
+        }
+        if (bundle.kyber_public_key().size() != KyberInterop::KYBER_768_PUBLIC_KEY_SIZE) {
+            fill_error(out_error, ECLIPTIX_ERROR_INVALID_INPUT, "Invalid peer Kyber public key size");
+            return ECLIPTIX_ERROR_INVALID_INPUT;
+        }
+
+        // Perform Kyber encapsulation with peer's public key
+        std::vector<uint8_t> peer_kyber_pk(bundle.kyber_public_key().begin(), bundle.kyber_public_key().end());
+        auto encap_result = KyberInterop::Encapsulate(peer_kyber_pk);
+        if (encap_result.IsErr()) {
+            fill_error(out_error, ECLIPTIX_ERROR_KEY_GENERATION, "Kyber encapsulation failed");
+            return ECLIPTIX_ERROR_KEY_GENERATION;
+        }
+        auto [kyber_ciphertext, kyber_shared_secret_handle] = std::move(encap_result).Unwrap();
+
+        // Read shared secret bytes from secure memory
+        auto kyber_ss_result = kyber_shared_secret_handle.ReadBytes(KyberInterop::KYBER_768_SHARED_SECRET_SIZE);
+        if (kyber_ss_result.IsErr()) {
+            fill_error(out_error, ECLIPTIX_ERROR_SODIUM_FAILURE, "Failed to read Kyber shared secret");
+            return ECLIPTIX_ERROR_SODIUM_FAILURE;
+        }
+        auto kyber_shared_secret = kyber_ss_result.Unwrap();
+
+        bool is_initiator = handle->system->GetPendingInitiator().value_or(false);
+        auto finalize_result = handle->system->FinalizeWithRootAndPeerBundle(
+            std::span<const uint8_t>(root_key, root_key_length),
+            bundle,
+            is_initiator,
+            kyber_ciphertext,
+            kyber_shared_secret);
+
+        // Wipe Kyber secrets
+        auto _wipe_ct = SodiumInterop::SecureWipe(std::span(kyber_ciphertext));
+        (void) _wipe_ct;
+        auto _wipe_ss = SodiumInterop::SecureWipe(std::span(kyber_shared_secret));
+        (void) _wipe_ss;
+
+        if (finalize_result.IsErr()) {
+            fill_error_from_failure(out_error, std::move(finalize_result).UnwrapErr());
+            return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
+        }
+        return ECLIPTIX_SUCCESS;
+    };
+
     ecliptix::proto::protocol::PubKeyExchange peer_exchange;
     if (!peer_exchange.ParseFromArray(peer_handshake_message, static_cast<int>(peer_handshake_message_length))) {
         // Try direct bundle parsing as a fallback.
@@ -592,15 +646,7 @@ EcliptixErrorCode ecliptix_protocol_system_complete_handshake(
             fill_error(out_error, ECLIPTIX_ERROR_DECODE, "Failed to parse peer handshake");
             return ECLIPTIX_ERROR_DECODE;
         }
-        auto finalize_result = handle->system->FinalizeWithRootAndPeerBundle(
-            std::span<const uint8_t>(root_key, root_key_length),
-            direct_bundle,
-            handle->system->GetPendingInitiator().value_or(false));
-        if (finalize_result.IsErr()) {
-            fill_error_from_failure(out_error, std::move(finalize_result).UnwrapErr());
-            return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
-        }
-        return ECLIPTIX_SUCCESS;
+        return finalize_with_kyber(direct_bundle);
     }
 
     ecliptix::proto::protocol::PublicKeyBundle peer_bundle;
@@ -609,17 +655,7 @@ EcliptixErrorCode ecliptix_protocol_system_complete_handshake(
         return ECLIPTIX_ERROR_DECODE;
     }
 
-    bool is_initiator = handle->system->GetPendingInitiator().value_or(false);
-    auto finalize_result = handle->system->FinalizeWithRootAndPeerBundle(
-        std::span<const uint8_t>(root_key, root_key_length),
-        peer_bundle,
-        is_initiator);
-    if (finalize_result.IsErr()) {
-        fill_error_from_failure(out_error, std::move(finalize_result).UnwrapErr());
-        return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
-    }
-
-    return ECLIPTIX_SUCCESS;
+    return finalize_with_kyber(peer_bundle);
 }
 
 EcliptixErrorCode ecliptix_protocol_system_complete_handshake_auto(
@@ -862,11 +898,50 @@ EcliptixErrorCode ecliptix_protocol_system_create_from_root(
         return ECLIPTIX_ERROR_DECODE;
     }
 
+    // Check if peer has Kyber public key for hybrid PQ mode
+    if (bundle.kyber_public_key().empty()) {
+        delete handle;
+        fill_error(out_error, ECLIPTIX_ERROR_PQ_MISSING, "Peer bundle missing Kyber public key for hybrid PQ mode");
+        return ECLIPTIX_ERROR_PQ_MISSING;
+    }
+    if (bundle.kyber_public_key().size() != KyberInterop::KYBER_768_PUBLIC_KEY_SIZE) {
+        delete handle;
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_INPUT, "Invalid peer Kyber public key size");
+        return ECLIPTIX_ERROR_INVALID_INPUT;
+    }
+
+    // Perform Kyber encapsulation with peer's public key
+    std::vector<uint8_t> peer_kyber_pk(bundle.kyber_public_key().begin(), bundle.kyber_public_key().end());
+    auto encap_result = KyberInterop::Encapsulate(peer_kyber_pk);
+    if (encap_result.IsErr()) {
+        delete handle;
+        fill_error(out_error, ECLIPTIX_ERROR_KEY_GENERATION, "Kyber encapsulation failed");
+        return ECLIPTIX_ERROR_KEY_GENERATION;
+    }
+    auto [kyber_ciphertext, kyber_shared_secret_handle] = std::move(encap_result).Unwrap();
+
+    // Read shared secret bytes from secure memory
+    auto kyber_ss_result = kyber_shared_secret_handle.ReadBytes(KyberInterop::KYBER_768_SHARED_SECRET_SIZE);
+    if (kyber_ss_result.IsErr()) {
+        delete handle;
+        fill_error(out_error, ECLIPTIX_ERROR_SODIUM_FAILURE, "Failed to read Kyber shared secret");
+        return ECLIPTIX_ERROR_SODIUM_FAILURE;
+    }
+    auto kyber_shared_secret = kyber_ss_result.Unwrap();
+
     auto system_result = EcliptixProtocolSystem::CreateFromRootAndPeerBundle(
         std::move(identity_keys->identity_keys),
         std::span<const uint8_t>(root_key, root_key_length),
         bundle,
-        is_initiator);
+        is_initiator,
+        kyber_ciphertext,
+        kyber_shared_secret);
+
+    // Wipe Kyber secrets
+    auto _wipe_ct = SodiumInterop::SecureWipe(std::span(kyber_ciphertext));
+    (void) _wipe_ct;
+    auto _wipe_ss = SodiumInterop::SecureWipe(std::span(kyber_shared_secret));
+    (void) _wipe_ss;
 
     if (system_result.IsErr()) {
         delete handle;

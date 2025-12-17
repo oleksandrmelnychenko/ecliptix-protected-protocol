@@ -28,6 +28,15 @@ namespace ecliptix::protocol {
                                     const proto::protocol::PublicKeyBundle &peer_bundle,
                                     bool is_initiator);
 
+        // Create with Kyber artifacts for hybrid PQ mode
+        [[nodiscard]] static Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>
+        CreateFromRootAndPeerBundle(std::unique_ptr<EcliptixSystemIdentityKeys> identity_keys,
+                                    std::span<const uint8_t> root_key,
+                                    const proto::protocol::PublicKeyBundle &peer_bundle,
+                                    bool is_initiator,
+                                    std::span<const uint8_t> kyber_ciphertext,
+                                    std::span<const uint8_t> kyber_shared_secret);
+
         [[nodiscard]] static Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>
         FromProtoState(std::unique_ptr<EcliptixSystemIdentityKeys> identity_keys,
                        const proto::protocol::RatchetState &state);
