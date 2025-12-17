@@ -71,6 +71,14 @@ EcliptixErrorCode ecliptix_identity_keys_create_from_seed(
     EcliptixIdentityKeysHandle** out_handle,
     EcliptixError* out_error);
 
+EcliptixErrorCode ecliptix_identity_keys_create_from_seed_with_context(
+    const uint8_t* seed,
+    size_t seed_length,
+    const char* membership_id,
+    size_t membership_id_length,
+    EcliptixIdentityKeysHandle** out_handle,
+    EcliptixError* out_error);
+
 EcliptixErrorCode ecliptix_identity_keys_get_public_x25519(
     const EcliptixIdentityKeysHandle* handle,
     uint8_t* out_key,
@@ -110,6 +118,14 @@ EcliptixErrorCode ecliptix_protocol_system_complete_handshake(
     size_t root_key_length,
     EcliptixError* out_error);
 
+// Complete a handshake by deriving the root key (hybrid X3DH/PQ) from the peer handshake payload
+// using the local identity keys. This avoids root-key derivation on the caller side.
+EcliptixErrorCode ecliptix_protocol_system_complete_handshake_auto(
+    EcliptixProtocolSystemHandle* handle,
+    const uint8_t* peer_handshake_message,
+    size_t peer_handshake_message_length,
+    EcliptixError* out_error);
+
 EcliptixErrorCode ecliptix_protocol_system_send_message(
     EcliptixProtocolSystemHandle* handle,
     const uint8_t* plaintext,
@@ -122,6 +138,30 @@ EcliptixErrorCode ecliptix_protocol_system_receive_message(
     const uint8_t* encrypted_envelope,
     size_t encrypted_envelope_length,
     EcliptixBuffer* out_plaintext,
+    EcliptixError* out_error);
+
+// Create a protocol system from a pre-shared root key (e.g., OPAQUE) and peer bundle (serialized PublicKeyBundle).
+EcliptixErrorCode ecliptix_protocol_system_create_from_root(
+    EcliptixIdentityKeysHandle* identity_keys,
+    const uint8_t* root_key,
+    size_t root_key_length,
+    const uint8_t* peer_bundle,
+    size_t peer_bundle_length,
+    bool is_initiator,
+    EcliptixProtocolSystemHandle** out_handle,
+    EcliptixError* out_error);
+
+// Export/import full protocol state (serialized ProtocolState protobuf).
+EcliptixErrorCode ecliptix_protocol_system_export_state(
+    EcliptixProtocolSystemHandle* handle,
+    EcliptixBuffer* out_state,
+    EcliptixError* out_error);
+
+EcliptixErrorCode ecliptix_protocol_system_import_state(
+    EcliptixIdentityKeysHandle* identity_keys,
+    const uint8_t* state_bytes,
+    size_t state_bytes_length,
+    EcliptixProtocolSystemHandle** out_handle,
     EcliptixError* out_error);
 
 EcliptixErrorCode ecliptix_envelope_validate_hybrid_requirements(

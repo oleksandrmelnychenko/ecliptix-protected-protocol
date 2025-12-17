@@ -20,6 +20,63 @@ namespace ecliptix::protocol::connection {
     using namespace ecliptix::protocol::chain_step;
     using namespace ecliptix::protocol::enums;
     using ProtocolConstants = ProtocolConstants;
+    using models::OneTimePreKeyRecord;
+
+    namespace {
+        Result<LocalPublicKeyBundle, EcliptixProtocolFailure> ParsePeerBundle(
+            const proto::protocol::PublicKeyBundle &bundle) {
+            if (bundle.identity_public_key().size() != Constants::ED_25519_PUBLIC_KEY_SIZE) {
+                return Result<LocalPublicKeyBundle, EcliptixProtocolFailure>::Err(
+                    EcliptixProtocolFailure::InvalidInput("Peer identity ed25519 key must be 32 bytes"));
+            }
+            if (bundle.identity_x25519_public_key().size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
+                return Result<LocalPublicKeyBundle, EcliptixProtocolFailure>::Err(
+                    EcliptixProtocolFailure::InvalidInput("Peer identity x25519 key must be 32 bytes"));
+            }
+            if (bundle.kyber_public_key().size() != KyberInterop::KYBER_768_PUBLIC_KEY_SIZE) {
+                return Result<LocalPublicKeyBundle, EcliptixProtocolFailure>::Err(
+                    EcliptixProtocolFailure::InvalidInput("Peer Kyber public key must be 1184 bytes"));
+            }
+            std::vector<uint8_t> ed25519(
+                bundle.identity_public_key().begin(), bundle.identity_public_key().end());
+            std::vector<uint8_t> x25519(
+                bundle.identity_x25519_public_key().begin(), bundle.identity_x25519_public_key().end());
+            std::vector<uint8_t> spk_pub(
+                bundle.signed_pre_key_public_key().begin(), bundle.signed_pre_key_public_key().end());
+            std::vector<uint8_t> spk_sig(
+                bundle.signed_pre_key_signature().begin(), bundle.signed_pre_key_signature().end());
+            std::vector<OneTimePreKeyRecord> otps;
+            otps.reserve(bundle.one_time_pre_keys_size());
+            for (const auto &otp : bundle.one_time_pre_keys()) {
+                if (otp.public_key().size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
+                    return Result<LocalPublicKeyBundle, EcliptixProtocolFailure>::Err(
+                        EcliptixProtocolFailure::InvalidInput("One-time pre-key must be 32 bytes"));
+                }
+                otps.emplace_back(
+                    otp.pre_key_id(),
+                    std::vector<uint8_t>(otp.public_key().begin(), otp.public_key().end()));
+            }
+            std::optional<std::vector<uint8_t> > eph;
+            if (!bundle.ephemeral_x25519_public_key().empty()) {
+                eph = std::vector<uint8_t>(
+                    bundle.ephemeral_x25519_public_key().begin(),
+                    bundle.ephemeral_x25519_public_key().end());
+            }
+            std::optional<std::vector<uint8_t> > kyber_pk = std::vector<uint8_t>(
+                bundle.kyber_public_key().begin(), bundle.kyber_public_key().end());
+
+            LocalPublicKeyBundle local_bundle(
+                std::move(ed25519),
+                std::move(x25519),
+                bundle.signed_pre_key_id(),
+                std::move(spk_pub),
+                std::move(spk_sig),
+                std::move(otps),
+                std::move(eph),
+                std::move(kyber_pk));
+            return Result<LocalPublicKeyBundle, EcliptixProtocolFailure>::Ok(std::move(local_bundle));
+        }
+    }
 
     namespace {
         Result<std::vector<uint8_t>, EcliptixProtocolFailure> GetStateMacSecret() {
@@ -377,6 +434,49 @@ namespace ecliptix::protocol::connection {
                 std::move(root_result).UnwrapErr());
         }
         return root_result;
+    }
+
+    Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>
+    EcliptixProtocolConnection::FromRootAndPeerBundle(
+        std::span<const uint8_t> root_key,
+        const proto::protocol::PublicKeyBundle &peer_bundle,
+        bool is_initiator) {
+        if (root_key.size() != Constants::X_25519_KEY_SIZE) {
+            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::InvalidInput(
+                    std::format("Root key must be {} bytes, got {}",
+                                Constants::X_25519_KEY_SIZE, root_key.size())));
+        }
+
+        auto parse_result = ParsePeerBundle(peer_bundle);
+        if (parse_result.IsErr()) {
+            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                parse_result.UnwrapErr());
+        }
+
+        auto conn_result = Create(
+            /*connection_id*/ 0,
+            is_initiator);
+        if (conn_result.IsErr()) {
+            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                conn_result.UnwrapErr());
+        }
+
+        auto connection = std::move(conn_result.Unwrap());
+        auto set_peer_result = connection->SetPeerBundle(parse_result.Unwrap());
+        if (set_peer_result.IsErr()) {
+            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                set_peer_result.UnwrapErr());
+        }
+
+        auto finalize_result = connection->FinalizeChainAndDhKeysWithRoot(root_key);
+        if (finalize_result.IsErr()) {
+            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                finalize_result.UnwrapErr());
+        }
+
+        return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Ok(
+            std::move(connection));
     }
 
     Result<Unit, EcliptixProtocolFailure>
@@ -997,6 +1097,10 @@ namespace ecliptix::protocol::connection {
             (void) __wipe;
         }
         return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+    }
+
+    uint32_t EcliptixProtocolConnection::GetId() const noexcept {
+        return id_;
     }
 
     bool EcliptixProtocolConnection::IsInitiator() const noexcept {
@@ -2654,5 +2758,78 @@ EcliptixProtocolConnection::GetCurrentKyberCiphertext() const {
             return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic("Failed to rehydrate from proto state: " + std::string(ex.what())));
         }
+    }
+
+    Result<Unit, EcliptixProtocolFailure>
+    EcliptixProtocolConnection::FinalizeChainAndDhKeysWithRoot(
+        std::span<const uint8_t> initial_root_key) {
+        std::lock_guard lock(*lock_);
+        if (root_key_handle_.has_value()) {
+            return Result<Unit, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::Generic("Connection already finalized"));
+        }
+        if (initial_root_key.size() != Constants::X_25519_KEY_SIZE) {
+            return Result<Unit, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::InvalidInput(
+                    std::format("Initial root key must be {} bytes, got {}",
+                                Constants::X_25519_KEY_SIZE, initial_root_key.size())));
+        }
+
+        auto root_alloc = SecureMemoryHandle::Allocate(initial_root_key.size());
+        if (root_alloc.IsErr()) {
+            return Result<Unit, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::FromSodiumFailure(root_alloc.UnwrapErr()));
+        }
+        auto root_handle = std::move(root_alloc).Unwrap();
+        auto write_root = root_handle.Write(initial_root_key);
+        if (write_root.IsErr()) {
+            return Result<Unit, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::FromSodiumFailure(write_root.UnwrapErr()));
+        }
+
+        root_key_handle_ = std::move(root_handle);
+
+        auto root_bytes_result = root_key_handle_->ReadBytes(Constants::X_25519_KEY_SIZE);
+        if (root_bytes_result.IsErr()) {
+            root_key_handle_.reset();
+            return Result<Unit, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::Generic("Failed to read root key"));
+        }
+        auto root_bytes = root_bytes_result.Unwrap();
+        auto metadata_key_result = Hkdf::DeriveKeyBytes(
+            root_bytes,
+            Constants::AES_KEY_SIZE,
+            std::vector<uint8_t>(),
+            std::vector<uint8_t>(ProtocolConstants::METADATA_ENCRYPTION_INFO.begin(),
+                                 ProtocolConstants::METADATA_ENCRYPTION_INFO.end()));
+        auto _wipe_root = SodiumInterop::SecureWipe(std::span(root_bytes));
+        (void) _wipe_root;
+        if (metadata_key_result.IsErr()) {
+            root_key_handle_.reset();
+            return Result<Unit, EcliptixProtocolFailure>::Err(metadata_key_result.UnwrapErr());
+        }
+        auto metadata_key_bytes = metadata_key_result.Unwrap();
+        auto metadata_handle_result = SecureMemoryHandle::Allocate(Constants::AES_KEY_SIZE);
+        if (metadata_handle_result.IsErr()) {
+            auto _wipe = SodiumInterop::SecureWipe(std::span(metadata_key_bytes));
+            (void) _wipe;
+            root_key_handle_.reset();
+            return Result<Unit, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::FromSodiumFailure(metadata_handle_result.UnwrapErr()));
+        }
+        auto metadata_handle = std::move(metadata_handle_result).Unwrap();
+        auto write_result = metadata_handle.Write(metadata_key_bytes);
+        auto _wipe_mk = SodiumInterop::SecureWipe(std::span(metadata_key_bytes));
+        (void) _wipe_mk;
+        if (write_result.IsErr()) {
+            root_key_handle_.reset();
+            return Result<Unit, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::FromSodiumFailure(write_result.UnwrapErr()));
+        }
+        metadata_encryption_key_handle_ = std::move(metadata_handle);
+        if (event_handler_) {
+            event_handler_->OnProtocolStateChanged(id_);
+        }
+        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
     }
 }

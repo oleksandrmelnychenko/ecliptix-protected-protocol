@@ -3,6 +3,9 @@
 #include "ecliptix/crypto/aes_gcm.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/core/constants.hpp"
+#include "ecliptix/configuration/ratchet_config.hpp"
+#include "ecliptix/enums/pub_key_exchange_type.hpp"
+#include "protocol/key_exchange.pb.h"
 #include "common/secure_envelope.pb.h"
 #include <sodium.h>
 #include <chrono>
@@ -15,13 +18,15 @@ namespace ecliptix::protocol {
     using utilities::EnvelopeBuilder;
     using crypto::AesGcm;
     using crypto::SodiumInterop;
+    using proto::protocol::PublicKeyBundle;
 
     EcliptixProtocolSystem::EcliptixProtocolSystem(
         std::unique_ptr<EcliptixSystemIdentityKeys> identity_keys)
         : identity_keys_(std::move(identity_keys))
           , connection_(nullptr)
           , event_handler_(nullptr)
-          , mutex_(std::make_unique<std::mutex>()) {
+          , mutex_(std::make_unique<std::mutex>())
+          , pending_initiator_flag_(std::nullopt) {
     }
 
     Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>
@@ -36,6 +41,55 @@ namespace ecliptix::protocol {
             std::move(system));
     }
 
+    Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>
+    EcliptixProtocolSystem::CreateFromRootAndPeerBundle(
+        std::unique_ptr<EcliptixSystemIdentityKeys> identity_keys,
+        std::span<const uint8_t> root_key,
+        const proto::protocol::PublicKeyBundle &peer_bundle,
+        bool is_initiator) {
+        if (!identity_keys) {
+            return Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::InvalidInput("Identity keys cannot be null"));
+        }
+        auto system = std::unique_ptr<EcliptixProtocolSystem>(
+            new EcliptixProtocolSystem(std::move(identity_keys)));
+        auto conn_result = connection::EcliptixProtocolConnection::FromRootAndPeerBundle(
+            root_key,
+            peer_bundle,
+            is_initiator);
+        if (conn_result.IsErr()) {
+            return Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>::Err(
+                conn_result.UnwrapErr());
+        }
+        system->SetConnection(std::move(conn_result.Unwrap()));
+        return Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>::Ok(
+            std::move(system));
+    }
+
+    Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>
+    EcliptixProtocolSystem::FromProtoState(
+        std::unique_ptr<EcliptixSystemIdentityKeys> identity_keys,
+        const proto::protocol::RatchetState &state) {
+        if (!identity_keys) {
+            return Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::InvalidInput("Identity keys cannot be null"));
+        }
+        auto system = std::unique_ptr<EcliptixProtocolSystem>(
+            new EcliptixProtocolSystem(std::move(identity_keys)));
+        auto conn_result = connection::EcliptixProtocolConnection::FromProtoState(
+            /*connection_id*/ 0,
+            state,
+            configuration::RatchetConfig::Default(),
+            enums::PubKeyExchangeType::X3DH);
+        if (conn_result.IsErr()) {
+            return Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>::Err(
+                conn_result.UnwrapErr());
+        }
+        system->SetConnection(std::move(conn_result.Unwrap()));
+        return Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>::Ok(
+            std::move(system));
+    }
+
     void EcliptixProtocolSystem::SetConnection(std::unique_ptr<EcliptixProtocolConnection> connection) {
         std::lock_guard lock(*mutex_);
         connection_ = std::move(connection);
@@ -44,7 +98,26 @@ namespace ecliptix::protocol {
         }
     }
 
+    Result<Unit, EcliptixProtocolFailure> EcliptixProtocolSystem::FinalizeWithRootAndPeerBundle(
+        std::span<const uint8_t> root_key,
+        const proto::protocol::PublicKeyBundle &peer_bundle,
+        bool is_initiator) {
+        auto conn_result = connection::EcliptixProtocolConnection::FromRootAndPeerBundle(
+            root_key,
+            peer_bundle,
+            is_initiator);
+        if (conn_result.IsErr()) {
+            return Result<Unit, EcliptixProtocolFailure>::Err(conn_result.UnwrapErr());
+        }
+        SetConnection(std::move(conn_result.Unwrap()));
+        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+    }
+
     const EcliptixSystemIdentityKeys &EcliptixProtocolSystem::GetIdentityKeys() const noexcept {
+        return *identity_keys_;
+    }
+
+    EcliptixSystemIdentityKeys &EcliptixProtocolSystem::GetIdentityKeysMutable() noexcept {
         return *identity_keys_;
     }
 
@@ -61,8 +134,22 @@ namespace ecliptix::protocol {
         return connection_ != nullptr;
     }
 
-    uint32_t EcliptixProtocolSystem::GetConnectionId() noexcept {
-        return 0;
+    void EcliptixProtocolSystem::SetPendingInitiator(bool is_initiator) noexcept {
+        std::lock_guard lock(*mutex_);
+        pending_initiator_flag_ = is_initiator;
+    }
+
+    std::optional<bool> EcliptixProtocolSystem::GetPendingInitiator() const noexcept {
+        std::lock_guard lock(*mutex_);
+        return pending_initiator_flag_;
+    }
+
+    uint32_t EcliptixProtocolSystem::GetConnectionId() const noexcept {
+        std::lock_guard lock(*mutex_);
+        if (!connection_) {
+            return 0;
+        }
+        return connection_->GetId();
     }
 
     EcliptixProtocolConnection *EcliptixProtocolSystem::GetConnectionSafe() const noexcept {
@@ -476,6 +563,16 @@ namespace ecliptix::protocol {
                 std::span(receiving_preview->new_root_key));
             (void) __wipe_root_preview;
         }
+    }
+
+    Result<proto::protocol::RatchetState, EcliptixProtocolFailure>
+    EcliptixProtocolSystem::ToProtoState() const {
+        EcliptixProtocolConnection *connection = GetConnectionSafe();
+        if (!connection) {
+            return Result<proto::protocol::RatchetState, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::Generic("Protocol connection not initialized"));
+        }
+        return connection->ToProtoState();
     }
 
     std::vector<uint8_t> EcliptixProtocolSystem::CreateAssociatedData(

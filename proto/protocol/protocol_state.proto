@@ -14,6 +14,15 @@ message EcliptixSessionState {
 
   RatchetState ratchet_state = 4;
   AdaptiveRatchetState adaptive_ratchet_state = 5;
+
+  // Native hybrid/PQ state for interop clients (serialized protocol state from the native engine).
+  bytes native_state = 6;
+  // For authenticated sessions, store the OPAQUE/master key seed and membership id to re-derive native identity keys.
+  bytes opaque_master_key = 7;
+  string membership_id = 8;
+  // Native peer bundle and initiator flag for hybrid ratchet restore.
+  bytes native_peer_bundle = 9;
+  bool native_is_initiator = 10;
 }
 
 message IdentityKeysState {

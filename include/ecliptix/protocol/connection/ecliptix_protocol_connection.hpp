@@ -11,6 +11,7 @@
 #include "ecliptix/enums/pub_key_exchange_type.hpp"
 #include "ecliptix/interfaces/i_protocol_event_handler.hpp"
 #include "ecliptix/security/ratcheting/replay_protection.hpp"
+#include "protocol/key_exchange.pb.h"
 #include <cstdint>
 #include <vector>
 #include <chrono>
@@ -58,12 +59,23 @@ namespace ecliptix::protocol::connection {
             std::span<const uint8_t> opaque_session_key,
             std::span<const uint8_t> user_context);
 
+        // Bootstrap from pre-shared root + peer bundle (OPAQUE or other authenticated channel).
+        [[nodiscard]] static Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>
+        FromRootAndPeerBundle(
+            std::span<const uint8_t> root_key,
+            const proto::protocol::PublicKeyBundle &peer_bundle,
+            bool is_initiator);
+
         [[nodiscard]] Result<Unit, EcliptixProtocolFailure> SetPeerBundle(
             const LocalPublicKeyBundle &peer_bundle);
 
         [[nodiscard]] Result<Unit, EcliptixProtocolFailure> FinalizeChainAndDhKeys(
             std::span<const uint8_t> initial_root_key,
             std::span<const uint8_t> initial_peer_dh_public_key);
+
+        // Finalize using a pre-shared root key (OPAQUE/bootstrap path) without an initial DH public key.
+        [[nodiscard]] Result<Unit, EcliptixProtocolFailure> FinalizeChainAndDhKeysWithRoot(
+            std::span<const uint8_t> initial_root_key);
 
         [[nodiscard]] Result<std::pair<RatchetChainKey, bool>, EcliptixProtocolFailure>
         PrepareNextSendMessage();
@@ -105,6 +117,8 @@ namespace ecliptix::protocol::connection {
         [[nodiscard]] Result<Unit, EcliptixProtocolFailure> SyncWithRemoteState(
             uint32_t remote_sending_chain_length,
             uint32_t remote_receiving_chain_length);
+
+        [[nodiscard]] uint32_t GetId() const noexcept;
 
         [[nodiscard]] bool IsInitiator() const noexcept;
 

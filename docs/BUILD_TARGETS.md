@@ -32,4 +32,7 @@ cmake -S . -B build -DECLIPTIX_BUILD_CLIENT_TARGET=ON -DECLIPTIX_BUILD_SERVER_TA
 cmake --build build
 ```
 
-Both targets retain the same cryptographic guarantees (hybrid DH ratchet with mandatory Kyber, ratchet epochs on envelopes to detect stale state). Pick the target that matches your runtime: use the client build for native/mobile apps that need the C API or managed bindings; use the server build for stateless relays or headless services.***
+Bindings:
+- C#/PInvoke targets the client library name (`ecliptix_protocol`) by default. If you **must** point it at a differently named artifact, define `ECLIPTIX_SERVER_NATIVE` in your C# build to switch the DllImport library name to `ecliptix_protocol_server` (note: the server target does not expose the C API).
+
+Both targets retain the same cryptographic guarantees (hybrid DH ratchet with mandatory Kyber, ratchet epochs on envelopes to detect stale state). Pick the target that matches your runtime: use the client build for native/mobile apps that need the C API or managed bindings; use the server build for stateless relays or headless services.

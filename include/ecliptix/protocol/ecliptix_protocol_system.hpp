@@ -5,6 +5,9 @@
 #include "ecliptix/core/result.hpp"
 #include "ecliptix/core/failures.hpp"
 #include "common/secure_envelope.pb.h"
+#include "protocol/protocol_state.pb.h"
+#include "protocol/key_exchange.pb.h"
+#include <optional>
 
 namespace ecliptix::protocol {
     using protocol::Result;
@@ -19,9 +22,26 @@ namespace ecliptix::protocol {
         [[nodiscard]] static Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>
         Create(std::unique_ptr<EcliptixSystemIdentityKeys> identity_keys);
 
+        [[nodiscard]] static Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>
+        CreateFromRootAndPeerBundle(std::unique_ptr<EcliptixSystemIdentityKeys> identity_keys,
+                                    std::span<const uint8_t> root_key,
+                                    const proto::protocol::PublicKeyBundle &peer_bundle,
+                                    bool is_initiator);
+
+        [[nodiscard]] static Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>
+        FromProtoState(std::unique_ptr<EcliptixSystemIdentityKeys> identity_keys,
+                       const proto::protocol::RatchetState &state);
+
+        // Finalize an in-flight system using a pre-shared root and peer bundle (OPAQUE/bootstrap).
+        [[nodiscard]] Result<Unit, EcliptixProtocolFailure> FinalizeWithRootAndPeerBundle(
+            std::span<const uint8_t> root_key,
+            const proto::protocol::PublicKeyBundle &peer_bundle,
+            bool is_initiator);
+
         void SetConnection(std::unique_ptr<EcliptixProtocolConnection> connection);
 
         [[nodiscard]] const EcliptixSystemIdentityKeys &GetIdentityKeys() const noexcept;
+        [[nodiscard]] EcliptixSystemIdentityKeys &GetIdentityKeysMutable() noexcept;
 
         void SetEventHandler(std::shared_ptr<IProtocolEventHandler> handler);
 
@@ -31,9 +51,16 @@ namespace ecliptix::protocol {
         [[nodiscard]] Result<std::vector<uint8_t>, EcliptixProtocolFailure>
         ReceiveMessage(const proto::common::SecureEnvelope &envelope) const;
 
+        [[nodiscard]] Result<proto::protocol::RatchetState, EcliptixProtocolFailure>
+        ToProtoState() const;
+
         [[nodiscard]] bool HasConnection() const noexcept;
 
-        [[nodiscard]] static uint32_t GetConnectionId() noexcept;
+        void SetPendingInitiator(bool is_initiator) noexcept;
+
+        [[nodiscard]] std::optional<bool> GetPendingInitiator() const noexcept;
+
+        [[nodiscard]] uint32_t GetConnectionId() const noexcept;
 
         EcliptixProtocolSystem(EcliptixProtocolSystem &&) noexcept = default;
 
@@ -61,5 +88,6 @@ namespace ecliptix::protocol {
         std::unique_ptr<EcliptixProtocolConnection> connection_;
         std::shared_ptr<IProtocolEventHandler> event_handler_;
         mutable std::unique_ptr<std::mutex> mutex_;
+        std::optional<bool> pending_initiator_flag_;
     };
 }

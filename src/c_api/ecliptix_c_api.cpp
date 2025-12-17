@@ -7,17 +7,22 @@
 #include "ecliptix/core/result.hpp"
 #include "ecliptix/core/constants.hpp"
 #include "common/secure_envelope.pb.h"
+#include "protocol/protocol_state.pb.h"
+#include "protocol/key_exchange.pb.h"
 #include <cstring>
 #include <memory>
 #include <mutex>
 #include <span>
 #include <string>
+#include <string_view>
 
 using namespace ecliptix::protocol;
 using namespace ecliptix::protocol::connection;
 using namespace ecliptix::protocol::identity;
 using namespace ecliptix::protocol::crypto;
+using namespace ecliptix::protocol::models;
 using ecliptix::proto::common::SecureEnvelope;
+using namespace ecliptix::proto::protocol;
 using crypto::KyberInterop;
 
 struct EcliptixProtocolSystemHandle {
@@ -136,6 +141,58 @@ namespace {
         out_buffer->length = input.size();
         return true;
     }
+
+    Result<LocalPublicKeyBundle, EcliptixProtocolFailure> build_local_bundle(const PublicKeyBundle &proto_bundle) {
+        if (proto_bundle.identity_public_key().empty() || proto_bundle.identity_x25519_public_key().empty()) {
+            return Result<LocalPublicKeyBundle, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::InvalidInput("Peer bundle missing identity keys"));
+        }
+        if (proto_bundle.signed_pre_key_public_key().empty() || proto_bundle.signed_pre_key_signature().empty()) {
+            return Result<LocalPublicKeyBundle, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::InvalidInput("Peer bundle missing signed pre-key material"));
+        }
+
+        std::vector<OneTimePreKeyRecord> otps;
+        otps.reserve(proto_bundle.one_time_pre_keys_size());
+        for (const auto &otp : proto_bundle.one_time_pre_keys()) {
+            if (otp.public_key().empty()) {
+                return Result<LocalPublicKeyBundle, EcliptixProtocolFailure>::Err(
+                    EcliptixProtocolFailure::InvalidInput("Peer bundle contains empty one-time pre-key"));
+            }
+            otps.emplace_back(
+                otp.pre_key_id(),
+                std::vector<uint8_t>(otp.public_key().begin(), otp.public_key().end()));
+        }
+
+        std::optional<std::vector<uint8_t>> ephemeral = std::nullopt;
+        if (!proto_bundle.ephemeral_x25519_public_key().empty()) {
+            ephemeral = std::vector<uint8_t>(
+                proto_bundle.ephemeral_x25519_public_key().begin(),
+                proto_bundle.ephemeral_x25519_public_key().end());
+        }
+
+        std::optional<std::vector<uint8_t>> kyber = std::nullopt;
+        if (!proto_bundle.kyber_public_key().empty()) {
+            kyber = std::vector<uint8_t>(
+                proto_bundle.kyber_public_key().begin(),
+                proto_bundle.kyber_public_key().end());
+        }
+
+        return Result<LocalPublicKeyBundle, EcliptixProtocolFailure>::Ok(
+            LocalPublicKeyBundle(
+                std::vector<uint8_t>(proto_bundle.identity_public_key().begin(),
+                                     proto_bundle.identity_public_key().end()),
+                std::vector<uint8_t>(proto_bundle.identity_x25519_public_key().begin(),
+                                     proto_bundle.identity_x25519_public_key().end()),
+                proto_bundle.signed_pre_key_id(),
+                std::vector<uint8_t>(proto_bundle.signed_pre_key_public_key().begin(),
+                                     proto_bundle.signed_pre_key_public_key().end()),
+                std::vector<uint8_t>(proto_bundle.signed_pre_key_signature().begin(),
+                                     proto_bundle.signed_pre_key_signature().end()),
+                std::move(otps),
+                std::move(ephemeral),
+                std::move(kyber)));
+    }
 }
 
 extern "C" {
@@ -205,6 +262,57 @@ EcliptixErrorCode ecliptix_identity_keys_create_from_seed(
     auto result = EcliptixSystemIdentityKeys::CreateFromMasterKey(
         master_key_span,
         default_membership_id,
+        default_one_time_key_count
+    );
+
+    if (result.IsErr()) {
+        fill_error_from_failure(out_error, std::move(result).UnwrapErr());
+        return out_error->code;
+    }
+
+    auto *handle = new(std::nothrow) EcliptixIdentityKeysHandle{
+        std::make_unique<EcliptixSystemIdentityKeys>(std::move(result).Unwrap())
+    };
+
+    if (!handle) {
+        fill_error(out_error, ECLIPTIX_ERROR_OUT_OF_MEMORY, "Failed to allocate identity keys handle");
+        return ECLIPTIX_ERROR_OUT_OF_MEMORY;
+    }
+
+    *out_handle = handle;
+    return ECLIPTIX_SUCCESS;
+}
+
+EcliptixErrorCode ecliptix_identity_keys_create_from_seed_with_context(
+    const uint8_t *seed,
+    size_t seed_length,
+    const char *membership_id,
+    size_t membership_id_length,
+    EcliptixIdentityKeysHandle **out_handle,
+    EcliptixError *out_error) {
+    if (!validate_output_handle(out_handle, out_error) ||
+        !validate_buffer_param(seed, seed_length, out_error)) {
+        return out_error ? out_error->code : ECLIPTIX_ERROR_NULL_POINTER;
+    }
+    if (!membership_id || membership_id_length == 0) {
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_INPUT, "Membership id must not be empty");
+        return ECLIPTIX_ERROR_INVALID_INPUT;
+    }
+
+    constexpr size_t expected_master_key_size = 32;
+    if (seed_length != expected_master_key_size) {
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_INPUT,
+                   "Master key length must be " + std::to_string(expected_master_key_size) + " bytes");
+        return ECLIPTIX_ERROR_INVALID_INPUT;
+    }
+
+    constexpr uint32_t default_one_time_key_count = 100;
+    std::span<const uint8_t> master_key_span(seed, seed_length);
+    std::string_view membership_view(membership_id, membership_id_length);
+
+    auto result = EcliptixSystemIdentityKeys::CreateFromMasterKey(
+        master_key_span,
+        membership_view,
         default_one_time_key_count
     );
 
@@ -353,6 +461,192 @@ void ecliptix_protocol_system_destroy(EcliptixProtocolSystemHandle *handle) {
     delete handle;
 }
 
+EcliptixErrorCode ecliptix_protocol_system_begin_handshake(
+    EcliptixProtocolSystemHandle *handle,
+    uint32_t connection_id,
+    uint8_t exchange_type,
+    EcliptixBuffer *out_handshake_message,
+    EcliptixError *out_error) {
+    (void) connection_id;
+    if (!handle || !handle->system) {
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_STATE, "Protocol system handle is null or uninitialized");
+        return ECLIPTIX_ERROR_INVALID_STATE;
+    }
+    if (!validate_output_handle(out_handshake_message, out_error)) {
+        return out_error ? out_error->code : ECLIPTIX_ERROR_NULL_POINTER;
+    }
+
+    auto bundle_result = handle->system->GetIdentityKeys().CreatePublicBundle();
+    if (bundle_result.IsErr()) {
+        fill_error_from_failure(out_error, std::move(bundle_result).UnwrapErr());
+        return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
+    }
+
+    const auto &bundle = bundle_result.Unwrap();
+    ecliptix::proto::protocol::PublicKeyBundle proto_bundle;
+    proto_bundle.set_identity_public_key(bundle.GetEd25519Public().data(), bundle.GetEd25519Public().size());
+    proto_bundle.set_identity_x25519_public_key(bundle.GetIdentityX25519().data(), bundle.GetIdentityX25519().size());
+    proto_bundle.set_signed_pre_key_id(bundle.GetSignedPreKeyId());
+    proto_bundle.set_signed_pre_key_public_key(bundle.GetSignedPreKeyPublic().data(),
+                                               bundle.GetSignedPreKeyPublic().size());
+    proto_bundle.set_signed_pre_key_signature(bundle.GetSignedPreKeySignature().data(),
+                                              bundle.GetSignedPreKeySignature().size());
+    for (const auto &otp : bundle.GetOneTimePreKeys()) {
+        auto *otp_proto = proto_bundle.add_one_time_pre_keys();
+        otp_proto->set_pre_key_id(otp.GetPreKeyId());
+        const auto &pub = otp.GetPublicKey();
+        otp_proto->set_public_key(pub.data(), pub.size());
+    }
+    if (bundle.HasEphemeralKey()) {
+        const auto &eph = bundle.GetEphemeralX25519Public();
+        proto_bundle.set_ephemeral_x25519_public_key(eph->data(), eph->size());
+    }
+    if (bundle.HasKyberKey()) {
+        const auto &kyber = bundle.GetKyberPublicKey();
+        proto_bundle.set_kyber_public_key(kyber->data(), kyber->size());
+    }
+
+    ecliptix::proto::protocol::PubKeyExchange handshake;
+    handshake.set_state(ecliptix::proto::protocol::PubKeyExchangeState::INIT);
+    handshake.set_of_type(static_cast<ecliptix::proto::protocol::PubKeyExchangeType>(exchange_type));
+    handshake.set_payload(proto_bundle.SerializeAsString());
+    // initial_Dh_public_Key left empty because bootstrap uses pre-shared root key.
+
+    handle->system->SetPendingInitiator(true);
+
+    const std::string serialized = handshake.SerializeAsString();
+    if (!copy_to_buffer(
+        std::span<const uint8_t>(reinterpret_cast<const uint8_t *>(serialized.data()), serialized.size()),
+        out_handshake_message,
+        out_error)) {
+        return out_error ? out_error->code : ECLIPTIX_ERROR_OUT_OF_MEMORY;
+    }
+    return ECLIPTIX_SUCCESS;
+}
+
+EcliptixErrorCode ecliptix_protocol_system_complete_handshake(
+    EcliptixProtocolSystemHandle *handle,
+    const uint8_t *peer_handshake_message,
+    size_t peer_handshake_message_length,
+    const uint8_t *root_key,
+    size_t root_key_length,
+    EcliptixError *out_error) {
+    if (!handle || !handle->system) {
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_STATE, "Protocol system handle is null or uninitialized");
+        return ECLIPTIX_ERROR_INVALID_STATE;
+    }
+    if (!validate_buffer_param(peer_handshake_message, peer_handshake_message_length, out_error) ||
+        !validate_buffer_param(root_key, root_key_length, out_error)) {
+        return out_error ? out_error->code : ECLIPTIX_ERROR_NULL_POINTER;
+    }
+    if (root_key_length != Constants::X_25519_KEY_SIZE) {
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_INPUT, "Root key must be 32 bytes");
+        return ECLIPTIX_ERROR_INVALID_INPUT;
+    }
+
+    ecliptix::proto::protocol::PubKeyExchange peer_exchange;
+    if (!peer_exchange.ParseFromArray(peer_handshake_message, static_cast<int>(peer_handshake_message_length))) {
+        // Try direct bundle parsing as a fallback.
+        ecliptix::proto::protocol::PublicKeyBundle direct_bundle;
+        if (!direct_bundle.ParseFromArray(peer_handshake_message, static_cast<int>(peer_handshake_message_length))) {
+            fill_error(out_error, ECLIPTIX_ERROR_DECODE, "Failed to parse peer handshake");
+            return ECLIPTIX_ERROR_DECODE;
+        }
+        auto finalize_result = handle->system->FinalizeWithRootAndPeerBundle(
+            std::span<const uint8_t>(root_key, root_key_length),
+            direct_bundle,
+            handle->system->GetPendingInitiator().value_or(false));
+        if (finalize_result.IsErr()) {
+            fill_error_from_failure(out_error, std::move(finalize_result).UnwrapErr());
+            return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
+        }
+        return ECLIPTIX_SUCCESS;
+    }
+
+    ecliptix::proto::protocol::PublicKeyBundle peer_bundle;
+    if (!peer_bundle.ParseFromString(peer_exchange.payload())) {
+        fill_error(out_error, ECLIPTIX_ERROR_DECODE, "Failed to parse peer public bundle");
+        return ECLIPTIX_ERROR_DECODE;
+    }
+
+    bool is_initiator = handle->system->GetPendingInitiator().value_or(false);
+    auto finalize_result = handle->system->FinalizeWithRootAndPeerBundle(
+        std::span<const uint8_t>(root_key, root_key_length),
+        peer_bundle,
+        is_initiator);
+    if (finalize_result.IsErr()) {
+        fill_error_from_failure(out_error, std::move(finalize_result).UnwrapErr());
+        return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
+    }
+
+    return ECLIPTIX_SUCCESS;
+}
+
+EcliptixErrorCode ecliptix_protocol_system_complete_handshake_auto(
+    EcliptixProtocolSystemHandle *handle,
+    const uint8_t *peer_handshake_message,
+    size_t peer_handshake_message_length,
+    EcliptixError *out_error) {
+    if (!handle || !handle->system) {
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_STATE, "Protocol system handle is null or uninitialized");
+        return ECLIPTIX_ERROR_INVALID_STATE;
+    }
+    if (!validate_buffer_param(peer_handshake_message, peer_handshake_message_length, out_error)) {
+        return out_error ? out_error->code : ECLIPTIX_ERROR_NULL_POINTER;
+    }
+
+    PubKeyExchange peer_exchange;
+    if (!peer_exchange.ParseFromArray(peer_handshake_message, static_cast<int>(peer_handshake_message_length))) {
+        fill_error(out_error, ECLIPTIX_ERROR_DECODE, "Failed to parse peer handshake");
+        return ECLIPTIX_ERROR_DECODE;
+    }
+
+    PublicKeyBundle peer_bundle;
+    if (!peer_bundle.ParseFromString(peer_exchange.payload())) {
+        fill_error(out_error, ECLIPTIX_ERROR_DECODE, "Failed to parse peer public bundle");
+        return ECLIPTIX_ERROR_DECODE;
+    }
+
+    auto peer_bundle_result = build_local_bundle(peer_bundle);
+    if (peer_bundle_result.IsErr()) {
+        fill_error_from_failure(out_error, std::move(peer_bundle_result).UnwrapErr());
+        return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
+    }
+
+    std::vector<uint8_t> info(ProtocolConstants::X3DH_INFO.begin(), ProtocolConstants::X3DH_INFO.end());
+    auto shared_secret_result = handle->system->GetIdentityKeysMutable().X3dhDeriveSharedSecret(
+        peer_bundle_result.Unwrap(),
+        std::span<const uint8_t>(info));
+    if (shared_secret_result.IsErr()) {
+        fill_error_from_failure(out_error, std::move(shared_secret_result).UnwrapErr());
+        return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
+    }
+
+    auto shared_secret_handle = std::move(shared_secret_result).Unwrap();
+    std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE);
+    auto read_result = shared_secret_handle.Read(root_key);
+    if (read_result.IsErr()) {
+        fill_error_from_failure(
+            out_error,
+            EcliptixProtocolFailure::FromSodiumFailure(std::move(read_result).UnwrapErr()));
+        return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
+    }
+
+    bool is_initiator = handle->system->GetPendingInitiator().value_or(false);
+    auto finalize_result = handle->system->FinalizeWithRootAndPeerBundle(
+        root_key,
+        peer_bundle,
+        is_initiator);
+    auto _wipe_root = SodiumInterop::SecureWipe(std::span(root_key));
+    (void) _wipe_root;
+    if (finalize_result.IsErr()) {
+        fill_error_from_failure(out_error, std::move(finalize_result).UnwrapErr());
+        return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
+    }
+
+    return ECLIPTIX_SUCCESS;
+}
+
 EcliptixErrorCode ecliptix_protocol_system_send_message(
     EcliptixProtocolSystemHandle *handle,
     const uint8_t *plaintext,
@@ -426,6 +720,170 @@ EcliptixErrorCode ecliptix_protocol_system_receive_message(
         return out_error ? out_error->code : ECLIPTIX_ERROR_OUT_OF_MEMORY;
     }
 
+    return ECLIPTIX_SUCCESS;
+}
+
+EcliptixErrorCode ecliptix_protocol_system_has_connection(
+    const EcliptixProtocolSystemHandle *handle,
+    bool *out_has_connection,
+    EcliptixError *out_error) {
+    if (!handle || !handle->system) {
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_STATE, "Protocol system handle is null or uninitialized");
+        return ECLIPTIX_ERROR_INVALID_STATE;
+    }
+    if (!out_has_connection) {
+        fill_error(out_error, ECLIPTIX_ERROR_NULL_POINTER, "out_has_connection is null");
+        return ECLIPTIX_ERROR_NULL_POINTER;
+    }
+
+    *out_has_connection = handle->system->HasConnection();
+    return ECLIPTIX_SUCCESS;
+}
+
+EcliptixErrorCode ecliptix_protocol_system_get_connection_id(
+    const EcliptixProtocolSystemHandle *handle,
+    uint32_t *out_connection_id,
+    EcliptixError *out_error) {
+    if (!handle || !handle->system) {
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_STATE, "Protocol system handle is null or uninitialized");
+        return ECLIPTIX_ERROR_INVALID_STATE;
+    }
+    if (!out_connection_id) {
+        fill_error(out_error, ECLIPTIX_ERROR_NULL_POINTER, "out_connection_id is null");
+        return ECLIPTIX_ERROR_NULL_POINTER;
+    }
+    if (!handle->system->HasConnection()) {
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_STATE, "Protocol connection not established");
+        return ECLIPTIX_ERROR_INVALID_STATE;
+    }
+
+    *out_connection_id = handle->system->GetConnectionId();
+    return ECLIPTIX_SUCCESS;
+}
+
+EcliptixErrorCode ecliptix_protocol_system_create_from_root(
+    EcliptixIdentityKeysHandle *identity_keys,
+    const uint8_t *root_key,
+    size_t root_key_length,
+    const uint8_t *peer_bundle,
+    size_t peer_bundle_length,
+    bool is_initiator,
+    EcliptixProtocolSystemHandle **out_handle,
+    EcliptixError *out_error) {
+    if (!identity_keys || !identity_keys->identity_keys) {
+        fill_error(out_error, ECLIPTIX_ERROR_NULL_POINTER, "Identity keys handle is null");
+        return ECLIPTIX_ERROR_NULL_POINTER;
+    }
+    if (!validate_buffer_param(root_key, root_key_length, out_error) ||
+        !validate_buffer_param(peer_bundle, peer_bundle_length, out_error) ||
+        !validate_output_handle(out_handle, out_error)) {
+        return out_error ? out_error->code : ECLIPTIX_ERROR_NULL_POINTER;
+    }
+    if (root_key_length != Constants::X_25519_KEY_SIZE) {
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_INPUT, "Root key must be 32 bytes");
+        return ECLIPTIX_ERROR_INVALID_INPUT;
+    }
+
+    auto *handle = new(std::nothrow) EcliptixProtocolSystemHandle{};
+    if (!handle) {
+        fill_error(out_error, ECLIPTIX_ERROR_OUT_OF_MEMORY, "Failed to allocate protocol system handle");
+        return ECLIPTIX_ERROR_OUT_OF_MEMORY;
+    }
+
+    PublicKeyBundle bundle;
+    if (!bundle.ParseFromArray(peer_bundle, static_cast<int>(peer_bundle_length))) {
+        delete handle;
+        fill_error(out_error, ECLIPTIX_ERROR_DECODE, "Failed to parse peer bundle");
+        return ECLIPTIX_ERROR_DECODE;
+    }
+
+    auto system_result = EcliptixProtocolSystem::CreateFromRootAndPeerBundle(
+        std::move(identity_keys->identity_keys),
+        std::span<const uint8_t>(root_key, root_key_length),
+        bundle,
+        is_initiator);
+
+    if (system_result.IsErr()) {
+        delete handle;
+        fill_error_from_failure(out_error, std::move(system_result).UnwrapErr());
+        return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
+    }
+
+    handle->system = std::move(system_result).Unwrap();
+    identity_keys->identity_keys.reset();
+    *out_handle = handle;
+    return ECLIPTIX_SUCCESS;
+}
+
+EcliptixErrorCode ecliptix_protocol_system_export_state(
+    EcliptixProtocolSystemHandle *handle,
+    EcliptixBuffer *out_state,
+    EcliptixError *out_error) {
+    if (!handle || !handle->system) {
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_STATE, "Protocol system handle is null or uninitialized");
+        return ECLIPTIX_ERROR_INVALID_STATE;
+    }
+    if (!validate_output_handle(out_state, out_error)) {
+        return out_error ? out_error->code : ECLIPTIX_ERROR_NULL_POINTER;
+    }
+
+    auto state_result = handle->system->ToProtoState();
+    if (state_result.IsErr()) {
+        fill_error_from_failure(out_error, std::move(state_result).UnwrapErr());
+        return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
+    }
+
+    const auto &state = state_result.Unwrap();
+    const std::string serialized = state.SerializeAsString();
+    if (!copy_to_buffer(
+        std::span<const uint8_t>(reinterpret_cast<const uint8_t *>(serialized.data()), serialized.size()),
+        out_state,
+        out_error)) {
+        return out_error ? out_error->code : ECLIPTIX_ERROR_OUT_OF_MEMORY;
+    }
+
+    return ECLIPTIX_SUCCESS;
+}
+
+EcliptixErrorCode ecliptix_protocol_system_import_state(
+    EcliptixIdentityKeysHandle *identity_keys,
+    const uint8_t *state_bytes,
+    size_t state_bytes_length,
+    EcliptixProtocolSystemHandle **out_handle,
+    EcliptixError *out_error) {
+    if (!identity_keys || !identity_keys->identity_keys) {
+        fill_error(out_error, ECLIPTIX_ERROR_NULL_POINTER, "Identity keys handle is null");
+        return ECLIPTIX_ERROR_NULL_POINTER;
+    }
+    if (!validate_buffer_param(state_bytes, state_bytes_length, out_error) ||
+        !validate_output_handle(out_handle, out_error)) {
+        return out_error ? out_error->code : ECLIPTIX_ERROR_NULL_POINTER;
+    }
+
+    RatchetState proto_state;
+    if (!proto_state.ParseFromArray(state_bytes, static_cast<int>(state_bytes_length))) {
+        fill_error(out_error, ECLIPTIX_ERROR_DECODE, "Failed to parse protocol state");
+        return ECLIPTIX_ERROR_DECODE;
+    }
+
+    auto system_result = EcliptixProtocolSystem::FromProtoState(
+        std::move(identity_keys->identity_keys),
+        proto_state);
+
+    if (system_result.IsErr()) {
+        fill_error_from_failure(out_error, std::move(system_result).UnwrapErr());
+        return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
+    }
+
+    auto *handle = new(std::nothrow) EcliptixProtocolSystemHandle{};
+    if (!handle) {
+        fill_error(out_error, ECLIPTIX_ERROR_OUT_OF_MEMORY, "Failed to allocate protocol system handle");
+        return ECLIPTIX_ERROR_OUT_OF_MEMORY;
+    }
+
+    handle->system = std::move(system_result).Unwrap();
+    identity_keys->identity_keys.reset();
+    *out_handle = handle;
     return ECLIPTIX_SUCCESS;
 }
 
