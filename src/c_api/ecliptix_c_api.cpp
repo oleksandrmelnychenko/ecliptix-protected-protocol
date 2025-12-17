@@ -690,23 +690,18 @@ EcliptixErrorCode ecliptix_protocol_system_complete_handshake_auto(
     auto kyber_artifacts = std::move(kyber_artifacts_result).Unwrap();
 
     bool is_initiator = handle->system->GetPendingInitiator().value_or(false);
+
+    // Use overload that passes Kyber artifacts BEFORE connection finalization
     auto finalize_result = handle->system->FinalizeWithRootAndPeerBundle(
         root_key,
         peer_bundle,
-        is_initiator);
+        is_initiator,
+        kyber_artifacts.kyber_ciphertext,
+        kyber_artifacts.kyber_shared_secret);
     auto _wipe_root = SodiumInterop::SecureWipe(std::span(root_key));
     (void) _wipe_root;
     if (finalize_result.IsErr()) {
         fill_error_from_failure(out_error, std::move(finalize_result).UnwrapErr());
-        return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
-    }
-
-    // Pass Kyber artifacts to the connection for hybrid PQ security
-    auto set_kyber_result = handle->system->SetConnectionKyberSecrets(
-        kyber_artifacts.kyber_ciphertext,
-        kyber_artifacts.kyber_shared_secret);
-    if (set_kyber_result.IsErr()) {
-        fill_error_from_failure(out_error, std::move(set_kyber_result).UnwrapErr());
         return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
     }
 

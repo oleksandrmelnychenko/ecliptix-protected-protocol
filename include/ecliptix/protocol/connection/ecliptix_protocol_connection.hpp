@@ -66,6 +66,15 @@ namespace ecliptix::protocol::connection {
             const proto::protocol::PublicKeyBundle &peer_bundle,
             bool is_initiator);
 
+        // Overload with Kyber artifacts for hybrid PQ mode
+        [[nodiscard]] static Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>
+        FromRootAndPeerBundle(
+            std::span<const uint8_t> root_key,
+            const proto::protocol::PublicKeyBundle &peer_bundle,
+            bool is_initiator,
+            std::span<const uint8_t> kyber_ciphertext,
+            std::span<const uint8_t> kyber_shared_secret);
+
         [[nodiscard]] Result<Unit, EcliptixProtocolFailure> SetPeerBundle(
             const LocalPublicKeyBundle &peer_bundle);
 

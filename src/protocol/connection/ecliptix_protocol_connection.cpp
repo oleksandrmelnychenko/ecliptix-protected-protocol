@@ -479,6 +479,58 @@ namespace ecliptix::protocol::connection {
             std::move(connection));
     }
 
+    Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>
+    EcliptixProtocolConnection::FromRootAndPeerBundle(
+        std::span<const uint8_t> root_key,
+        const proto::protocol::PublicKeyBundle &peer_bundle,
+        bool is_initiator,
+        std::span<const uint8_t> kyber_ciphertext,
+        std::span<const uint8_t> kyber_shared_secret) {
+        if (root_key.size() != Constants::X_25519_KEY_SIZE) {
+            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::InvalidInput(
+                    std::format("Root key must be {} bytes, got {}",
+                                Constants::X_25519_KEY_SIZE, root_key.size())));
+        }
+
+        auto parse_result = ParsePeerBundle(peer_bundle);
+        if (parse_result.IsErr()) {
+            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                parse_result.UnwrapErr());
+        }
+
+        auto conn_result = Create(
+            /*connection_id*/ 0,
+            is_initiator);
+        if (conn_result.IsErr()) {
+            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                conn_result.UnwrapErr());
+        }
+
+        auto connection = std::move(conn_result.Unwrap());
+        auto set_peer_result = connection->SetPeerBundle(parse_result.Unwrap());
+        if (set_peer_result.IsErr()) {
+            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                set_peer_result.UnwrapErr());
+        }
+
+        // Set Kyber secrets BEFORE finalization
+        auto set_kyber_result = connection->SetHybridHandshakeSecrets(kyber_ciphertext, kyber_shared_secret);
+        if (set_kyber_result.IsErr()) {
+            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                set_kyber_result.UnwrapErr());
+        }
+
+        auto finalize_result = connection->FinalizeChainAndDhKeysWithRoot(root_key);
+        if (finalize_result.IsErr()) {
+            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                finalize_result.UnwrapErr());
+        }
+
+        return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Ok(
+            std::move(connection));
+    }
+
     Result<Unit, EcliptixProtocolFailure>
     EcliptixProtocolConnection::FinalizeChainAndDhKeys(
         std::span<const uint8_t> initial_root_key,
