@@ -62,6 +62,11 @@ namespace ecliptix::protocol {
 
         [[nodiscard]] uint32_t GetConnectionId() const noexcept;
 
+        // Set Kyber handshake secrets on the active connection (for hybrid PQ mode)
+        [[nodiscard]] Result<Unit, EcliptixProtocolFailure> SetConnectionKyberSecrets(
+            std::span<const uint8_t> kyber_ciphertext,
+            std::span<const uint8_t> kyber_shared_secret);
+
         EcliptixProtocolSystem(EcliptixProtocolSystem &&) noexcept = default;
 
         EcliptixProtocolSystem &operator=(EcliptixProtocolSystem &&) noexcept = default;

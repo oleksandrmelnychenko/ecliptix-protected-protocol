@@ -679,6 +679,16 @@ EcliptixErrorCode ecliptix_protocol_system_complete_handshake_auto(
         return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
     }
 
+    // Consume Kyber handshake artifacts from X3DH (ciphertext + shared secret)
+    auto kyber_artifacts_result = handle->system->GetIdentityKeysMutable().ConsumePendingKyberHandshake();
+    if (kyber_artifacts_result.IsErr()) {
+        auto _wipe_root = SodiumInterop::SecureWipe(std::span(root_key));
+        (void) _wipe_root;
+        fill_error_from_failure(out_error, std::move(kyber_artifacts_result).UnwrapErr());
+        return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
+    }
+    auto kyber_artifacts = std::move(kyber_artifacts_result).Unwrap();
+
     bool is_initiator = handle->system->GetPendingInitiator().value_or(false);
     auto finalize_result = handle->system->FinalizeWithRootAndPeerBundle(
         root_key,
@@ -688,6 +698,15 @@ EcliptixErrorCode ecliptix_protocol_system_complete_handshake_auto(
     (void) _wipe_root;
     if (finalize_result.IsErr()) {
         fill_error_from_failure(out_error, std::move(finalize_result).UnwrapErr());
+        return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
+    }
+
+    // Pass Kyber artifacts to the connection for hybrid PQ security
+    auto set_kyber_result = handle->system->SetConnectionKyberSecrets(
+        kyber_artifacts.kyber_ciphertext,
+        kyber_artifacts.kyber_shared_secret);
+    if (set_kyber_result.IsErr()) {
+        fill_error_from_failure(out_error, std::move(set_kyber_result).UnwrapErr());
         return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
     }
 

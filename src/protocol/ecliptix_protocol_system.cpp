@@ -152,6 +152,17 @@ namespace ecliptix::protocol {
         return connection_->GetId();
     }
 
+    Result<Unit, EcliptixProtocolFailure> EcliptixProtocolSystem::SetConnectionKyberSecrets(
+        std::span<const uint8_t> kyber_ciphertext,
+        std::span<const uint8_t> kyber_shared_secret) {
+        std::lock_guard lock(*mutex_);
+        if (!connection_) {
+            return Result<Unit, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::Generic("Protocol connection not initialized"));
+        }
+        return connection_->SetHybridHandshakeSecrets(kyber_ciphertext, kyber_shared_secret);
+    }
+
     EcliptixProtocolConnection *EcliptixProtocolSystem::GetConnectionSafe() const noexcept {
         std::lock_guard lock(*mutex_);
         return connection_.get();
