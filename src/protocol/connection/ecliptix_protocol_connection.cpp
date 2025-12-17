@@ -2725,6 +2725,41 @@ EcliptixProtocolConnection::GetCurrentKyberCiphertext() const {
                 return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
                     EcliptixProtocolFailure::FromSodiumFailure(kyber_sk_write.UnwrapErr()));
             }
+            // Extract DH private key from sending_step BEFORE moving it into the constructor
+            if (auto sender_dh_handle = sending_step.GetDhPrivateKeyHandle(); sender_dh_handle.has_value()) {
+                auto dh_bytes_result = (*sender_dh_handle)->ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
+                if (dh_bytes_result.IsErr()) {
+                    return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                        EcliptixProtocolFailure::FromSodiumFailure(dh_bytes_result.UnwrapErr()));
+                }
+                auto dh_copy = std::move(dh_bytes_result).Unwrap();
+                auto alloc_priv = SecureMemoryHandle::Allocate(Constants::X_25519_PRIVATE_KEY_SIZE);
+                if (alloc_priv.IsErr()) {
+                    SodiumInterop::SecureWipe(std::span(dh_copy));
+                    return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                        EcliptixProtocolFailure::FromSodiumFailure(alloc_priv.UnwrapErr()));
+                }
+                auto alloc_initial = SecureMemoryHandle::Allocate(Constants::X_25519_PRIVATE_KEY_SIZE);
+                if (alloc_initial.IsErr()) {
+                    SodiumInterop::SecureWipe(std::span(dh_copy));
+                    return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                        EcliptixProtocolFailure::FromSodiumFailure(alloc_initial.UnwrapErr()));
+                }
+                current_sending_dh_private_handle = std::move(alloc_priv).Unwrap();
+                initial_sending_dh_private_handle = std::move(alloc_initial).Unwrap();
+                auto write_priv = current_sending_dh_private_handle.Write(dh_copy);
+                if (write_priv.IsErr()) {
+                    SodiumInterop::SecureWipe(std::span(dh_copy));
+                    return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                        EcliptixProtocolFailure::FromSodiumFailure(write_priv.UnwrapErr()));
+                }
+                auto write_initial = initial_sending_dh_private_handle.Write(dh_copy);
+                SodiumInterop::SecureWipe(std::span(dh_copy));
+                if (write_initial.IsErr()) {
+                    return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                        EcliptixProtocolFailure::FromSodiumFailure(write_initial.UnwrapErr()));
+                }
+            }
             std::unique_ptr<EcliptixProtocolConnection> connection(
                 new EcliptixProtocolConnection(
                     connection_id,
@@ -2753,43 +2788,6 @@ EcliptixProtocolConnection::GetCurrentKyberCiphertext() const {
                     proto.is_first_receiving_ratchet()
                 )
             );
-            // Rehydrate current DH private/public material from the sending chain state
-            if (auto sender_dh_handle = sending_step.GetDhPrivateKeyHandle(); sender_dh_handle.has_value()) {
-                auto dh_bytes_result = (*sender_dh_handle)->ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
-                if (dh_bytes_result.IsErr()) {
-                    return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::FromSodiumFailure(dh_bytes_result.UnwrapErr()));
-                }
-                auto dh_copy = std::move(dh_bytes_result).Unwrap();
-                auto alloc_priv = SecureMemoryHandle::Allocate(Constants::X_25519_PRIVATE_KEY_SIZE);
-                if (alloc_priv.IsErr()) {
-                    SodiumInterop::SecureWipe(std::span(dh_copy));
-                    return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::FromSodiumFailure(alloc_priv.UnwrapErr()));
-                }
-                auto alloc_initial = SecureMemoryHandle::Allocate(Constants::X_25519_PRIVATE_KEY_SIZE);
-                if (alloc_initial.IsErr()) {
-                    SodiumInterop::SecureWipe(std::span(dh_copy));
-                    return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::FromSodiumFailure(alloc_initial.UnwrapErr()));
-                }
-                auto current_priv = std::move(alloc_priv).Unwrap();
-                auto initial_priv = std::move(alloc_initial).Unwrap();
-                auto write_priv = current_priv.Write(dh_copy);
-                if (write_priv.IsErr()) {
-                    SodiumInterop::SecureWipe(std::span(dh_copy));
-                    return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::FromSodiumFailure(write_priv.UnwrapErr()));
-                }
-                auto write_initial = initial_priv.Write(dh_copy);
-                SodiumInterop::SecureWipe(std::span(dh_copy));
-                if (write_initial.IsErr()) {
-                    return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::FromSodiumFailure(write_initial.UnwrapErr()));
-                }
-                connection->current_sending_dh_private_handle_ = std::move(current_priv);
-                connection->initial_sending_dh_private_handle_ = std::move(initial_priv);
-            }
             connection->current_sending_dh_public_ = std::move(current_sending_dh_public);
             if (proto.has_receiving_ratchet_epoch()) {
                 connection->receiving_ratchet_epoch_.store(
