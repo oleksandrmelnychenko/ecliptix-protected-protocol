@@ -186,6 +186,9 @@ namespace ecliptix::protocol::connection {
 
         [[nodiscard]] uint64_t GetReceivingRatchetEpoch() const noexcept;
 
+        [[nodiscard]] Result<std::pair<uint32_t, uint32_t>, EcliptixProtocolFailure>
+        GetChainIndices() const;
+
         [[nodiscard]] Result<proto::protocol::RatchetState, EcliptixProtocolFailure>
         ToProtoState() const;
 

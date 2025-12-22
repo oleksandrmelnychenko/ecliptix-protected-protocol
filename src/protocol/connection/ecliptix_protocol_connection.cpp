@@ -1209,6 +1209,38 @@ namespace ecliptix::protocol::connection {
         return receiving_ratchet_epoch_.load(std::memory_order_acquire);
     }
 
+    Result<std::pair<uint32_t, uint32_t>, EcliptixProtocolFailure>
+    EcliptixProtocolConnection::GetChainIndices() const {
+        std::lock_guard lock(*lock_);
+
+        auto disposed_check = CheckDisposed();
+        if (disposed_check.IsErr()) {
+            return Result<std::pair<uint32_t, uint32_t>, EcliptixProtocolFailure>::Err(
+                disposed_check.UnwrapErr());
+        }
+
+        auto finalized_check = CheckIfFinalized();
+        if (finalized_check.IsErr()) {
+            return Result<std::pair<uint32_t, uint32_t>, EcliptixProtocolFailure>::Err(
+                finalized_check.UnwrapErr());
+        }
+
+        auto sending_index_result = sending_step_.GetCurrentIndex();
+        if (sending_index_result.IsErr()) {
+            return Result<std::pair<uint32_t, uint32_t>, EcliptixProtocolFailure>::Err(
+                sending_index_result.UnwrapErr());
+        }
+
+        auto receiving_index_result = receiving_step_->GetCurrentIndex();
+        if (receiving_index_result.IsErr()) {
+            return Result<std::pair<uint32_t, uint32_t>, EcliptixProtocolFailure>::Err(
+                receiving_index_result.UnwrapErr());
+        }
+
+        return Result<std::pair<uint32_t, uint32_t>, EcliptixProtocolFailure>::Ok(
+            std::make_pair(sending_index_result.Unwrap(), receiving_index_result.Unwrap()));
+    }
+
     Result<Unit, EcliptixProtocolFailure>
     EcliptixProtocolConnection::CheckDisposed() const {
         if (disposed_.load()) {

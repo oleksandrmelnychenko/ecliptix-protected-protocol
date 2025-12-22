@@ -92,6 +92,9 @@ namespace ecliptix::protocol {
 
         [[nodiscard]] uint32_t GetConnectionId() const noexcept;
 
+        [[nodiscard]] Result<std::pair<uint32_t, uint32_t>, EcliptixProtocolFailure>
+        GetChainIndices() const;
+
         // Set Kyber handshake secrets on the active connection (for hybrid PQ mode)
         [[nodiscard]] Result<Unit, EcliptixProtocolFailure> SetConnectionKyberSecrets(
             std::span<const uint8_t> kyber_ciphertext,

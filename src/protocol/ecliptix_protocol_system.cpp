@@ -223,6 +223,16 @@ namespace ecliptix::protocol {
         return connection_->GetId();
     }
 
+    Result<std::pair<uint32_t, uint32_t>, EcliptixProtocolFailure>
+    EcliptixProtocolSystem::GetChainIndices() const {
+        std::lock_guard lock(*mutex_);
+        if (!connection_) {
+            return Result<std::pair<uint32_t, uint32_t>, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::Generic("Protocol connection not initialized"));
+        }
+        return connection_->GetChainIndices();
+    }
+
     Result<Unit, EcliptixProtocolFailure> EcliptixProtocolSystem::SetConnectionKyberSecrets(
         std::span<const uint8_t> kyber_ciphertext,
         std::span<const uint8_t> kyber_shared_secret) {

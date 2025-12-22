@@ -200,6 +200,12 @@ EcliptixErrorCode ecliptix_protocol_system_get_connection_id(
     uint32_t* out_connection_id,
     EcliptixError* out_error);
 
+EcliptixErrorCode ecliptix_protocol_system_get_chain_indices(
+    const EcliptixProtocolSystemHandle* handle,
+    uint32_t* out_sending_index,
+    uint32_t* out_receiving_index,
+    EcliptixError* out_error);
+
 // Get the OPK ID selected during X3DH handshake (for communicating to peer).
 // Returns the ID via out_opk_id and sets out_has_opk_id to true if an OPK was used.
 // If no OPK was used (no OPKs available from peer), out_has_opk_id will be false.
