@@ -110,6 +110,18 @@ EcliptixErrorCode ecliptix_protocol_system_begin_handshake(
     EcliptixBuffer* out_handshake_message,
     EcliptixError* out_error);
 
+// Begin a handshake with encapsulation to peer's Kyber public key.
+// Use this when you know the peer's Kyber key (e.g., after receiving their bundle).
+// The resulting bundle will include kyber_ciphertext for the peer to decapsulate.
+EcliptixErrorCode ecliptix_protocol_system_begin_handshake_with_peer_kyber(
+    EcliptixProtocolSystemHandle* handle,
+    uint32_t connection_id,
+    uint8_t exchange_type,
+    const uint8_t* peer_kyber_public_key,
+    size_t peer_kyber_public_key_length,
+    EcliptixBuffer* out_handshake_message,
+    EcliptixError* out_error);
+
 EcliptixErrorCode ecliptix_protocol_system_complete_handshake(
     EcliptixProtocolSystemHandle* handle,
     const uint8_t* peer_handshake_message,
@@ -186,6 +198,15 @@ EcliptixErrorCode ecliptix_protocol_system_has_connection(
 EcliptixErrorCode ecliptix_protocol_system_get_connection_id(
     const EcliptixProtocolSystemHandle* handle,
     uint32_t* out_connection_id,
+    EcliptixError* out_error);
+
+// Get the OPK ID selected during X3DH handshake (for communicating to peer).
+// Returns the ID via out_opk_id and sets out_has_opk_id to true if an OPK was used.
+// If no OPK was used (no OPKs available from peer), out_has_opk_id will be false.
+EcliptixErrorCode ecliptix_protocol_system_get_selected_opk_id(
+    const EcliptixProtocolSystemHandle* handle,
+    bool* out_has_opk_id,
+    uint32_t* out_opk_id,
     EcliptixError* out_error);
 
 void ecliptix_protocol_system_destroy(EcliptixProtocolSystemHandle* handle);

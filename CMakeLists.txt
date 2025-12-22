@@ -191,7 +191,7 @@ function(configure_protocol_target target_name output_name)
     target_compile_definitions(${target_name}
         PRIVATE
             $<$<BOOL:${spdlog_FOUND}>:ECLIPTIX_HAS_SPDLOG>
-            $<$<BOOL:${ECLIPTIX_BUILD_TESTS}>:ECLIPTIX_TEST_BUILD=1>
+            $<$<BOOL:${ECLIPTIX_BUILD_TESTS}>:ECLIPTIX_TEST_BUILD>
     )
 
     set_target_properties(${target_name} PROPERTIES

@@ -161,6 +161,29 @@ namespace ecliptix::protocol {
         return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
     }
 
+    Result<Unit, EcliptixProtocolFailure> EcliptixProtocolSystem::FinalizeWithRootAndPeerBundle(
+        std::span<const uint8_t> root_key,
+        const proto::protocol::PublicKeyBundle &peer_bundle,
+        bool is_initiator,
+        std::span<const uint8_t> kyber_ciphertext,
+        std::span<const uint8_t> kyber_shared_secret,
+        std::span<const uint8_t> initial_dh_public_key,
+        std::span<const uint8_t> initial_dh_private_key) {
+        auto conn_result = connection::EcliptixProtocolConnection::FromRootAndPeerBundle(
+            root_key,
+            peer_bundle,
+            is_initiator,
+            kyber_ciphertext,
+            kyber_shared_secret,
+            initial_dh_public_key,
+            initial_dh_private_key);
+        if (conn_result.IsErr()) {
+            return Result<Unit, EcliptixProtocolFailure>::Err(conn_result.UnwrapErr());
+        }
+        SetConnection(std::move(conn_result.Unwrap()));
+        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+    }
+
     const EcliptixSystemIdentityKeys &EcliptixProtocolSystem::GetIdentityKeys() const noexcept {
         return *identity_keys_;
     }

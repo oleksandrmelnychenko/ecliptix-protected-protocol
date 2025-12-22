@@ -75,6 +75,18 @@ namespace ecliptix::protocol::connection {
             std::span<const uint8_t> kyber_ciphertext,
             std::span<const uint8_t> kyber_shared_secret);
 
+        // Overload with Kyber artifacts AND initial DH key pair from X3DH
+        // This ensures the Double Ratchet uses the correct initial sender DH key pair.
+        [[nodiscard]] static Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>
+        FromRootAndPeerBundle(
+            std::span<const uint8_t> root_key,
+            const proto::protocol::PublicKeyBundle &peer_bundle,
+            bool is_initiator,
+            std::span<const uint8_t> kyber_ciphertext,
+            std::span<const uint8_t> kyber_shared_secret,
+            std::span<const uint8_t> initial_dh_public_key,
+            std::span<const uint8_t> initial_dh_private_key);
+
         [[nodiscard]] Result<Unit, EcliptixProtocolFailure> SetPeerBundle(
             const LocalPublicKeyBundle &peer_bundle);
 

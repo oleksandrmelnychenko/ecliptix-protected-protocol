@@ -67,7 +67,8 @@ struct EndToEndTestContext {
             Constants::X3DH_INFO.begin(),
             Constants::X3DH_INFO.end());
 
-        auto shared_secret_result = ctx.alice_identity->X3dhDeriveSharedSecret(bob_bundle, info);
+        // Alice is the initiator (true)
+        auto shared_secret_result = ctx.alice_identity->X3dhDeriveSharedSecret(bob_bundle, info, true);
         if (shared_secret_result.IsErr()) {
             return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
                 std::move(shared_secret_result).UnwrapErr());

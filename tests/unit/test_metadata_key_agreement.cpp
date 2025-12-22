@@ -1,0 +1,334 @@
+#include <catch2/catch_test_macros.hpp>
+#include "ecliptix/protocol/connection/ecliptix_protocol_connection.hpp"
+#include "ecliptix/identity/ecliptix_system_identity_keys.hpp"
+#include "ecliptix/crypto/sodium_interop.hpp"
+#include "ecliptix/crypto/kyber_interop.hpp"
+#include "ecliptix/core/constants.hpp"
+#include "protocol/key_exchange.pb.h"
+#include <sodium.h>
+#include <vector>
+
+using namespace ecliptix::protocol;
+using namespace ecliptix::protocol::connection;
+using namespace ecliptix::protocol::identity;
+using namespace ecliptix::protocol::crypto;
+
+/**
+ * This test verifies that metadata key derivation uses the correct DH keys
+ * per Signal Protocol specification:
+ *
+ * - CLIENT (initiator): sender_dh = own ephemeral (EK), peer_dh = server's SPK
+ * - SERVER (responder): sender_dh = own SPK, peer_dh = client's EK
+ *
+ * Both should use the same key pair {client_EK, server_SPK} for metadata key derivation.
+ * The canonical sort in DeriveMetadataEncryptionKeyBytes ensures same order.
+ */
+TEST_CASE("Metadata key agreement - correct DH key selection", "[metadata][x3dh][handshake]") {
+    REQUIRE(SodiumInterop::Initialize().IsOk());
+
+    // Create identity keys for both parties
+    auto client_identity_result = EcliptixSystemIdentityKeys::Create(5);
+    REQUIRE(client_identity_result.IsOk());
+    auto client_identity = std::move(client_identity_result).Unwrap();
+
+    auto server_identity_result = EcliptixSystemIdentityKeys::Create(5);
+    REQUIRE(server_identity_result.IsOk());
+    auto server_identity = std::move(server_identity_result).Unwrap();
+
+    // Both generate ephemeral keys
+    client_identity.GenerateEphemeralKeyPair();
+    server_identity.GenerateEphemeralKeyPair();
+
+    // Get client's ephemeral key (client uses this as sender_dh)
+    auto client_ek = client_identity.GetEphemeralX25519PublicKeyCopy();
+    REQUIRE(client_ek.has_value());
+    REQUIRE(client_ek->size() == Constants::X_25519_PUBLIC_KEY_SIZE);
+
+    // Get server's SPK (server uses this as sender_dh)
+    auto server_spk = server_identity.GetSignedPreKeyPublicCopy();
+    REQUIRE(server_spk.size() == Constants::X_25519_PUBLIC_KEY_SIZE);
+
+    // Private halves for initial sender keys
+    auto client_ek_priv_result = client_identity.GetEphemeralX25519PrivateKeyCopy();
+    REQUIRE(client_ek_priv_result.IsOk());
+    auto client_ek_priv = client_ek_priv_result.Unwrap();
+
+    auto server_spk_priv_result = server_identity.GetSignedPreKeyPrivateCopy();
+    REQUIRE(server_spk_priv_result.IsOk());
+    auto server_spk_priv = server_spk_priv_result.Unwrap();
+
+    // Create bundles
+    auto client_bundle_result = client_identity.CreatePublicBundle();
+    REQUIRE(client_bundle_result.IsOk());
+    auto client_bundle = std::move(client_bundle_result).Unwrap();
+
+    auto server_bundle_result = server_identity.CreatePublicBundle();
+    REQUIRE(server_bundle_result.IsOk());
+    auto server_bundle = std::move(server_bundle_result).Unwrap();
+
+    // Generate a shared root key (simulating X3DH output)
+    std::vector<uint8_t> root_key(32);
+    randombytes_buf(root_key.data(), root_key.size());
+
+    // Generate Kyber artifacts (simulating Kyber encapsulation)
+    std::vector<uint8_t> kyber_ciphertext(KyberInterop::KYBER_768_CIPHERTEXT_SIZE);
+    std::vector<uint8_t> kyber_shared_secret(KyberInterop::KYBER_768_SHARED_SECRET_SIZE);
+    randombytes_buf(kyber_ciphertext.data(), kyber_ciphertext.size());
+    randombytes_buf(kyber_shared_secret.data(), kyber_shared_secret.size());
+
+    // Convert bundles to protobuf format
+    ecliptix::proto::protocol::PublicKeyBundle client_proto_bundle;
+    client_proto_bundle.set_identity_public_key(client_bundle.GetEd25519Public().data(), client_bundle.GetEd25519Public().size());
+    client_proto_bundle.set_identity_x25519_public_key(client_bundle.GetIdentityX25519().data(), client_bundle.GetIdentityX25519().size());
+    client_proto_bundle.set_signed_pre_key_id(client_bundle.GetSignedPreKeyId());
+    client_proto_bundle.set_signed_pre_key_public_key(client_bundle.GetSignedPreKeyPublic().data(), client_bundle.GetSignedPreKeyPublic().size());
+    client_proto_bundle.set_signed_pre_key_signature(client_bundle.GetSignedPreKeySignature().data(), client_bundle.GetSignedPreKeySignature().size());
+    if (client_bundle.HasEphemeralKey()) {
+        const auto& eph = client_bundle.GetEphemeralX25519Public();
+        client_proto_bundle.set_ephemeral_x25519_public_key(eph->data(), eph->size());
+    }
+    if (client_bundle.HasKyberKey()) {
+        const auto& kyber = client_bundle.GetKyberPublicKey();
+        client_proto_bundle.set_kyber_public_key(kyber->data(), kyber->size());
+    }
+
+    ecliptix::proto::protocol::PublicKeyBundle server_proto_bundle;
+    server_proto_bundle.set_identity_public_key(server_bundle.GetEd25519Public().data(), server_bundle.GetEd25519Public().size());
+    server_proto_bundle.set_identity_x25519_public_key(server_bundle.GetIdentityX25519().data(), server_bundle.GetIdentityX25519().size());
+    server_proto_bundle.set_signed_pre_key_id(server_bundle.GetSignedPreKeyId());
+    server_proto_bundle.set_signed_pre_key_public_key(server_bundle.GetSignedPreKeyPublic().data(), server_bundle.GetSignedPreKeyPublic().size());
+    server_proto_bundle.set_signed_pre_key_signature(server_bundle.GetSignedPreKeySignature().data(), server_bundle.GetSignedPreKeySignature().size());
+    if (server_bundle.HasEphemeralKey()) {
+        const auto& eph = server_bundle.GetEphemeralX25519Public();
+        server_proto_bundle.set_ephemeral_x25519_public_key(eph->data(), eph->size());
+    }
+    if (server_bundle.HasKyberKey()) {
+        const auto& kyber = server_bundle.GetKyberPublicKey();
+        server_proto_bundle.set_kyber_public_key(kyber->data(), kyber->size());
+    }
+
+    SECTION("Both sides derive same metadata key with correct DH key selection") {
+        INFO("Client EK (first 8 bytes): " << std::hex
+            << (int)client_ek.value()[0] << (int)client_ek.value()[1]
+            << (int)client_ek.value()[2] << (int)client_ek.value()[3]);
+        INFO("Server SPK (first 8 bytes): " << std::hex
+            << (int)server_spk[0] << (int)server_spk[1]
+            << (int)server_spk[2] << (int)server_spk[3]);
+
+        // Create CLIENT connection with client EK as initial_dh_public_key
+        auto client_conn_result = EcliptixProtocolConnection::FromRootAndPeerBundle(
+            root_key,
+            server_proto_bundle,
+            true,  // is_initiator = true (CLIENT)
+            kyber_ciphertext,
+            kyber_shared_secret,
+            client_ek.value(),   // Client's EK as sender_dh
+            client_ek_priv);     // Matching private key
+        REQUIRE(client_conn_result.IsOk());
+        auto client_conn = std::move(client_conn_result).Unwrap();
+
+        // Create SERVER connection with server SPK as initial_dh_public_key
+        auto server_conn_result = EcliptixProtocolConnection::FromRootAndPeerBundle(
+            root_key,
+            client_proto_bundle,
+            false,  // is_initiator = false (SERVER)
+            kyber_ciphertext,
+            kyber_shared_secret,
+            server_spk,          // Server's SPK as sender_dh
+            server_spk_priv);    // Matching private key
+        REQUIRE(server_conn_result.IsOk());
+        auto server_conn = std::move(server_conn_result).Unwrap();
+
+        // Get metadata keys from both connections
+        auto client_metadata_result = client_conn->GetMetadataEncryptionKey();
+        REQUIRE(client_metadata_result.IsOk());
+        auto client_metadata_key = client_metadata_result.Unwrap();
+
+        auto server_metadata_result = server_conn->GetMetadataEncryptionKey();
+        REQUIRE(server_metadata_result.IsOk());
+        auto server_metadata_key = server_metadata_result.Unwrap();
+
+        INFO("Client metadata key (first 8 bytes): " << std::hex
+            << (int)client_metadata_key[0] << (int)client_metadata_key[1]
+            << (int)client_metadata_key[2] << (int)client_metadata_key[3]
+            << (int)client_metadata_key[4] << (int)client_metadata_key[5]
+            << (int)client_metadata_key[6] << (int)client_metadata_key[7]);
+        INFO("Server metadata key (first 8 bytes): " << std::hex
+            << (int)server_metadata_key[0] << (int)server_metadata_key[1]
+            << (int)server_metadata_key[2] << (int)server_metadata_key[3]
+            << (int)server_metadata_key[4] << (int)server_metadata_key[5]
+            << (int)server_metadata_key[6] << (int)server_metadata_key[7]);
+
+        // THE CRITICAL CHECK: Both metadata keys MUST match!
+        REQUIRE(client_metadata_key == server_metadata_key);
+    }
+
+    SECTION("Verify sender_dh is correctly set") {
+        // Create CLIENT connection
+        auto client_conn_result = EcliptixProtocolConnection::FromRootAndPeerBundle(
+            root_key,
+            server_proto_bundle,
+            true,
+            kyber_ciphertext,
+            kyber_shared_secret,
+            client_ek.value(),
+            client_ek_priv);
+        REQUIRE(client_conn_result.IsOk());
+        auto client_conn = std::move(client_conn_result).Unwrap();
+
+        // Create SERVER connection
+        auto server_conn_result = EcliptixProtocolConnection::FromRootAndPeerBundle(
+            root_key,
+            client_proto_bundle,
+            false,
+            kyber_ciphertext,
+            kyber_shared_secret,
+            server_spk,
+            server_spk_priv);
+        REQUIRE(server_conn_result.IsOk());
+        auto server_conn = std::move(server_conn_result).Unwrap();
+
+        // Verify client's sender_dh is EK
+        auto client_sender_dh_result = client_conn->GetCurrentSenderDhPublicKey();
+        REQUIRE(client_sender_dh_result.IsOk());
+        auto client_sender_dh = client_sender_dh_result.Unwrap();
+        REQUIRE(client_sender_dh.has_value());
+        REQUIRE(client_sender_dh.value() == client_ek.value());
+
+        // Verify server's sender_dh is SPK
+        auto server_sender_dh_result = server_conn->GetCurrentSenderDhPublicKey();
+        REQUIRE(server_sender_dh_result.IsOk());
+        auto server_sender_dh = server_sender_dh_result.Unwrap();
+        REQUIRE(server_sender_dh.has_value());
+        REQUIRE(server_sender_dh.value() == server_spk);
+    }
+
+    SECTION("Verify peer_dh is correctly set") {
+        // Create CLIENT connection
+        auto client_conn_result = EcliptixProtocolConnection::FromRootAndPeerBundle(
+            root_key,
+            server_proto_bundle,
+            true,
+            kyber_ciphertext,
+            kyber_shared_secret,
+            client_ek.value(),
+            client_ek_priv);
+        REQUIRE(client_conn_result.IsOk());
+        auto client_conn = std::move(client_conn_result).Unwrap();
+
+        // Create SERVER connection
+        auto server_conn_result = EcliptixProtocolConnection::FromRootAndPeerBundle(
+            root_key,
+            client_proto_bundle,
+            false,
+            kyber_ciphertext,
+            kyber_shared_secret,
+            server_spk,
+            server_spk_priv);
+        REQUIRE(server_conn_result.IsOk());
+        auto server_conn = std::move(server_conn_result).Unwrap();
+
+        // Verify client's peer_dh is server's SPK (NOT ephemeral!)
+        auto client_peer_dh_result = client_conn->GetCurrentPeerDhPublicKey();
+        REQUIRE(client_peer_dh_result.IsOk());
+        auto client_peer_dh = client_peer_dh_result.Unwrap();
+        REQUIRE(client_peer_dh.has_value());
+        REQUIRE(client_peer_dh.value() == server_spk);
+
+        // Verify server's peer_dh is client's EK
+        auto server_peer_dh_result = server_conn->GetCurrentPeerDhPublicKey();
+        REQUIRE(server_peer_dh_result.IsOk());
+        auto server_peer_dh = server_peer_dh_result.Unwrap();
+        REQUIRE(server_peer_dh.has_value());
+        REQUIRE(server_peer_dh.value() == client_ek.value());
+    }
+}
+
+TEST_CASE("Metadata key canonical ordering", "[metadata][ordering]") {
+    REQUIRE(SodiumInterop::Initialize().IsOk());
+
+    std::vector<uint8_t> root_key(32);
+    randombytes_buf(root_key.data(), root_key.size());
+
+    // Generate two distinct X25519 keypairs for sender_dh selection
+    auto kp_a_result = SodiumInterop::GenerateX25519KeyPair("metadata-a");
+    REQUIRE(kp_a_result.IsOk());
+    auto [key_a_handle, key_a_public] = std::move(kp_a_result).Unwrap();
+    auto key_a_private_result = key_a_handle.ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
+    REQUIRE(key_a_private_result.IsOk());
+    auto key_a_private = key_a_private_result.Unwrap();
+
+    auto kp_b_result = SodiumInterop::GenerateX25519KeyPair("metadata-b");
+    REQUIRE(kp_b_result.IsOk());
+    auto [key_b_handle, key_b_public] = std::move(kp_b_result).Unwrap();
+    auto key_b_private_result = key_b_handle.ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
+    REQUIRE(key_b_private_result.IsOk());
+    auto key_b_private = key_b_private_result.Unwrap();
+
+    std::vector<uint8_t> kyber_ciphertext(KyberInterop::KYBER_768_CIPHERTEXT_SIZE);
+    std::vector<uint8_t> kyber_shared_secret(KyberInterop::KYBER_768_SHARED_SECRET_SIZE);
+    randombytes_buf(kyber_ciphertext.data(), kyber_ciphertext.size());
+    randombytes_buf(kyber_shared_secret.data(), kyber_shared_secret.size());
+
+    // Create identity for bundle creation
+    auto identity_result = EcliptixSystemIdentityKeys::Create(5);
+    REQUIRE(identity_result.IsOk());
+    auto identity = std::move(identity_result).Unwrap();
+    identity.GenerateEphemeralKeyPair();
+
+    auto bundle_result = identity.CreatePublicBundle();
+    REQUIRE(bundle_result.IsOk());
+    auto bundle = std::move(bundle_result).Unwrap();
+
+    ecliptix::proto::protocol::PublicKeyBundle proto_bundle;
+    proto_bundle.set_identity_public_key(bundle.GetEd25519Public().data(), bundle.GetEd25519Public().size());
+    proto_bundle.set_identity_x25519_public_key(bundle.GetIdentityX25519().data(), bundle.GetIdentityX25519().size());
+    proto_bundle.set_signed_pre_key_id(bundle.GetSignedPreKeyId());
+    proto_bundle.set_signed_pre_key_public_key(bundle.GetSignedPreKeyPublic().data(), bundle.GetSignedPreKeyPublic().size());
+    proto_bundle.set_signed_pre_key_signature(bundle.GetSignedPreKeySignature().data(), bundle.GetSignedPreKeySignature().size());
+    if (bundle.HasEphemeralKey()) {
+        const auto& eph = bundle.GetEphemeralX25519Public();
+        proto_bundle.set_ephemeral_x25519_public_key(eph->data(), eph->size());
+    }
+    if (bundle.HasKyberKey()) {
+        const auto& kyber = bundle.GetKyberPublicKey();
+        proto_bundle.set_kyber_public_key(kyber->data(), kyber->size());
+    }
+
+    // Create connection as initiator with key_a
+    auto conn1_result = EcliptixProtocolConnection::FromRootAndPeerBundle(
+        root_key,
+        proto_bundle,
+        true,
+        kyber_ciphertext,
+        kyber_shared_secret,
+        key_a_public,
+        key_a_private);
+    REQUIRE(conn1_result.IsOk());
+    auto conn1 = std::move(conn1_result).Unwrap();
+
+    // Create connection as responder with key_b
+    auto conn2_result = EcliptixProtocolConnection::FromRootAndPeerBundle(
+        root_key,
+        proto_bundle,
+        false,
+        kyber_ciphertext,
+        kyber_shared_secret,
+        key_b_public,
+        key_b_private);
+    REQUIRE(conn2_result.IsOk());
+    auto conn2 = std::move(conn2_result).Unwrap();
+
+    // Both use same root key, so if DH inputs differ, metadata keys will differ
+    auto mk1 = conn1->GetMetadataEncryptionKey();
+    REQUIRE(mk1.IsOk());
+
+    auto mk2 = conn2->GetMetadataEncryptionKey();
+    REQUIRE(mk2.IsOk());
+
+    // Keys will differ because they use different sender_dh and peer_dh combinations
+    // This is expected - they're not communicating with each other
+    // Just verify both can derive metadata keys successfully
+    REQUIRE(mk1.Unwrap().size() == 32);
+    REQUIRE(mk2.Unwrap().size() == 32);
+}

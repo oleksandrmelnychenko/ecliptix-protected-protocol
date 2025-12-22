@@ -47,4 +47,9 @@ message PublicKeyBundle {
   // Optional Kyber ciphertext for initial encapsulation (1088 bytes).
   // Present when the initiator encapsulates to the responder's Kyber key as part of the handshake.
   bytes kyber_ciphertext = 9;
+
+  // The ID of the one-time pre-key selected by the initiator during X3DH handshake.
+  // Present only when initiator sends their bundle to indicate which OPK they used.
+  // If not set, no OPK was used in the handshake.
+  optional uint32 used_one_time_pre_key_id = 10;
 }

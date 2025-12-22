@@ -36,18 +36,47 @@ public:
     [[nodiscard]] std::vector<uint8_t> GetIdentityEd25519PublicKeyCopy() const;
     [[nodiscard]] std::vector<uint8_t> GetKyberPublicKeyCopy() const;
     [[nodiscard]] Result<SecureMemoryHandle, EcliptixProtocolFailure> CloneKyberSecretKey() const;
+
+    // Getters for X3DH keys used in Double Ratchet initialization
+    [[nodiscard]] std::optional<std::vector<uint8_t>> GetEphemeralX25519PublicKeyCopy() const {
+        return ephemeral_x25519_public_key_;
+    }
+    [[nodiscard]] std::vector<uint8_t> GetSignedPreKeyPublicCopy() const {
+        return signed_pre_key_public_;
+    }
+
+    // Private key getters for Double Ratchet chain initialization
+    [[nodiscard]] Result<std::vector<uint8_t>, EcliptixProtocolFailure> GetEphemeralX25519PrivateKeyCopy() const;
+    [[nodiscard]] Result<std::vector<uint8_t>, EcliptixProtocolFailure> GetSignedPreKeyPrivateCopy() const;
     [[nodiscard]] Result<LocalPublicKeyBundle, EcliptixProtocolFailure> CreatePublicBundle() const;
     void GenerateEphemeralKeyPair();
     [[nodiscard]] Result<SecureMemoryHandle, EcliptixProtocolFailure> X3dhDeriveSharedSecret(
         const LocalPublicKeyBundle& remote_bundle,
-        std::span<const uint8_t> info);
+        std::span<const uint8_t> info,
+        bool is_initiator);
     [[nodiscard]] Result<HybridHandshakeArtifacts, EcliptixProtocolFailure> ConsumePendingKyberHandshake();
+    void StorePendingKyberHandshake(
+        std::vector<uint8_t> kyber_ciphertext,
+        std::vector<uint8_t> kyber_shared_secret);
+    [[nodiscard]] Result<std::vector<uint8_t>, EcliptixProtocolFailure> GetPendingKyberCiphertext() const;
     [[nodiscard]] Result<HybridHandshakeArtifacts, EcliptixProtocolFailure> DecapsulateKyberCiphertext(
         std::span<const uint8_t> ciphertext) const;
     [[nodiscard]] static Result<bool, EcliptixProtocolFailure> VerifyRemoteSpkSignature(
         std::span<const uint8_t> remote_identity_ed25519,
         std::span<const uint8_t> remote_spk_public,
         std::span<const uint8_t> remote_spk_signature);
+    // OPK ID selection for proper X3DH handshake
+    [[nodiscard]] const OneTimePreKeyLocal* FindOneTimePreKeyById(uint32_t opk_id) const;
+    [[nodiscard]] std::optional<uint32_t> GetSelectedOpkId() const noexcept {
+        return selected_opk_id_;
+    }
+    void SetSelectedOpkId(uint32_t opk_id) {
+        selected_opk_id_ = opk_id;
+    }
+    void ClearSelectedOpkId() {
+        selected_opk_id_.reset();
+    }
+    void ClearEphemeralKeyPair();
     EcliptixSystemIdentityKeys(EcliptixSystemIdentityKeys&&) noexcept = default;
     EcliptixSystemIdentityKeys& operator=(EcliptixSystemIdentityKeys&&) noexcept = default;
     EcliptixSystemIdentityKeys(const EcliptixSystemIdentityKeys&) = delete;
@@ -72,11 +101,15 @@ private:
     [[nodiscard]] static Result<Unit, EcliptixProtocolFailure> ValidateRemoteBundle(
         const LocalPublicKeyBundle& remote_bundle);
     [[nodiscard]] Result<Unit, EcliptixProtocolFailure> EnsureLocalKeysValid() const;
-    [[nodiscard]] static Result<size_t, EcliptixProtocolFailure> PerformX3dhDiffieHellman(
+    [[nodiscard]] static Result<size_t, EcliptixProtocolFailure> PerformX3dhDiffieHellmanAsInitiator(
         std::span<const uint8_t> ephemeral_secret,
         std::span<const uint8_t> identity_secret,
         const LocalPublicKeyBundle& remote_bundle,
-        bool use_opk,
+        std::optional<uint32_t> opk_id,
+        std::span<uint8_t> dh_results_output);
+    [[nodiscard]] Result<size_t, EcliptixProtocolFailure> PerformX3dhDiffieHellmanAsResponder(
+        const LocalPublicKeyBundle& remote_bundle,
+        std::optional<uint32_t> used_opk_id,
         std::span<uint8_t> dh_results_output);
     SecureMemoryHandle ed25519_secret_key_handle_;
     std::vector<uint8_t> ed25519_public_key_;
@@ -92,5 +125,6 @@ private:
     std::optional<HybridHandshakeArtifacts> pending_kyber_handshake_;
     std::optional<SecureMemoryHandle> ephemeral_secret_key_handle_;
     std::optional<std::vector<uint8_t>> ephemeral_x25519_public_key_;
+    std::optional<uint32_t> selected_opk_id_;
 };
 } 

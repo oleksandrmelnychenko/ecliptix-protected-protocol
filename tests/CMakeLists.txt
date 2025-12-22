@@ -28,6 +28,7 @@ set(TEST_SOURCES
     unit/test_connection.cpp
     unit/test_kyber_interop_comprehensive.cpp
     unit/test_protocol_config.cpp
+    unit/test_metadata_key_agreement.cpp
 
     # Phase 1: Cryptographic Security Tests
     security/test_aes_gcm_attacks.cpp

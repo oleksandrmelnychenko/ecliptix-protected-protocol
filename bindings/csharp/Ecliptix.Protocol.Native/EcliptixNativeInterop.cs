@@ -134,6 +134,16 @@ public static class EcliptixNativeInterop
         out EcliptixError outError);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern EcliptixErrorCode ecliptix_protocol_system_begin_handshake_with_peer_kyber(
+        IntPtr handle,
+        uint connectionId,
+        byte exchangeType,
+        [In] byte[] peerKyberPublicKey,
+        nuint peerKyberPublicKeyLength,
+        out EcliptixBuffer outHandshakeMessage,
+        out EcliptixError outError);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     public static extern EcliptixErrorCode ecliptix_protocol_system_complete_handshake(
         IntPtr handle,
         [In] byte[] peerHandshakeMessage,
@@ -167,6 +177,13 @@ public static class EcliptixNativeInterop
     public static extern EcliptixErrorCode ecliptix_protocol_system_get_connection_id(
         IntPtr handle,
         out uint outConnectionId,
+        out EcliptixError outError);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern EcliptixErrorCode ecliptix_protocol_system_get_selected_opk_id(
+        IntPtr handle,
+        [MarshalAs(UnmanagedType.I1)] out bool outHasOpkId,
+        out uint outOpkId,
         out EcliptixError outError);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]

@@ -14,7 +14,9 @@ public:
         std::vector<uint8_t> signed_pre_key_signature,
         std::vector<OneTimePreKeyRecord> one_time_pre_keys,
         std::optional<std::vector<uint8_t>> ephemeral_x25519_public = std::nullopt,
-        std::optional<std::vector<uint8_t>> kyber_public_key = std::nullopt);
+        std::optional<std::vector<uint8_t>> kyber_public_key = std::nullopt,
+        std::optional<std::vector<uint8_t>> kyber_ciphertext = std::nullopt,
+        std::optional<uint32_t> used_opk_id = std::nullopt);
     LocalPublicKeyBundle(const LocalPublicKeyBundle&) = default;
     LocalPublicKeyBundle(LocalPublicKeyBundle&&) noexcept = default;
     LocalPublicKeyBundle& operator=(const LocalPublicKeyBundle&) = default;
@@ -62,6 +64,21 @@ public:
     [[nodiscard]] bool HasKyberKey() const noexcept {
         return kyber_public_key_.has_value();
     }
+    [[nodiscard]] const std::optional<std::vector<uint8_t>>& GetKyberCiphertext() const noexcept {
+        return kyber_ciphertext_;
+    }
+    [[nodiscard]] bool HasKyberCiphertext() const noexcept {
+        return kyber_ciphertext_.has_value() && !kyber_ciphertext_->empty();
+    }
+    [[nodiscard]] std::optional<uint32_t> GetUsedOpkId() const noexcept {
+        return used_opk_id_;
+    }
+    [[nodiscard]] bool HasUsedOpkId() const noexcept {
+        return used_opk_id_.has_value();
+    }
+    void SetUsedOpkId(uint32_t opk_id) {
+        used_opk_id_ = opk_id;
+    }
 private:
     std::vector<uint8_t> ed25519_public_;
     std::vector<uint8_t> identity_x25519_;
@@ -71,5 +88,7 @@ private:
     std::vector<OneTimePreKeyRecord> one_time_pre_keys_;
     std::optional<std::vector<uint8_t>> ephemeral_x25519_public_;
     std::optional<std::vector<uint8_t>> kyber_public_key_;
+    std::optional<std::vector<uint8_t>> kyber_ciphertext_;
+    std::optional<uint32_t> used_opk_id_;
 };
 } 

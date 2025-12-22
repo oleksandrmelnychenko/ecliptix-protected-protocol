@@ -188,7 +188,7 @@ TEST_CASE("X3DH Test Vectors - Basic Key Agreement", "[x3dh][interop][vectors]")
         auto bob_bundle = std::move(bob_bundle_result).Unwrap();
 
         std::vector<uint8_t> info(ProtocolConstants::X3DH_INFO.begin(), ProtocolConstants::X3DH_INFO.end());
-        auto shared_secret_result = alice_keys.X3dhDeriveSharedSecret(bob_bundle, info);
+        auto shared_secret_result = alice_keys.X3dhDeriveSharedSecret(bob_bundle, info, true);
         REQUIRE(shared_secret_result.IsOk());
 
         auto shared_secret_handle = std::move(shared_secret_result).Unwrap();
@@ -342,7 +342,7 @@ TEST_CASE("X3DH Test Vectors - One-Time PreKey Consumption", "[x3dh][interop][ve
         REQUIRE(bob_bundle.GetOneTimePreKeyCount() > 0);
 
         std::vector<uint8_t> info(ProtocolConstants::X3DH_INFO.begin(), ProtocolConstants::X3DH_INFO.end());
-        auto shared_secret_result = alice_keys.X3dhDeriveSharedSecret(bob_bundle, info);
+        auto shared_secret_result = alice_keys.X3dhDeriveSharedSecret(bob_bundle, info, true);
         REQUIRE(shared_secret_result.IsOk());
     }
 
@@ -363,7 +363,7 @@ TEST_CASE("X3DH Test Vectors - One-Time PreKey Consumption", "[x3dh][interop][ve
         REQUIRE_FALSE(bob_bundle.HasOneTimePreKeys());
 
         std::vector<uint8_t> info(ProtocolConstants::X3DH_INFO.begin(), ProtocolConstants::X3DH_INFO.end());
-        auto shared_secret_result = alice_keys.X3dhDeriveSharedSecret(bob_bundle, info);
+        auto shared_secret_result = alice_keys.X3dhDeriveSharedSecret(bob_bundle, info, true);
         REQUIRE(shared_secret_result.IsOk());
     }
 }
@@ -388,13 +388,13 @@ TEST_CASE("X3DH Test Vectors - Ephemeral Key Management", "[x3dh][interop][vecto
 
         std::vector<uint8_t> info(ProtocolConstants::X3DH_INFO.begin(), ProtocolConstants::X3DH_INFO.end());
 
-        auto secret1_result = alice_keys.X3dhDeriveSharedSecret(bob_bundle, info);
+        auto secret1_result = alice_keys.X3dhDeriveSharedSecret(bob_bundle, info, true);
         REQUIRE(secret1_result.IsOk());
         auto secret1_handle = std::move(secret1_result).Unwrap();
 
         alice_keys.GenerateEphemeralKeyPair();
 
-        auto secret2_result = alice_keys.X3dhDeriveSharedSecret(bob_bundle, info);
+        auto secret2_result = alice_keys.X3dhDeriveSharedSecret(bob_bundle, info, true);
         REQUIRE(secret2_result.IsOk());
         auto secret2_handle = std::move(secret2_result).Unwrap();
 
@@ -434,7 +434,8 @@ TEST_CASE("X3DH Test Vectors - Info String Validation", "[x3dh][interop][vectors
         std::string custom_info_str = "Custom-X3DH-v2";
         std::vector<uint8_t> custom_info(custom_info_str.begin(), custom_info_str.end());
 
-        auto result = alice_keys.X3dhDeriveSharedSecret(bob_bundle, custom_info);
+        // Alice is initiator (true)
+        auto result = alice_keys.X3dhDeriveSharedSecret(bob_bundle, custom_info, true);
         REQUIRE(result.IsOk());
     }
 }
@@ -482,10 +483,10 @@ TEST_CASE("X3DH Test Vectors - Cross-Session Consistency", "[x3dh][interop][vect
 
         std::vector<uint8_t> info(ProtocolConstants::X3DH_INFO.begin(), ProtocolConstants::X3DH_INFO.end());
 
-        auto secret1_result = alice_keys.X3dhDeriveSharedSecret(bob_bundle, info);
+        auto secret1_result = alice_keys.X3dhDeriveSharedSecret(bob_bundle, info, true);
         REQUIRE(secret1_result.IsOk());
 
-        auto secret2_result = alice_keys.X3dhDeriveSharedSecret(bob_bundle, info);
+        auto secret2_result = alice_keys.X3dhDeriveSharedSecret(bob_bundle, info, true);
         REQUIRE(secret2_result.IsErr());
     }
 }

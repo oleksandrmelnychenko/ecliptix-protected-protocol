@@ -53,7 +53,7 @@ namespace ecliptix::protocol::crypto {
 
     Result<std::pair<SecureMemoryHandle, std::vector<uint8_t> >, SodiumFailure>
     KyberInterop::GenerateKyber768KeyPair(std::string_view purpose) {
-        (void) purpose; // purpose currently unused; retained for logging hooks
+        (void) purpose;
 
         auto init_result = Initialize();
         if (init_result.IsErr()) {
@@ -61,7 +61,6 @@ namespace ecliptix::protocol::crypto {
                 init_result.UnwrapErr());
         }
 
-        // Create Kyber-768 KEM instance
         auto kem_result = CreateKyber768Instance();
         if (kem_result.IsErr()) {
             return Result<std::pair<SecureMemoryHandle, std::vector<uint8_t> >, SodiumFailure>::Err(
@@ -70,7 +69,6 @@ namespace ecliptix::protocol::crypto {
         }
         auto *kem = static_cast<OQS_KEM *>(kem_result.Unwrap());
 
-        // Allocate secure memory for secret key
         auto sk_handle_result = SecureMemoryHandle::Allocate(KYBER_768_SECRET_KEY_SIZE);
         if (sk_handle_result.IsErr()) {
             FreeKyber768Instance(kem);
@@ -80,17 +78,14 @@ namespace ecliptix::protocol::crypto {
         }
         auto sk_handle = std::move(sk_handle_result).Unwrap();
 
-        // Allocate public key buffer (not sensitive, regular memory OK)
         std::vector<uint8_t> pk(KYBER_768_PUBLIC_KEY_SIZE);
 
-        // Generate key pair (liboqs handles randomness via RAND_bytes)
         OQS_STATUS status = OQS_ERROR;
         auto write_result = sk_handle.WithWriteAccess([&](std::span<uint8_t> sk_span) -> Unit {
             status = OQS_KEM_keypair(kem, pk.data(), sk_span.data());
             return Unit{};
         });
 
-        // Cleanup KEM instance
         FreeKyber768Instance(kem);
 
         if (write_result.IsErr()) {
@@ -105,7 +100,6 @@ namespace ecliptix::protocol::crypto {
             );
         }
 
-        // Self-test: encapsulate to our public key and decapsulate with the new secret key
         auto enc_result = Encapsulate(pk);
         if (enc_result.IsErr()) {
             return Result<std::pair<SecureMemoryHandle, std::vector<uint8_t> >, SodiumFailure>::Err(
