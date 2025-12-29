@@ -242,20 +242,6 @@ The C++ library uses libsodium's secure memory allocator:
 - Guard pages detect buffer overflows
 - Automatic secure wiping on deallocation
 
-In C#, call `ecliptix_secure_wipe()` to securely wipe sensitive byte arrays:
-
-```csharp
-byte[] sensitiveData = GetSensitiveData();
-try
-{
-    // Use the data
-}
-finally
-{
-    EcliptixNativeInterop.ecliptix_secure_wipe(sensitiveData, (nuint)sensitiveData.Length);
-}
-```
-
 ### Constant-Time Operations
 
 All cryptographic comparisons use `sodium_memcmp` to prevent timing attacks.

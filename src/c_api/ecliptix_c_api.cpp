@@ -40,8 +40,8 @@ struct EcliptixIdentityKeysHandle {
 };
 
 namespace {
-    // Thread-safe auto-initialization helper
-    // Ensures libsodium is initialized on first use of any C API function
+    
+    
     inline EcliptixErrorCode EnsureInitialized() {
         static std::once_flag init_flag;
         static std::atomic<bool> init_success{false};
@@ -202,7 +202,7 @@ namespace {
                 proto_bundle.kyber_ciphertext().end());
         }
 
-        // Parse the used OPK ID from the initiator (if present)
+        
         std::optional<uint32_t> used_opk_id = std::nullopt;
         if (proto_bundle.has_used_one_time_pre_key_id()) {
             used_opk_id = proto_bundle.used_one_time_pre_key_id();
@@ -530,7 +530,7 @@ EcliptixErrorCode ecliptix_protocol_system_begin_handshake(
 
     fprintf(stderr, "\n[BEGIN-HANDSHAKE] ========== CLIENT BeginHandshake ==========\n");
 
-    // Generate ephemeral key pair for X3DH handshake
+    
     handle->system->GetIdentityKeysMutable().GenerateEphemeralKeyPair();
 
     auto bundle_result = handle->system->GetIdentityKeys().CreatePublicBundle();
@@ -541,7 +541,7 @@ EcliptixErrorCode ecliptix_protocol_system_begin_handshake(
 
     const auto &bundle = bundle_result.Unwrap();
 
-    // Log my keys being sent
+    
     fprintf(stderr, "[BEGIN-HANDSHAKE] My identity_x25519: %02x%02x%02x%02x%02x%02x%02x%02x\n",
         bundle.GetIdentityX25519()[0], bundle.GetIdentityX25519()[1],
         bundle.GetIdentityX25519()[2], bundle.GetIdentityX25519()[3],
@@ -598,7 +598,7 @@ EcliptixErrorCode ecliptix_protocol_system_begin_handshake(
     handshake.set_state(ecliptix::proto::protocol::PubKeyExchangeState::INIT);
     handshake.set_of_type(static_cast<ecliptix::proto::protocol::PubKeyExchangeType>(exchange_type));
     handshake.set_payload(proto_bundle.SerializeAsString());
-    // initial_Dh_public_Key left empty because bootstrap uses pre-shared root key.
+    
 
     handle->system->SetPendingInitiator(true);
     fprintf(stderr, "[BEGIN-HANDSHAKE] SetPendingInitiator(true) - I am INITIATOR\n");
@@ -646,10 +646,10 @@ EcliptixErrorCode ecliptix_protocol_system_begin_handshake_with_peer_kyber(
         peer_kyber_public_key[0], peer_kyber_public_key[1], peer_kyber_public_key[2], peer_kyber_public_key[3],
         peer_kyber_public_key_length);
 
-    // Generate ephemeral key pair for X3DH handshake
+    
     handle->system->GetIdentityKeysMutable().GenerateEphemeralKeyPair();
 
-    // Encapsulate to peer's Kyber public key
+    
     std::vector<uint8_t> peer_kyber_pk(peer_kyber_public_key, peer_kyber_public_key + peer_kyber_public_key_length);
     auto encap_result = KyberInterop::Encapsulate(peer_kyber_pk);
     if (encap_result.IsErr()) {
@@ -658,7 +658,7 @@ EcliptixErrorCode ecliptix_protocol_system_begin_handshake_with_peer_kyber(
     }
     auto [kyber_ciphertext, kyber_ss_handle] = std::move(encap_result).Unwrap();
 
-    // Read shared secret bytes from secure memory
+    
     auto kyber_ss_result = kyber_ss_handle.ReadBytes(KyberInterop::KYBER_768_SHARED_SECRET_SIZE);
     if (kyber_ss_result.IsErr()) {
         fill_error(out_error, ECLIPTIX_ERROR_SODIUM_FAILURE, "Failed to read Kyber shared secret");
@@ -673,12 +673,12 @@ EcliptixErrorCode ecliptix_protocol_system_begin_handshake_with_peer_kyber(
         kyber_ciphertext[0], kyber_ciphertext[1], kyber_ciphertext[2], kyber_ciphertext[3],
         kyber_ciphertext.size());
 
-    // Store the Kyber artifacts for later use in complete_handshake
+    
     handle->system->GetIdentityKeysMutable().StorePendingKyberHandshake(
         std::move(kyber_ciphertext),
         std::move(kyber_shared_secret));
 
-    // Get the ciphertext back for including in the bundle
+    
     auto stored_result = handle->system->GetIdentityKeys().GetPendingKyberCiphertext();
     if (stored_result.IsErr()) {
         fill_error(out_error, ECLIPTIX_ERROR_INVALID_STATE, "Failed to retrieve stored Kyber ciphertext");
@@ -694,7 +694,7 @@ EcliptixErrorCode ecliptix_protocol_system_begin_handshake_with_peer_kyber(
 
     const auto &bundle = bundle_result.Unwrap();
 
-    // Log server's keys being sent
+    
     fprintf(stderr, "[BEGIN-HANDSHAKE-KYBER] My identity_x25519: %02x%02x%02x%02x%02x%02x%02x%02x\n",
         bundle.GetIdentityX25519()[0], bundle.GetIdentityX25519()[1],
         bundle.GetIdentityX25519()[2], bundle.GetIdentityX25519()[3],
@@ -724,18 +724,18 @@ EcliptixErrorCode ecliptix_protocol_system_begin_handshake_with_peer_kyber(
                                                bundle.GetSignedPreKeyPublic().size());
     proto_bundle.set_signed_pre_key_signature(bundle.GetSignedPreKeySignature().data(),
                                               bundle.GetSignedPreKeySignature().size());
-    // Include OPKs in server's bundle and pre-select one for DH4
-    // Server pre-selects OPK so both sides compute identical DH4
+    
+    
     const auto& local_opks = bundle.GetOneTimePreKeys();
     if (!local_opks.empty()) {
-        // Include all OPKs for client reference
+        
         for (const auto &otp : local_opks) {
             auto *otp_proto = proto_bundle.add_one_time_pre_keys();
             otp_proto->set_pre_key_id(otp.GetPreKeyId());
             const auto &pub = otp.GetPublicKey();
             otp_proto->set_public_key(pub.data(), pub.size());
         }
-        // Pre-select first OPK - server will use this in X3DH, client must use same
+        
         uint32_t selected_opk_id = local_opks.front().GetPreKeyId();
         handle->system->GetIdentityKeysMutable().SetSelectedOpkId(selected_opk_id);
         proto_bundle.set_used_one_time_pre_key_id(selected_opk_id);
@@ -753,7 +753,7 @@ EcliptixErrorCode ecliptix_protocol_system_begin_handshake_with_peer_kyber(
         const auto &kyber = bundle.GetKyberPublicKey();
         proto_bundle.set_kyber_public_key(kyber->data(), kyber->size());
     }
-    // Include the kyber_ciphertext in the bundle
+    
     proto_bundle.set_kyber_ciphertext(stored_ciphertext.data(), stored_ciphertext.size());
 
     ecliptix::proto::protocol::PubKeyExchange handshake;
@@ -761,7 +761,7 @@ EcliptixErrorCode ecliptix_protocol_system_begin_handshake_with_peer_kyber(
     handshake.set_of_type(static_cast<ecliptix::proto::protocol::PubKeyExchangeType>(exchange_type));
     handshake.set_payload(proto_bundle.SerializeAsString());
 
-    // Server is RESPONDER (not initiator) - it responds to client's handshake
+    
     handle->system->SetPendingInitiator(false);
     fprintf(stderr, "[BEGIN-HANDSHAKE-KYBER] SetPendingInitiator(false) - I am RESPONDER\n");
 
@@ -799,9 +799,9 @@ EcliptixErrorCode ecliptix_protocol_system_complete_handshake(
         return ECLIPTIX_ERROR_INVALID_INPUT;
     }
 
-    // Helper lambda to perform Kyber encapsulation/decapsulation and finalize with hybrid PQ
+    
     auto finalize_with_kyber = [&](const ecliptix::proto::protocol::PublicKeyBundle &bundle) -> EcliptixErrorCode {
-        // Check if peer has Kyber public key for hybrid PQ mode
+        
         if (bundle.kyber_public_key().empty()) {
             fill_error(out_error, ECLIPTIX_ERROR_PQ_MISSING, "Peer bundle missing Kyber public key for hybrid PQ mode");
             return ECLIPTIX_ERROR_PQ_MISSING;
@@ -814,15 +814,15 @@ EcliptixErrorCode ecliptix_protocol_system_complete_handshake(
         std::vector<uint8_t> kyber_ciphertext;
         std::vector<uint8_t> kyber_shared_secret;
 
-        // Check if we already encapsulated during begin_handshake_with_peer_kyber
+        
         auto stored_result = handle->system->GetIdentityKeysMutable().ConsumePendingKyberHandshake();
         if (stored_result.IsOk()) {
-            // We already encapsulated - use stored values
+            
             auto stored = std::move(stored_result).Unwrap();
             kyber_ciphertext = std::move(stored.kyber_ciphertext);
             kyber_shared_secret = std::move(stored.kyber_shared_secret);
         } else if (!bundle.kyber_ciphertext().empty()) {
-            // Peer sent ciphertext - DECAPSULATE
+            
             if (bundle.kyber_ciphertext().size() != KyberInterop::KYBER_768_CIPHERTEXT_SIZE) {
                 fill_error(out_error, ECLIPTIX_ERROR_INVALID_INPUT, "Invalid peer Kyber ciphertext size");
                 return ECLIPTIX_ERROR_INVALID_INPUT;
@@ -839,7 +839,7 @@ EcliptixErrorCode ecliptix_protocol_system_complete_handshake(
             kyber_ciphertext = std::move(artifacts.kyber_ciphertext);
             kyber_shared_secret = std::move(artifacts.kyber_shared_secret);
         } else {
-            // No stored result, no peer ciphertext - ENCAPSULATE
+            
             std::vector<uint8_t> peer_kyber_pk(bundle.kyber_public_key().begin(), bundle.kyber_public_key().end());
             auto encap_result = KyberInterop::Encapsulate(peer_kyber_pk);
             if (encap_result.IsErr()) {
@@ -849,7 +849,7 @@ EcliptixErrorCode ecliptix_protocol_system_complete_handshake(
             auto [ct, kyber_ss_handle] = std::move(encap_result).Unwrap();
             kyber_ciphertext = std::move(ct);
 
-            // Read shared secret bytes from secure memory
+            
             auto kyber_ss_result = kyber_ss_handle.ReadBytes(KyberInterop::KYBER_768_SHARED_SECRET_SIZE);
             if (kyber_ss_result.IsErr()) {
                 fill_error(out_error, ECLIPTIX_ERROR_SODIUM_FAILURE, "Failed to read Kyber shared secret");
@@ -866,7 +866,7 @@ EcliptixErrorCode ecliptix_protocol_system_complete_handshake(
             kyber_ciphertext,
             kyber_shared_secret);
 
-        // Wipe Kyber secrets
+        
         auto _wipe_ct = SodiumInterop::SecureWipe(std::span(kyber_ciphertext));
         (void) _wipe_ct;
         auto _wipe_ss = SodiumInterop::SecureWipe(std::span(kyber_shared_secret));
@@ -881,7 +881,7 @@ EcliptixErrorCode ecliptix_protocol_system_complete_handshake(
 
     ecliptix::proto::protocol::PubKeyExchange peer_exchange;
     if (!peer_exchange.ParseFromArray(peer_handshake_message, static_cast<int>(peer_handshake_message_length))) {
-        // Try direct bundle parsing as a fallback.
+        
         ecliptix::proto::protocol::PublicKeyBundle direct_bundle;
         if (!direct_bundle.ParseFromArray(peer_handshake_message, static_cast<int>(peer_handshake_message_length))) {
             fill_error(out_error, ECLIPTIX_ERROR_DECODE, "Failed to parse peer handshake");
@@ -918,7 +918,7 @@ EcliptixErrorCode ecliptix_protocol_system_complete_handshake_auto(
 
     fprintf(stderr, "\n[COMPLETE-HANDSHAKE-AUTO] ========== CompleteHandshakeAuto ==========\n");
 
-    // Ensure ephemeral key is generated for X3DH (in case BeginHandshake wasn't called)
+    
     handle->system->GetIdentityKeysMutable().GenerateEphemeralKeyPair();
 
     PubKeyExchange peer_exchange;
@@ -933,7 +933,7 @@ EcliptixErrorCode ecliptix_protocol_system_complete_handshake_auto(
         return ECLIPTIX_ERROR_DECODE;
     }
 
-    // Log what we received from peer
+    
     fprintf(stderr, "[COMPLETE-HANDSHAKE-AUTO] Peer identity_x25519: %02x%02x%02x%02x%02x%02x%02x%02x\n",
         static_cast<uint8_t>(peer_bundle.identity_x25519_public_key()[0]),
         static_cast<uint8_t>(peer_bundle.identity_x25519_public_key()[1]),
@@ -983,15 +983,15 @@ EcliptixErrorCode ecliptix_protocol_system_complete_handshake_auto(
         return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
     }
 
-    // Get initiator flag BEFORE X3DH - it affects which DH function is used
+    
     bool is_initiator = handle->system->GetPendingInitiator().value_or(false);
     fprintf(stderr, "[COMPLETE-HANDSHAKE-AUTO] is_initiator=%s\n", is_initiator ? "true (CLIENT)" : "false (SERVER)");
 
-    // CRITICAL: Get ephemeral key BEFORE X3DH - X3DH clears it after use (Signal Protocol spec)
+    
     std::vector<uint8_t> initial_dh_public;
     std::vector<uint8_t> initial_dh_private;
     if (is_initiator) {
-        // Client (initiator) uses ephemeral key pair - must get BEFORE X3DH clears it
+        
         auto ek_public = handle->system->GetIdentityKeys().GetEphemeralX25519PublicKeyCopy();
         auto ek_private_result = handle->system->GetIdentityKeys().GetEphemeralX25519PrivateKeyCopy();
         if (ek_public.has_value() && ek_private_result.IsOk()) {
@@ -1006,7 +1006,7 @@ EcliptixErrorCode ecliptix_protocol_system_complete_handshake_auto(
             return ECLIPTIX_ERROR_INVALID_STATE;
         }
     } else {
-        // Server (responder) uses Signed Pre-Key pair (SPK) - these are not cleared
+        
         initial_dh_public = handle->system->GetIdentityKeys().GetSignedPreKeyPublicCopy();
         auto spk_private_result = handle->system->GetIdentityKeys().GetSignedPreKeyPrivateCopy();
         if (spk_private_result.IsErr()) {
@@ -1046,7 +1046,7 @@ EcliptixErrorCode ecliptix_protocol_system_complete_handshake_auto(
         root_key[0], root_key[1], root_key[2], root_key[3],
         root_key[4], root_key[5], root_key[6], root_key[7]);
 
-    // Consume Kyber handshake artifacts from X3DH (ciphertext + shared secret)
+    
     auto kyber_artifacts_result = handle->system->GetIdentityKeysMutable().ConsumePendingKyberHandshake();
     if (kyber_artifacts_result.IsErr()) {
         auto _wipe_root = SodiumInterop::SecureWipe(std::span(root_key));
@@ -1063,7 +1063,7 @@ EcliptixErrorCode ecliptix_protocol_system_complete_handshake_auto(
         kyber_artifacts.kyber_shared_secret[6], kyber_artifacts.kyber_shared_secret[7]);
 
     fprintf(stderr, "[COMPLETE-HANDSHAKE-AUTO] Calling FinalizeWithRootAndPeerBundle...\n");
-    // Use overload that passes Kyber artifacts AND initial DH key pair BEFORE connection finalization
+    
     auto finalize_result = handle->system->FinalizeWithRootAndPeerBundle(
         root_key,
         peer_bundle,
@@ -1071,14 +1071,14 @@ EcliptixErrorCode ecliptix_protocol_system_complete_handshake_auto(
         kyber_artifacts.kyber_ciphertext,
         kyber_artifacts.kyber_shared_secret,
         initial_dh_public,
-        initial_dh_private);  // Pass the correct X3DH key pair
+        initial_dh_private);  
     auto _wipe_root = SodiumInterop::SecureWipe(std::span(root_key));
     (void) _wipe_root;
     auto _wipe_dh_pub = SodiumInterop::SecureWipe(std::span(initial_dh_public));
     (void) _wipe_dh_pub;
     auto _wipe_dh_priv = SodiumInterop::SecureWipe(std::span(initial_dh_private));
     (void) _wipe_dh_priv;
-    // Note: Ephemeral key already cleared by X3dhDeriveSharedSecret (Signal Protocol spec)
+    
     if (finalize_result.IsErr()) {
         fill_error_from_failure(out_error, std::move(finalize_result).UnwrapErr());
         return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
@@ -1201,6 +1201,36 @@ EcliptixErrorCode ecliptix_protocol_system_get_connection_id(
     return ECLIPTIX_SUCCESS;
 }
 
+EcliptixErrorCode ecliptix_protocol_system_get_chain_indices(
+    const EcliptixProtocolSystemHandle *handle,
+    uint32_t *out_sending_index,
+    uint32_t *out_receiving_index,
+    EcliptixError *out_error) {
+    if (!handle || !handle->system) {
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_STATE, "Protocol system handle is null or uninitialized");
+        return ECLIPTIX_ERROR_INVALID_STATE;
+    }
+    if (!out_sending_index || !out_receiving_index) {
+        fill_error(out_error, ECLIPTIX_ERROR_NULL_POINTER, "Output parameters are null");
+        return ECLIPTIX_ERROR_NULL_POINTER;
+    }
+    if (!handle->system->HasConnection()) {
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_STATE, "Protocol connection not established");
+        return ECLIPTIX_ERROR_INVALID_STATE;
+    }
+
+    auto indices_result = handle->system->GetChainIndices();
+    if (indices_result.IsErr()) {
+        fill_error_from_failure(out_error, std::move(indices_result).UnwrapErr());
+        return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
+    }
+
+    auto [sending_index, receiving_index] = indices_result.Unwrap();
+    *out_sending_index = sending_index;
+    *out_receiving_index = receiving_index;
+    return ECLIPTIX_SUCCESS;
+}
+
 EcliptixErrorCode ecliptix_protocol_system_get_selected_opk_id(
     const EcliptixProtocolSystemHandle *handle,
     bool *out_has_opk_id,
@@ -1225,6 +1255,59 @@ EcliptixErrorCode ecliptix_protocol_system_get_selected_opk_id(
         *out_opk_id = 0;
         fprintf(stderr, "[C-API] GetSelectedOpkId: has_opk_id=false\n");
     }
+    return ECLIPTIX_SUCCESS;
+}
+
+EcliptixErrorCode ecliptix_connection_get_session_age_seconds(
+    const EcliptixProtocolSystemHandle *handle,
+    uint64_t *out_age_seconds,
+    EcliptixError *out_error) {
+    if (!handle || !handle->system) {
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_STATE, "Protocol system handle is null or uninitialized");
+        return ECLIPTIX_ERROR_INVALID_STATE;
+    }
+    if (!out_age_seconds) {
+        fill_error(out_error, ECLIPTIX_ERROR_NULL_POINTER, "out_age_seconds is null");
+        return ECLIPTIX_ERROR_NULL_POINTER;
+    }
+    if (!handle->system->HasConnection()) {
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_STATE, "Protocol connection not established");
+        return ECLIPTIX_ERROR_INVALID_STATE;
+    }
+
+    *out_age_seconds = handle->system->GetSessionAgeSeconds();
+    return ECLIPTIX_SUCCESS;
+}
+
+EcliptixErrorCode ecliptix_protocol_system_set_kyber_secrets(
+    EcliptixProtocolSystemHandle *handle,
+    const uint8_t *kyber_ciphertext,
+    size_t kyber_ciphertext_length,
+    const uint8_t *kyber_shared_secret,
+    size_t kyber_shared_secret_length,
+    EcliptixError *out_error) {
+    if (!handle || !handle->system) {
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_STATE, "Protocol system handle is null or uninitialized");
+        return ECLIPTIX_ERROR_INVALID_STATE;
+    }
+    if (!kyber_ciphertext || kyber_ciphertext_length == 0) {
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_INPUT, "Kyber ciphertext is null or empty");
+        return ECLIPTIX_ERROR_INVALID_INPUT;
+    }
+    if (!kyber_shared_secret || kyber_shared_secret_length == 0) {
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_INPUT, "Kyber shared secret is null or empty");
+        return ECLIPTIX_ERROR_INVALID_INPUT;
+    }
+
+    auto result = handle->system->SetConnectionKyberSecrets(
+        std::span<const uint8_t>(kyber_ciphertext, kyber_ciphertext_length),
+        std::span<const uint8_t>(kyber_shared_secret, kyber_shared_secret_length));
+
+    if (result.IsErr()) {
+        fill_error_from_failure(out_error, std::move(result).UnwrapErr());
+        return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
+    }
+
     return ECLIPTIX_SUCCESS;
 }
 
@@ -1268,7 +1351,7 @@ EcliptixErrorCode ecliptix_protocol_system_create_from_root(
         return ECLIPTIX_ERROR_DECODE;
     }
 
-    // Check if peer has Kyber public key for hybrid PQ mode
+    
     if (bundle.kyber_public_key().empty()) {
         delete handle;
         fill_error(out_error, ECLIPTIX_ERROR_PQ_MISSING, "Peer bundle missing Kyber public key for hybrid PQ mode");
@@ -1280,7 +1363,7 @@ EcliptixErrorCode ecliptix_protocol_system_create_from_root(
         return ECLIPTIX_ERROR_INVALID_INPUT;
     }
 
-    // Perform Kyber encapsulation with peer's public key
+    
     std::vector<uint8_t> peer_kyber_pk(bundle.kyber_public_key().begin(), bundle.kyber_public_key().end());
     auto encap_result = KyberInterop::Encapsulate(peer_kyber_pk);
     if (encap_result.IsErr()) {
@@ -1290,7 +1373,7 @@ EcliptixErrorCode ecliptix_protocol_system_create_from_root(
     }
     auto [kyber_ciphertext, kyber_shared_secret_handle] = std::move(encap_result).Unwrap();
 
-    // Read shared secret bytes from secure memory
+    
     auto kyber_ss_result = kyber_shared_secret_handle.ReadBytes(KyberInterop::KYBER_768_SHARED_SECRET_SIZE);
     if (kyber_ss_result.IsErr()) {
         delete handle;
@@ -1307,7 +1390,7 @@ EcliptixErrorCode ecliptix_protocol_system_create_from_root(
         kyber_ciphertext,
         kyber_shared_secret);
 
-    // Wipe Kyber secrets
+    
     auto _wipe_ct = SodiumInterop::SecureWipe(std::span(kyber_ciphertext));
     (void) _wipe_ct;
     auto _wipe_ss = SodiumInterop::SecureWipe(std::span(kyber_shared_secret));

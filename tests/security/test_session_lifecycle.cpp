@@ -31,10 +31,63 @@ static std::vector<uint8_t> MakeNonce(uint64_t idx) {
     return nonce;
 }
 
-TEST_CASE("Session Lifecycle - PrepareNextSendMessage Respects Timeout", "[security][session][timeout]") {
+// ============================================================================
+// Session Age Tracking Tests
+// These tests verify GetSessionAgeSeconds() for application-layer timeout management
+// ============================================================================
+
+TEST_CASE("Session Lifecycle - GetSessionAgeSeconds Returns Correct Age", "[security][session][age]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
-    SECTION("PrepareNextSendMessage fails after 24 hour timeout") {
+    SECTION("Session age increases over time") {
+        auto conn = CreatePreparedConnection(1, true);
+
+        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
+        auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
+        REQUIRE(peer_keypair.IsOk());
+        auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
+
+        REQUIRE(conn->FinalizeChainAndDhKeys(root_key, peer_pk).IsOk());
+
+        auto age_before = conn->GetSessionAgeSeconds();
+        REQUIRE(age_before < 2);  // Should be nearly 0
+
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+
+        auto age_after = conn->GetSessionAgeSeconds();
+        REQUIRE(age_after >= 2);
+        REQUIRE(age_after < 5);  // Allow some slack for test execution
+    }
+}
+
+TEST_CASE("Session Lifecycle - GetSessionAgeSeconds for New Connection", "[security][session][age]") {
+    REQUIRE(SodiumInterop::Initialize().IsOk());
+
+    SECTION("New connection has age near zero") {
+        auto conn = CreatePreparedConnection(1, true);
+
+        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xBB);
+        auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
+        REQUIRE(peer_keypair.IsOk());
+        auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
+
+        REQUIRE(conn->FinalizeChainAndDhKeys(root_key, peer_pk).IsOk());
+
+        auto age = conn->GetSessionAgeSeconds();
+        REQUIRE(age < 2);  // Should be nearly 0
+    }
+}
+
+// ============================================================================
+// No Timeout Enforcement Tests
+// These tests verify that the library no longer enforces session timeout
+// Session lifecycle is now the application's responsibility
+// ============================================================================
+
+TEST_CASE("Session Lifecycle - Operations Succeed Without Timeout Enforcement", "[security][session][no-timeout]") {
+    REQUIRE(SodiumInterop::Initialize().IsOk());
+
+    SECTION("PrepareNextSendMessage succeeds regardless of session age") {
         auto conn = CreatePreparedConnection(1, true);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
@@ -47,21 +100,21 @@ TEST_CASE("Session Lifecycle - PrepareNextSendMessage Respects Timeout", "[secur
         auto prepare_before = conn->PrepareNextSendMessage();
         REQUIRE(prepare_before.IsOk());
 
+        // Sleep past the old test timeout (was 60 seconds for test builds)
+        // With timeout removed, this should still succeed
 #ifdef ECLIPTIX_TEST_BUILD
-        std::this_thread::sleep_for(std::chrono::seconds(6));
-#else
-        std::this_thread::sleep_for(std::chrono::hours(24) + std::chrono::seconds(1));
+        std::this_thread::sleep_for(std::chrono::seconds(2));
 #endif
 
         auto prepare_after = conn->PrepareNextSendMessage();
-        REQUIRE(prepare_after.IsErr());
+        REQUIRE(prepare_after.IsOk());  // Should succeed now - no timeout enforcement
     }
 }
 
-TEST_CASE("Session Lifecycle - GenerateNextNonce Respects Timeout", "[security][session][timeout]") {
+TEST_CASE("Session Lifecycle - GenerateNextNonce Without Timeout", "[security][session][no-timeout]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
-    SECTION("GenerateNextNonce fails after 24 hour timeout") {
+    SECTION("GenerateNextNonce succeeds regardless of session age") {
         auto conn = CreatePreparedConnection(1, true);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xBB);
@@ -75,20 +128,18 @@ TEST_CASE("Session Lifecycle - GenerateNextNonce Respects Timeout", "[security][
         REQUIRE(nonce_before.IsOk());
 
 #ifdef ECLIPTIX_TEST_BUILD
-        std::this_thread::sleep_for(std::chrono::seconds(6));
-#else
-        std::this_thread::sleep_for(std::chrono::hours(24) + std::chrono::seconds(1));
+        std::this_thread::sleep_for(std::chrono::seconds(2));
 #endif
 
         auto nonce_after = conn->GenerateNextNonce();
-        REQUIRE(nonce_after.IsErr());
+        REQUIRE(nonce_after.IsOk());  // Should succeed now - no timeout enforcement
     }
 }
 
-TEST_CASE("Session Lifecycle - ProcessReceivedMessage Respects Timeout", "[security][session][timeout]") {
+TEST_CASE("Session Lifecycle - ProcessReceivedMessage Without Timeout", "[security][session][no-timeout]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
-    SECTION("ProcessReceivedMessage fails after 24 hour timeout") {
+    SECTION("ProcessReceivedMessage succeeds regardless of session age") {
         auto [alice, bob] = CreatePreparedPair(1, 2);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xCC);
@@ -103,20 +154,18 @@ TEST_CASE("Session Lifecycle - ProcessReceivedMessage Respects Timeout", "[secur
         REQUIRE(process_before.IsOk());
 
 #ifdef ECLIPTIX_TEST_BUILD
-        std::this_thread::sleep_for(std::chrono::seconds(6));
-#else
-        std::this_thread::sleep_for(std::chrono::hours(24) + std::chrono::seconds(1));
+        std::this_thread::sleep_for(std::chrono::seconds(2));
 #endif
 
         auto process_after = bob->ProcessReceivedMessage(1, MakeNonce(0x01));
-        REQUIRE(process_after.IsErr());
+        REQUIRE(process_after.IsOk());  // Should succeed now - no timeout enforcement
     }
 }
 
-TEST_CASE("Session Lifecycle - Multiple Operations Before Timeout", "[security][session][timeout]") {
+TEST_CASE("Session Lifecycle - Multiple Operations Over Time", "[security][session][no-timeout]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
-    SECTION("All operations succeed within 24 hour window") {
+    SECTION("All operations continue to work over time") {
         auto [alice, bob] = CreatePreparedPair(1, 2);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xDD);
@@ -137,13 +186,17 @@ TEST_CASE("Session Lifecycle - Multiple Operations Before Timeout", "[security][
             auto process = bob->ProcessReceivedMessage(i, MakeNonce(static_cast<uint8_t>(i & 0xFF)));
             REQUIRE(process.IsOk());
         }
+
+        // Session age should have accumulated but operations still work
+        auto age = alice->GetSessionAgeSeconds();
+        INFO("Session age after 100 operations: " << age << " seconds");
     }
 }
 
-TEST_CASE("Session Lifecycle - All Operations Fail After Timeout", "[security][session][timeout]") {
+TEST_CASE("Session Lifecycle - All Operations Work After Extended Time", "[security][session][no-timeout]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
-    SECTION("All operations fail after 24 hour timeout") {
+    SECTION("All operations succeed after extended time (no timeout enforcement)") {
         auto [alice, bob] = CreatePreparedPair(1, 2);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xEE);
@@ -155,53 +208,33 @@ TEST_CASE("Session Lifecycle - All Operations Fail After Timeout", "[security][s
         REQUIRE(bob->FinalizeChainAndDhKeys(root_key, alice_dh).IsOk());
 
 #ifdef ECLIPTIX_TEST_BUILD
-        std::this_thread::sleep_for(std::chrono::seconds(6));
-#else
-        std::this_thread::sleep_for(std::chrono::hours(24) + std::chrono::seconds(1));
+        std::this_thread::sleep_for(std::chrono::seconds(2));
 #endif
 
+        // All operations should still work - timeout enforcement removed
         auto nonce = alice->GenerateNextNonce();
-        REQUIRE(nonce.IsErr());
-
-        auto prepare = alice->PrepareNextSendMessage();
-        REQUIRE(prepare.IsErr());
-
-        auto process = bob->ProcessReceivedMessage(0, MakeNonce(0x00));
-        REQUIRE(process.IsErr());
-    }
-}
-
-TEST_CASE("Session Lifecycle - Timeout Boundary Test", "[security][session][timeout][boundary]") {
-    REQUIRE(SodiumInterop::Initialize().IsOk());
-
-    SECTION("Operations succeed just before timeout") {
-        auto conn = CreatePreparedConnection(1, true);
-
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xFF);
-        auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
-        REQUIRE(peer_keypair.IsOk());
-        auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
-
-        REQUIRE(conn->FinalizeChainAndDhKeys(root_key, peer_pk).IsOk());
-
-#ifdef ECLIPTIX_TEST_BUILD
-        std::this_thread::sleep_for(std::chrono::seconds(3));  // Well before 5-second timeout
-#else
-        std::this_thread::sleep_for(std::chrono::hours(23) + std::chrono::minutes(59));
-#endif
-
-        auto nonce = conn->GenerateNextNonce();
         REQUIRE(nonce.IsOk());
 
-        auto prepare = conn->PrepareNextSendMessage();
+        auto prepare = alice->PrepareNextSendMessage();
         REQUIRE(prepare.IsOk());
+
+        auto process = bob->ProcessReceivedMessage(0, MakeNonce(0x00));
+        REQUIRE(process.IsOk());
+
+        // Verify age is being tracked (app can check this)
+        auto alice_age = alice->GetSessionAgeSeconds();
+        auto bob_age = bob->GetSessionAgeSeconds();
+        INFO("Alice session age: " << alice_age << " seconds");
+        INFO("Bob session age: " << bob_age << " seconds");
+        REQUIRE(alice_age >= 2);
+        REQUIRE(bob_age >= 2);
     }
 }
 
-TEST_CASE("Session Lifecycle - Independent Connection Timeouts", "[security][session][timeout][isolation]") {
+TEST_CASE("Session Lifecycle - Independent Connection Ages", "[security][session][age][isolation]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
-    SECTION("Each connection has independent timeout") {
+    SECTION("Each connection tracks age independently") {
         auto conn1 = CreatePreparedConnection(1, true);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x11);
@@ -211,12 +244,9 @@ TEST_CASE("Session Lifecycle - Independent Connection Timeouts", "[security][ses
 
         REQUIRE(conn1->FinalizeChainAndDhKeys(root_key, peer1_pk).IsOk());
 
-#ifdef ECLIPTIX_TEST_BUILD
-        std::this_thread::sleep_for(std::chrono::seconds(6));
-#else
-        std::this_thread::sleep_for(std::chrono::hours(24) + std::chrono::seconds(1));
-#endif
+        std::this_thread::sleep_for(std::chrono::seconds(2));
 
+        // Create second connection after delay
         auto conn2 = CreatePreparedConnection(2, false);
 
         auto peer2 = SodiumInterop::GenerateX25519KeyPair("peer2");
@@ -225,24 +255,27 @@ TEST_CASE("Session Lifecycle - Independent Connection Timeouts", "[security][ses
 
         REQUIRE(conn2->FinalizeChainAndDhKeys(root_key, peer2_pk).IsOk());
 
+        // Both connections work (no timeout enforcement)
         auto conn1_nonce = conn1->GenerateNextNonce();
-        REQUIRE(conn1_nonce.IsErr());
+        REQUIRE(conn1_nonce.IsOk());
 
         auto conn2_nonce = conn2->GenerateNextNonce();
         REQUIRE(conn2_nonce.IsOk());
 
-        auto conn1_prepare = conn1->PrepareNextSendMessage();
-        REQUIRE(conn1_prepare.IsErr());
+        // But they have different ages
+        auto age1 = conn1->GetSessionAgeSeconds();
+        auto age2 = conn2->GetSessionAgeSeconds();
 
-        auto conn2_prepare = conn2->PrepareNextSendMessage();
-        REQUIRE(conn2_prepare.IsOk());
+        REQUIRE(age1 >= 2);
+        REQUIRE(age2 < 2);
+        REQUIRE(age1 > age2);  // conn1 is older
     }
 }
 
-TEST_CASE("Session Lifecycle - Concurrent Timeout Checks", "[security][session][timeout][concurrent]") {
+TEST_CASE("Session Lifecycle - Concurrent Operations Without Timeout", "[security][session][no-timeout][concurrent]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
-    SECTION("Concurrent operations all respect timeout") {
+    SECTION("Concurrent operations all succeed") {
         auto conn = CreatePreparedConnection(1, true);
 
         std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x22);
@@ -253,36 +286,30 @@ TEST_CASE("Session Lifecycle - Concurrent Timeout Checks", "[security][session][
         REQUIRE(conn->FinalizeChainAndDhKeys(root_key, peer_pk).IsOk());
 
 #ifdef ECLIPTIX_TEST_BUILD
-        std::this_thread::sleep_for(std::chrono::seconds(6));
-#else
-        std::this_thread::sleep_for(std::chrono::hours(24) + std::chrono::seconds(1));
+        std::this_thread::sleep_for(std::chrono::seconds(2));
 #endif
 
-        std::atomic<uint32_t> failed_operations{0};
-        std::atomic<uint32_t> successful_operations{0};
-
-        const uint32_t NUM_THREADS = 10;
-        const uint32_t ATTEMPTS_PER_THREAD = 10;
-
+        // Run multiple threads - all should succeed
+        std::atomic<int> success_count{0};
+        std::atomic<int> failure_count{0};
         std::vector<std::thread> threads;
-        for (uint32_t t = 0; t < NUM_THREADS; ++t) {
-            threads.emplace_back([&]() {
-                for (uint32_t i = 0; i < ATTEMPTS_PER_THREAD; ++i) {
-                    auto nonce_result = conn->GenerateNextNonce();
-                    if (nonce_result.IsErr()) {
-                        failed_operations.fetch_add(1, std::memory_order_relaxed);
-                    } else {
-                        successful_operations.fetch_add(1, std::memory_order_relaxed);
-                    }
+
+        for (int i = 0; i < 10; ++i) {
+            threads.emplace_back([&conn, &success_count, &failure_count]() {
+                auto result = conn->GenerateNextNonce();
+                if (result.IsOk()) {
+                    success_count++;
+                } else {
+                    failure_count++;
                 }
             });
         }
 
-        for (auto& thread : threads) {
-            thread.join();
+        for (auto& t : threads) {
+            t.join();
         }
 
-        REQUIRE(failed_operations.load() == NUM_THREADS * ATTEMPTS_PER_THREAD);
-        REQUIRE(successful_operations.load() == 0);
+        REQUIRE(success_count == 10);
+        REQUIRE(failure_count == 0);
     }
 }

@@ -179,6 +179,93 @@ public sealed class EcliptixProtocolSystemWrapper : IDisposable
         }
     }
 
+    public Result<uint, EcliptixProtocolFailure> GetConnectionId()
+    {
+        ThrowIfDisposed();
+
+        EcliptixErrorCode result = EcliptixNativeInterop.ecliptix_protocol_system_get_connection_id(
+            _handle,
+            out uint connectionId,
+            out EcliptixError error);
+
+        if (result != EcliptixErrorCode.Success)
+        {
+            string errorMessage = error.GetMessage();
+            EcliptixNativeInterop.ecliptix_error_free(ref error);
+            return Result<uint, EcliptixProtocolFailure>.Err(
+                ConvertError(result, errorMessage));
+        }
+
+        return Result<uint, EcliptixProtocolFailure>.Ok(connectionId);
+    }
+
+    /// <summary>
+    /// Returns the session age in seconds since creation.
+    /// Application layer can use this to decide when to refresh/rehandshake.
+    /// Session timeout is no longer enforced by the library - it's the application's responsibility.
+    /// </summary>
+    public Result<ulong, EcliptixProtocolFailure> GetSessionAgeSeconds()
+    {
+        ThrowIfDisposed();
+
+        EcliptixErrorCode result = EcliptixNativeInterop.ecliptix_connection_get_session_age_seconds(
+            _handle,
+            out ulong ageSeconds,
+            out EcliptixError error);
+
+        if (result != EcliptixErrorCode.Success)
+        {
+            string errorMessage = error.GetMessage();
+            EcliptixNativeInterop.ecliptix_error_free(ref error);
+            return Result<ulong, EcliptixProtocolFailure>.Err(
+                ConvertError(result, errorMessage));
+        }
+
+        return Result<ulong, EcliptixProtocolFailure>.Ok(ageSeconds);
+    }
+
+    /// <summary>
+    /// Set Kyber hybrid handshake secrets on the active connection.
+    /// Call this BEFORE finalizing the connection when using manual Kyber secret setup.
+    /// This is useful when the Kyber shared secret is derived externally (e.g., from OPAQUE).
+    /// </summary>
+    /// <param name="kyberCiphertext">The Kyber ciphertext from encapsulation.</param>
+    /// <param name="kyberSharedSecret">The Kyber shared secret (32 bytes).</param>
+    /// <returns>Success or an error if the operation failed.</returns>
+    public Result<Unit, EcliptixProtocolFailure> SetKyberSecrets(byte[] kyberCiphertext, byte[] kyberSharedSecret)
+    {
+        ThrowIfDisposed();
+
+        if (kyberCiphertext == null || kyberCiphertext.Length == 0)
+        {
+            return Result<Unit, EcliptixProtocolFailure>.Err(
+                EcliptixProtocolFailure.InvalidInput("Kyber ciphertext is null or empty"));
+        }
+        if (kyberSharedSecret == null || kyberSharedSecret.Length == 0)
+        {
+            return Result<Unit, EcliptixProtocolFailure>.Err(
+                EcliptixProtocolFailure.InvalidInput("Kyber shared secret is null or empty"));
+        }
+
+        EcliptixErrorCode result = EcliptixNativeInterop.ecliptix_protocol_system_set_kyber_secrets(
+            _handle,
+            kyberCiphertext,
+            (nuint)kyberCiphertext.Length,
+            kyberSharedSecret,
+            (nuint)kyberSharedSecret.Length,
+            out EcliptixError error);
+
+        if (result != EcliptixErrorCode.Success)
+        {
+            string errorMessage = error.GetMessage();
+            EcliptixNativeInterop.ecliptix_error_free(ref error);
+            return Result<Unit, EcliptixProtocolFailure>.Err(
+                ConvertError(result, errorMessage));
+        }
+
+        return Result<Unit, EcliptixProtocolFailure>.Ok(Unit.Value);
+    }
+
     public EcliptixIdentityKeysWrapper GetIdentityKeys() => _identityKeys;
 
     public static Result<Unit, EcliptixProtocolFailure> ValidateEnvelopeHybridRequirements(byte[] encryptedEnvelope)

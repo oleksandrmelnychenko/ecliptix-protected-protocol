@@ -8,6 +8,7 @@
 #include "protocol/protocol_state.pb.h"
 #include "protocol/key_exchange.pb.h"
 #include <optional>
+#include <shared_mutex>
 
 namespace ecliptix::protocol {
     using protocol::Result;
@@ -70,8 +71,8 @@ namespace ecliptix::protocol {
 
         void SetConnection(std::unique_ptr<EcliptixProtocolConnection> connection);
 
-        [[nodiscard]] const EcliptixSystemIdentityKeys &GetIdentityKeys() const noexcept;
-        [[nodiscard]] EcliptixSystemIdentityKeys &GetIdentityKeysMutable() noexcept;
+        [[nodiscard]] const EcliptixSystemIdentityKeys &GetIdentityKeys() const;
+        [[nodiscard]] EcliptixSystemIdentityKeys &GetIdentityKeysMutable();
 
         void SetEventHandler(std::shared_ptr<IProtocolEventHandler> handler);
 
@@ -84,16 +85,20 @@ namespace ecliptix::protocol {
         [[nodiscard]] Result<proto::protocol::RatchetState, EcliptixProtocolFailure>
         ToProtoState() const;
 
-        [[nodiscard]] bool HasConnection() const noexcept;
+        [[nodiscard]] bool HasConnection() const;
 
-        void SetPendingInitiator(bool is_initiator) noexcept;
+        void SetPendingInitiator(bool is_initiator);
 
-        [[nodiscard]] std::optional<bool> GetPendingInitiator() const noexcept;
+        [[nodiscard]] std::optional<bool> GetPendingInitiator() const;
 
-        [[nodiscard]] uint32_t GetConnectionId() const noexcept;
+        [[nodiscard]] uint32_t GetConnectionId() const;
 
         [[nodiscard]] Result<std::pair<uint32_t, uint32_t>, EcliptixProtocolFailure>
         GetChainIndices() const;
+
+        /// Returns the session age in seconds since creation.
+        /// Application layer can use this to decide when to refresh/rehandshake.
+        [[nodiscard]] uint64_t GetSessionAgeSeconds() const;
 
         // Set Kyber handshake secrets on the active connection (for hybrid PQ mode)
         [[nodiscard]] Result<Unit, EcliptixProtocolFailure> SetConnectionKyberSecrets(
@@ -117,15 +122,12 @@ namespace ecliptix::protocol {
             std::span<const uint8_t> local_identity,
             std::span<const uint8_t> peer_identity);
 
-        [[nodiscard]] EcliptixProtocolConnection *GetConnectionSafe() const noexcept;
-
-        [[nodiscard]] Result<Unit, EcliptixProtocolFailure>
-        HandleDhRatchetIfNeeded(const proto::common::SecureEnvelope &envelope) const;
+        [[nodiscard]] std::shared_ptr<EcliptixProtocolConnection> GetConnectionSafe() const;
 
         std::unique_ptr<EcliptixSystemIdentityKeys> identity_keys_;
-        std::unique_ptr<EcliptixProtocolConnection> connection_;
+        std::shared_ptr<EcliptixProtocolConnection> connection_;
         std::shared_ptr<IProtocolEventHandler> event_handler_;
-        mutable std::unique_ptr<std::mutex> mutex_;
+        mutable std::unique_ptr<std::shared_mutex> mutex_;
         std::optional<bool> pending_initiator_flag_;
     };
 }

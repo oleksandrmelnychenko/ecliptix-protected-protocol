@@ -215,6 +215,25 @@ EcliptixErrorCode ecliptix_protocol_system_get_selected_opk_id(
     uint32_t* out_opk_id,
     EcliptixError* out_error);
 
+// Get session age in seconds since creation.
+// Application layer can use this to decide when to refresh/rehandshake.
+// Session timeout is no longer enforced by the library - it's the application's responsibility.
+EcliptixErrorCode ecliptix_connection_get_session_age_seconds(
+    const EcliptixProtocolSystemHandle* handle,
+    uint64_t* out_age_seconds,
+    EcliptixError* out_error);
+
+// Set Kyber hybrid handshake secrets on the active connection.
+// Call this BEFORE finalizing the connection when using manual Kyber secret setup.
+// This is useful when the Kyber shared secret is derived externally (e.g., from OPAQUE).
+EcliptixErrorCode ecliptix_protocol_system_set_kyber_secrets(
+    EcliptixProtocolSystemHandle* handle,
+    const uint8_t* kyber_ciphertext,
+    size_t kyber_ciphertext_length,
+    const uint8_t* kyber_shared_secret,
+    size_t kyber_shared_secret_length,
+    EcliptixError* out_error);
+
 void ecliptix_protocol_system_destroy(EcliptixProtocolSystemHandle* handle);
 
 EcliptixErrorCode ecliptix_protocol_connection_create(

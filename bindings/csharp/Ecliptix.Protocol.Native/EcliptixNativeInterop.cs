@@ -187,6 +187,21 @@ public static class EcliptixNativeInterop
         out EcliptixError outError);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern EcliptixErrorCode ecliptix_connection_get_session_age_seconds(
+        IntPtr handle,
+        out ulong outAgeSeconds,
+        out EcliptixError outError);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern EcliptixErrorCode ecliptix_protocol_system_set_kyber_secrets(
+        IntPtr handle,
+        [In] byte[] kyberCiphertext,
+        nuint kyberCiphertextLength,
+        [In] byte[] kyberSharedSecret,
+        nuint kyberSharedSecretLength,
+        out EcliptixError outError);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     public static extern EcliptixErrorCode ecliptix_protocol_system_receive_message(
         IntPtr handle,
         [In] byte[] encryptedEnvelope,
@@ -249,11 +264,6 @@ public static class EcliptixNativeInterop
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
     public static extern IntPtr ecliptix_error_code_to_string(EcliptixErrorCode code);
-
-    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern EcliptixErrorCode ecliptix_secure_wipe(
-        [In, Out] byte[] data,
-        nuint length);
 
     public static string GetVersion()
     {

@@ -368,6 +368,85 @@ TEST_CASE("X3DH Test Vectors - One-Time PreKey Consumption", "[x3dh][interop][ve
     }
 }
 
+TEST_CASE("X3DH Explicit OPK Selection Consumes Key", "[x3dh][opk][consume]") {
+    REQUIRE(SodiumInterop::Initialize().IsOk());
+
+    auto alice_result = EcliptixSystemIdentityKeys::Create(3);
+    REQUIRE(alice_result.IsOk());
+    auto alice = std::move(alice_result).Unwrap();
+    alice.GenerateEphemeralKeyPair();
+
+    auto bob_result = EcliptixSystemIdentityKeys::Create(3);
+    REQUIRE(bob_result.IsOk());
+    auto bob = std::move(bob_result).Unwrap();
+    bob.GenerateEphemeralKeyPair();
+
+    auto bob_bundle_result = bob.CreatePublicBundle();
+    REQUIRE(bob_bundle_result.IsOk());
+    auto bob_bundle = bob_bundle_result.Unwrap();
+    REQUIRE(bob_bundle.HasOneTimePreKeys());
+    const uint32_t opk_id = bob_bundle.GetOneTimePreKeys().front().GetPreKeyId();
+    const size_t initial_opk_count = bob_bundle.GetOneTimePreKeyCount();
+
+    // Alice explicitly selects an OPK ID and captures her bundle fields before X3DH clears the ephemeral key.
+    alice.SetSelectedOpkId(opk_id);
+    auto alice_bundle_result = alice.CreatePublicBundle();
+    REQUIRE(alice_bundle_result.IsOk());
+    auto alice_bundle = alice_bundle_result.Unwrap();
+    auto alice_ephemeral = alice_bundle.GetEphemeralX25519Public();
+    REQUIRE(alice_ephemeral.has_value());
+    auto alice_kyber = alice_bundle.GetKyberPublicKey();
+    REQUIRE(alice_kyber.has_value());
+
+    std::vector<uint8_t> info(ProtocolConstants::X3DH_INFO.begin(), ProtocolConstants::X3DH_INFO.end());
+
+    auto alice_secret_result = alice.X3dhDeriveSharedSecret(bob_bundle, info, true);
+    REQUIRE(alice_secret_result.IsOk());
+    auto alice_secret_handle = std::move(alice_secret_result).Unwrap();
+    auto alice_root_result = alice_secret_handle.ReadBytes(Constants::X_25519_KEY_SIZE);
+    REQUIRE(alice_root_result.IsOk());
+    auto alice_root = alice_root_result.Unwrap();
+
+    auto kyber_artifacts_result = alice.ConsumePendingKyberHandshake();
+    REQUIRE(kyber_artifacts_result.IsOk());
+    auto kyber_artifacts = kyber_artifacts_result.Unwrap();
+
+    LocalPublicKeyBundle alice_bundle_with_ct(
+        alice_bundle.GetEd25519Public(),
+        alice_bundle.GetIdentityX25519(),
+        alice_bundle.GetSignedPreKeyId(),
+        alice_bundle.GetSignedPreKeyPublicCopy(),
+        alice_bundle.GetSignedPreKeySignature(),
+        {},
+        alice_ephemeral,
+        alice_kyber,
+        kyber_artifacts.kyber_ciphertext,
+        opk_id);
+
+    auto bob_secret_result = bob.X3dhDeriveSharedSecret(alice_bundle_with_ct, info, false);
+    REQUIRE(bob_secret_result.IsOk());
+    auto bob_secret_handle = std::move(bob_secret_result).Unwrap();
+    auto bob_root_result = bob_secret_handle.ReadBytes(Constants::X_25519_KEY_SIZE);
+    REQUIRE(bob_root_result.IsOk());
+    auto bob_root = bob_root_result.Unwrap();
+
+    REQUIRE(alice_root == bob_root);
+
+    auto bob_bundle_after_result = bob.CreatePublicBundle();
+    REQUIRE(bob_bundle_after_result.IsOk());
+    auto bob_bundle_after = bob_bundle_after_result.Unwrap();
+    REQUIRE(bob_bundle_after.GetOneTimePreKeyCount() == initial_opk_count - 1);
+
+    const bool opk_still_present = std::any_of(
+        bob_bundle_after.GetOneTimePreKeys().begin(),
+        bob_bundle_after.GetOneTimePreKeys().end(),
+        [opk_id](const OneTimePreKeyRecord &opk) {
+            return opk.GetPreKeyId() == opk_id;
+        });
+    REQUIRE_FALSE(opk_still_present);
+    REQUIRE_FALSE(bob.GetSelectedOpkId().has_value());
+}
+
 TEST_CASE("X3DH Test Vectors - Ephemeral Key Management", "[x3dh][interop][vectors]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
 

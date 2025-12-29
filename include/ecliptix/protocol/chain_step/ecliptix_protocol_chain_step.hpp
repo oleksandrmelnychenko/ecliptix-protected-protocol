@@ -70,6 +70,7 @@ private:
     [[nodiscard]] Result<Unit, EcliptixProtocolFailure> StoreMessageKey(
         uint32_t index,
         std::span<const uint8_t> message_key);
+    [[nodiscard]] Result<Unit, EcliptixProtocolFailure> SkipKeysUntilLocked(uint32_t target_index);
     [[nodiscard]] Option<SecureMemoryHandle> TakeCachedMessageKey(uint32_t index);
     [[nodiscard]] Result<Unit, EcliptixProtocolFailure> CheckDisposed() const;
     [[nodiscard]] static Result<Unit, EcliptixProtocolFailure> ValidateChainKey(

@@ -78,10 +78,10 @@ namespace ecliptix::protocol::security {
             message_windows_.size() >= max_tracked_chains_) {
             EvictOldestChainWindow();
         }
-        // Check message window to prevent DoS from accepting messages too far out of sequence.
-        // The connection layer uses receiving_ratchet_epoch_ as chain_index, so different
-        // DH ratchet epochs use different chain indices, preventing false positives when
-        // message indices reset after ratchets.
+        
+        
+        
+        
         if (auto window_result = CheckMessageWindow(chain_index, message_index); window_result.IsErr()) {
             return window_result;
         }

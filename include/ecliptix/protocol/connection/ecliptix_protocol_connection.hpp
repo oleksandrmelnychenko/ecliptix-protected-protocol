@@ -106,6 +106,8 @@ namespace ecliptix::protocol::connection {
             std::vector<uint8_t> new_root_key;
             EcliptixProtocolChainStep receiving_step;
             std::vector<uint8_t> peer_dh_public_key;
+            std::vector<uint8_t> kyber_ciphertext;
+            std::vector<uint8_t> kyber_shared_secret;
             uint64_t new_receiving_epoch;
         };
 
@@ -144,6 +146,10 @@ namespace ecliptix::protocol::connection {
         [[nodiscard]] bool IsInitiator() const noexcept;
 
         [[nodiscard]] PubKeyExchangeType ExchangeType() const noexcept;
+
+        /// Returns the session age in seconds since creation.
+        /// Application layer can use this to decide when to refresh/rehandshake.
+        [[nodiscard]] uint64_t GetSessionAgeSeconds() const noexcept;
 
         [[nodiscard]] Result<LocalPublicKeyBundle, EcliptixProtocolFailure> GetPeerBundle() const;
 
@@ -248,14 +254,6 @@ namespace ecliptix::protocol::connection {
 
         [[nodiscard]] Result<Unit, EcliptixProtocolFailure> EnsureNotExpired() const;
 
-        [[nodiscard]] Result<bool, EcliptixProtocolFailure> MaybePerformSendingDhRatchet();
-
-        [[nodiscard]] static Result<Unit, EcliptixProtocolFailure> DeriveRatchetKeys(
-            std::span<const uint8_t> dh_secret,
-            std::span<const uint8_t> current_root_key,
-            std::span<uint8_t> new_root_key,
-            std::span<uint8_t> new_chain_key);
-
         [[nodiscard]] Result<Unit, EcliptixProtocolFailure>
         DeriveMetadataEncryptionKey();
 
@@ -263,7 +261,8 @@ namespace ecliptix::protocol::connection {
         DeriveMetadataEncryptionKeyBytes(
             std::span<const uint8_t> root_bytes,
             std::span<const uint8_t> sender_dh_public,
-            std::span<const uint8_t> peer_dh_public);
+            std::span<const uint8_t> peer_dh_public,
+            std::span<const uint8_t> kyber_shared_secret);
 
         [[nodiscard]] static Result<std::vector<uint8_t>, EcliptixProtocolFailure> DeriveStateMacKey(
             std::span<const uint8_t> root_key_bytes,
@@ -284,10 +283,6 @@ namespace ecliptix::protocol::connection {
             const proto::protocol::RatchetState &proto,
             uint32_t expected_connection_id);
 
-        [[nodiscard]] static Result<Unit, EcliptixProtocolFailure> ValidateInitialKeys(
-            std::span<const uint8_t> root_key,
-            std::span<const uint8_t> peer_dh_public_key);
-
         [[nodiscard]] Result<Unit, EcliptixProtocolFailure>
         PerformDhRatchet(bool is_sender,
                          std::span<const uint8_t> received_dh_public_key = {},
@@ -301,6 +296,8 @@ namespace ecliptix::protocol::connection {
             const proto::protocol::RatchetState &proto);
 
         Result<Unit, EcliptixProtocolFailure> UpdateKyberSecretFromCiphertext(std::span<const uint8_t> kyber_ct);
+        [[nodiscard]] Result<std::vector<uint8_t>, EcliptixProtocolFailure> DecapsulateKyberCiphertext(
+            std::span<const uint8_t> kyber_ct) const;
 
         mutable std::unique_ptr<std::mutex> lock_;
         uint32_t id_;

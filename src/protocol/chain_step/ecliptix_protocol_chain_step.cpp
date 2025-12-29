@@ -200,9 +200,9 @@ namespace ecliptix::protocol::chain_step {
             SodiumInterop::SecureWipe(std::span(key_bytes));
             return result;
         }
-        // UPDATED: Handle both in-order and skip cases:
-        // - In-order: current_index_ was incremented in GetOrDeriveKeyFor, so index + 1 == current_index_
-        // - Skip: current_index_ was set to index by SkipKeysUntil, so index == current_index_
+        
+        
+        
         if (index + 1 == current_index_ || index == current_index_) {
             auto chain_key_result = ConvertSodiumResult(chain_key_handle_.ReadBytes(Constants::X_25519_KEY_SIZE));
             if (chain_key_result.IsErr()) {
@@ -229,8 +229,8 @@ namespace ecliptix::protocol::chain_step {
                 return Result<Unit, EcliptixProtocolFailure>::Err(
                     EcliptixProtocolFailure::Generic("Failed to update chain key"));
             }
-            // For skip case, increment current_index_ after deriving the key
-            // For in-order case, it was already incremented in GetOrDeriveKeyFor
+            
+            
             if (index == current_index_) {
                 current_index_++;
             }
@@ -259,7 +259,7 @@ namespace ecliptix::protocol::chain_step {
                     std::to_string(index) + ", max: " + std::to_string(ProtocolConstants::MAX_CHAIN_LENGTH) + ")"));
         }
         if (index > current_index_) {
-            if (auto skip_result = SkipKeysUntil(index); skip_result.IsErr()) {
+            if (auto skip_result = SkipKeysUntilLocked(index); skip_result.IsErr()) {
                 return Result<RatchetChainKey, EcliptixProtocolFailure>::Err(skip_result.UnwrapErr());
             }
         } else if (index == current_index_) {
@@ -300,6 +300,14 @@ namespace ecliptix::protocol::chain_step {
     }
 
     Result<Unit, EcliptixProtocolFailure> EcliptixProtocolChainStep::SkipKeysUntil(uint32_t target_index) {
+        std::lock_guard guard(*lock_);
+        if (auto disposed_check = CheckDisposed(); disposed_check.IsErr()) {
+            return disposed_check;
+        }
+        return SkipKeysUntilLocked(target_index);
+    }
+
+    Result<Unit, EcliptixProtocolFailure> EcliptixProtocolChainStep::SkipKeysUntilLocked(uint32_t target_index) {
         if (target_index <= current_index_) {
             return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
         }
@@ -313,7 +321,7 @@ namespace ecliptix::protocol::chain_step {
             return Result<Unit, EcliptixProtocolFailure>::Err(chain_key_result.UnwrapErr());
         }
         auto mut_chain_key = std::move(chain_key_result).Unwrap();
-        // Derive and cache message keys for every index up to (but not including) the target
+        
         for (uint32_t i = current_index_; i < target_index; ++i) {
             std::vector<uint8_t> message_key(Constants::X_25519_KEY_SIZE);
             std::vector<uint8_t> next_chain_key(Constants::X_25519_KEY_SIZE);

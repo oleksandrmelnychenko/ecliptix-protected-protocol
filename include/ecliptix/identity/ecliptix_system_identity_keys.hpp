@@ -10,6 +10,8 @@
 #include <optional>
 #include <span>
 #include <string_view>
+#include <shared_mutex>
+#include <memory>
 namespace ecliptix::protocol::identity {
 using protocol::Result;
 using protocol::Unit;
@@ -38,12 +40,8 @@ public:
     [[nodiscard]] Result<SecureMemoryHandle, EcliptixProtocolFailure> CloneKyberSecretKey() const;
 
     // Getters for X3DH keys used in Double Ratchet initialization
-    [[nodiscard]] std::optional<std::vector<uint8_t>> GetEphemeralX25519PublicKeyCopy() const {
-        return ephemeral_x25519_public_key_;
-    }
-    [[nodiscard]] std::vector<uint8_t> GetSignedPreKeyPublicCopy() const {
-        return signed_pre_key_public_;
-    }
+    [[nodiscard]] std::optional<std::vector<uint8_t>> GetEphemeralX25519PublicKeyCopy() const;
+    [[nodiscard]] std::vector<uint8_t> GetSignedPreKeyPublicCopy() const;
 
     // Private key getters for Double Ratchet chain initialization
     [[nodiscard]] Result<std::vector<uint8_t>, EcliptixProtocolFailure> GetEphemeralX25519PrivateKeyCopy() const;
@@ -67,15 +65,9 @@ public:
         std::span<const uint8_t> remote_spk_signature);
     // OPK ID selection for proper X3DH handshake
     [[nodiscard]] const OneTimePreKeyLocal* FindOneTimePreKeyById(uint32_t opk_id) const;
-    [[nodiscard]] std::optional<uint32_t> GetSelectedOpkId() const noexcept {
-        return selected_opk_id_;
-    }
-    void SetSelectedOpkId(uint32_t opk_id) {
-        selected_opk_id_ = opk_id;
-    }
-    void ClearSelectedOpkId() {
-        selected_opk_id_.reset();
-    }
+    [[nodiscard]] std::optional<uint32_t> GetSelectedOpkId() const;
+    void SetSelectedOpkId(uint32_t opk_id);
+    void ClearSelectedOpkId();
     void ClearEphemeralKeyPair();
     EcliptixSystemIdentityKeys(EcliptixSystemIdentityKeys&&) noexcept = default;
     EcliptixSystemIdentityKeys& operator=(EcliptixSystemIdentityKeys&&) noexcept = default;
@@ -111,6 +103,11 @@ private:
         const LocalPublicKeyBundle& remote_bundle,
         std::optional<uint32_t> used_opk_id,
         std::span<uint8_t> dh_results_output);
+    [[nodiscard]] const OneTimePreKeyLocal* FindOneTimePreKeyByIdLocked(uint32_t opk_id) const;
+    [[nodiscard]] Result<Unit, EcliptixProtocolFailure> ConsumeOneTimePreKeyByIdLocked(uint32_t opk_id);
+    [[nodiscard]] Result<HybridHandshakeArtifacts, EcliptixProtocolFailure> DecapsulateKyberCiphertextLocked(
+        std::span<const uint8_t> ciphertext) const;
+    void ClearEphemeralKeyPairLocked();
     SecureMemoryHandle ed25519_secret_key_handle_;
     std::vector<uint8_t> ed25519_public_key_;
     SecureMemoryHandle identity_x25519_secret_key_handle_;
@@ -126,5 +123,6 @@ private:
     std::optional<SecureMemoryHandle> ephemeral_secret_key_handle_;
     std::optional<std::vector<uint8_t>> ephemeral_x25519_public_key_;
     std::optional<uint32_t> selected_opk_id_;
+    mutable std::unique_ptr<std::shared_mutex> lock_;
 };
 } 

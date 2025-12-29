@@ -32,22 +32,28 @@ namespace ecliptix::protocol::identity {
           , kyber_public_key_(std::move(material.kyber_public_key))
           , pending_kyber_handshake_(std::nullopt)
           , ephemeral_secret_key_handle_(std::nullopt)
-          , ephemeral_x25519_public_key_(std::nullopt) {
+          , ephemeral_x25519_public_key_(std::nullopt)
+          , selected_opk_id_(std::nullopt)
+          , lock_(std::make_unique<std::shared_mutex>()) {
     }
 
     std::vector<uint8_t> EcliptixSystemIdentityKeys::GetIdentityX25519PublicKeyCopy() const {
+        std::shared_lock lock(*lock_);
         return identity_x25519_public_key_;
     }
 
     std::vector<uint8_t> EcliptixSystemIdentityKeys::GetIdentityEd25519PublicKeyCopy() const {
+        std::shared_lock lock(*lock_);
         return ed25519_public_key_;
     }
 
     std::vector<uint8_t> EcliptixSystemIdentityKeys::GetKyberPublicKeyCopy() const {
+        std::shared_lock lock(*lock_);
         return kyber_public_key_;
     }
 
     Result<SecureMemoryHandle, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::CloneKyberSecretKey() const {
+        std::shared_lock lock(*lock_);
         auto read_result = kyber_secret_key_handle_.ReadBytes(KyberInterop::KYBER_768_SECRET_KEY_SIZE);
         if (read_result.IsErr()) {
             return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
@@ -71,6 +77,7 @@ namespace ecliptix::protocol::identity {
 
     Result<std::vector<uint8_t>, EcliptixProtocolFailure>
     EcliptixSystemIdentityKeys::GetEphemeralX25519PrivateKeyCopy() const {
+        std::shared_lock lock(*lock_);
         if (!ephemeral_secret_key_handle_.has_value()) {
             return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic("Ephemeral key has not been generated"));
@@ -85,12 +92,40 @@ namespace ecliptix::protocol::identity {
 
     Result<std::vector<uint8_t>, EcliptixProtocolFailure>
     EcliptixSystemIdentityKeys::GetSignedPreKeyPrivateCopy() const {
+        std::shared_lock lock(*lock_);
         auto read_result = signed_pre_key_secret_key_handle_.ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
         if (read_result.IsErr()) {
             return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::FromSodiumFailure(read_result.UnwrapErr()));
         }
         return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Ok(read_result.Unwrap());
+    }
+
+    std::optional<std::vector<uint8_t>>
+    EcliptixSystemIdentityKeys::GetEphemeralX25519PublicKeyCopy() const {
+        std::shared_lock lock(*lock_);
+        return ephemeral_x25519_public_key_;
+    }
+
+    std::vector<uint8_t>
+    EcliptixSystemIdentityKeys::GetSignedPreKeyPublicCopy() const {
+        std::shared_lock lock(*lock_);
+        return signed_pre_key_public_;
+    }
+
+    std::optional<uint32_t> EcliptixSystemIdentityKeys::GetSelectedOpkId() const {
+        std::shared_lock lock(*lock_);
+        return selected_opk_id_;
+    }
+
+    void EcliptixSystemIdentityKeys::SetSelectedOpkId(uint32_t opk_id) {
+        std::unique_lock lock(*lock_);
+        selected_opk_id_ = opk_id;
+    }
+
+    void EcliptixSystemIdentityKeys::ClearSelectedOpkId() {
+        std::unique_lock lock(*lock_);
+        selected_opk_id_.reset();
     }
 
     Result<Ed25519KeyMaterial, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::GenerateEd25519Keys() {
@@ -368,6 +403,7 @@ namespace ecliptix::protocol::identity {
     }
 
     Result<LocalPublicKeyBundle, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::CreatePublicBundle() const {
+        std::shared_lock lock(*lock_);
         std::vector<OneTimePreKeyRecord> opk_records;
         opk_records.reserve(one_time_pre_keys_.size());
         for (const auto &opk: one_time_pre_keys_) {
@@ -386,9 +422,10 @@ namespace ecliptix::protocol::identity {
     }
 
     void EcliptixSystemIdentityKeys::GenerateEphemeralKeyPair() {
-        // Only generate if we don't already have an ephemeral key
+        std::unique_lock lock(*lock_);
+        
         if (ephemeral_secret_key_handle_.has_value() && ephemeral_x25519_public_key_.has_value()) {
-            return;  // Already have ephemeral key, don't regenerate
+            return;  
         }
 
         ephemeral_secret_key_handle_.reset();
@@ -404,8 +441,13 @@ namespace ecliptix::protocol::identity {
     }
 
     void EcliptixSystemIdentityKeys::ClearEphemeralKeyPair() {
-        // SecureMemoryHandle automatically wipes memory in its destructor via sodium_free()
-        // Calling reset() on the optional destroys the handle, triggering secure cleanup
+        std::unique_lock lock(*lock_);
+        ClearEphemeralKeyPairLocked();
+    }
+
+    void EcliptixSystemIdentityKeys::ClearEphemeralKeyPairLocked() {
+        
+        
         if (ephemeral_secret_key_handle_.has_value()) {
             ephemeral_secret_key_handle_.reset();
         }
@@ -486,7 +528,7 @@ namespace ecliptix::protocol::identity {
         return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
     }
 
-    const OneTimePreKeyLocal* EcliptixSystemIdentityKeys::FindOneTimePreKeyById(uint32_t opk_id) const {
+    const OneTimePreKeyLocal* EcliptixSystemIdentityKeys::FindOneTimePreKeyByIdLocked(uint32_t opk_id) const {
         for (const auto& opk : one_time_pre_keys_) {
             if (opk.GetPreKeyId() == opk_id) {
                 return &opk;
@@ -495,17 +537,36 @@ namespace ecliptix::protocol::identity {
         return nullptr;
     }
 
+    Result<Unit, EcliptixProtocolFailure>
+    EcliptixSystemIdentityKeys::ConsumeOneTimePreKeyByIdLocked(uint32_t opk_id) {
+        auto it = std::find_if(one_time_pre_keys_.begin(), one_time_pre_keys_.end(),
+                               [opk_id](const OneTimePreKeyLocal &opk) {
+                                   return opk.GetPreKeyId() == opk_id;
+                               });
+        if (it == one_time_pre_keys_.end()) {
+            return Result<Unit, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::InvalidInput("OPK with requested ID not found"));
+        }
+        one_time_pre_keys_.erase(it);
+        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+    }
+
+    const OneTimePreKeyLocal* EcliptixSystemIdentityKeys::FindOneTimePreKeyById(uint32_t opk_id) const {
+        std::shared_lock lock(*lock_);
+        return FindOneTimePreKeyByIdLocked(opk_id);
+    }
+
     Result<size_t, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::PerformX3dhDiffieHellmanAsInitiator(
         const std::span<const uint8_t> ephemeral_secret,
         const std::span<const uint8_t> identity_secret,
         const LocalPublicKeyBundle &remote_bundle,
         std::optional<uint32_t> opk_id,
         std::span<uint8_t> dh_results_output) {
-        // INITIATOR (Client) X3DH:
-        // DH1 = identity_secret × peer.SignedPreKeyPublic
-        // DH2 = ephemeral_secret × peer.IdentityX25519
-        // DH3 = ephemeral_secret × peer.SignedPreKeyPublic
-        // DH4 = ephemeral_secret × peer.OneTimePreKey[opk_id] (if specified)
+        
+        
+        
+        
+        
 
         fprintf(stderr, "[X3DH-INITIATOR] Starting initiator DH calculations\n");
         fprintf(stderr, "[X3DH-INITIATOR] peer_spk prefix: %02x%02x%02x%02x (size=%zu)\n",
@@ -557,9 +618,9 @@ namespace ecliptix::protocol::identity {
         std::memcpy(dh_results_output.data() + offset, dh3.data(), Constants::X_25519_KEY_SIZE);
         offset += Constants::X_25519_KEY_SIZE;
         SodiumInterop::SecureWipe(std::span(dh3));
-        // DH4 = ephemeral_secret × peer.OneTimePreKey[opk_id]
+        
         if (opk_id.has_value() && remote_bundle.HasOneTimePreKeys()) {
-            // Find OPK by ID in peer's bundle
+            
             const OneTimePreKeyRecord* target_opk = nullptr;
             for (const auto& opk : remote_bundle.GetOneTimePreKeys()) {
                 if (opk.GetPreKeyId() == opk_id.value()) {
@@ -601,11 +662,11 @@ namespace ecliptix::protocol::identity {
         const LocalPublicKeyBundle &remote_bundle,
         std::optional<uint32_t> used_opk_id,
         std::span<uint8_t> dh_results_output) {
-        // RESPONDER (Server) X3DH:
-        // DH1 = SPK_secret × peer.IdentityX25519 (my signed pre-key with their identity)
-        // DH2 = Identity_secret × peer.EphemeralX25519 (my identity with their ephemeral)
-        // DH3 = SPK_secret × peer.EphemeralX25519 (my signed pre-key with their ephemeral)
-        // DH4 = OPK_secret × peer.EphemeralX25519 (if initiator used an OPK, look up by ID)
+        
+        
+        
+        
+        
 
         fprintf(stderr, "[X3DH-RESPONDER] Starting responder DH calculations\n");
 
@@ -627,7 +688,7 @@ namespace ecliptix::protocol::identity {
         fprintf(stderr, "[X3DH-RESPONDER] my_identity_public prefix: %02x%02x%02x%02x\n",
             identity_x25519_public_key_[0], identity_x25519_public_key_[1], identity_x25519_public_key_[2], identity_x25519_public_key_[3]);
 
-        // Read our SPK secret
+        
         auto spk_read_result = signed_pre_key_secret_key_handle_.ReadBytes(
             Constants::X_25519_PRIVATE_KEY_SIZE);
         if (spk_read_result.IsErr()) {
@@ -636,7 +697,7 @@ namespace ecliptix::protocol::identity {
         }
         auto spk_secret = std::move(spk_read_result).Unwrap();
 
-        // Read our identity secret
+        
         auto id_read_result = identity_x25519_secret_key_handle_.ReadBytes(
             Constants::X_25519_PRIVATE_KEY_SIZE);
         if (id_read_result.IsErr()) {
@@ -648,7 +709,7 @@ namespace ecliptix::protocol::identity {
 
         size_t offset = 0;
 
-        // DH1 = SPK_secret × peer.IdentityX25519
+        
         std::vector<uint8_t> dh1(Constants::X_25519_KEY_SIZE);
         if (crypto_scalarmult(dh1.data(), spk_secret.data(), peer_identity.data()) != 0) {
             SodiumInterop::SecureWipe(std::span(spk_secret));
@@ -662,7 +723,7 @@ namespace ecliptix::protocol::identity {
         offset += Constants::X_25519_KEY_SIZE;
         SodiumInterop::SecureWipe(std::span(dh1));
 
-        // DH2 = Identity_secret × peer.EphemeralX25519
+        
         std::vector<uint8_t> dh2(Constants::X_25519_KEY_SIZE);
         if (crypto_scalarmult(dh2.data(), identity_secret.data(), peer_ephemeral.data()) != 0) {
             SodiumInterop::SecureWipe(std::span(spk_secret));
@@ -676,7 +737,7 @@ namespace ecliptix::protocol::identity {
         offset += Constants::X_25519_KEY_SIZE;
         SodiumInterop::SecureWipe(std::span(dh2));
 
-        // DH3 = SPK_secret × peer.EphemeralX25519
+        
         std::vector<uint8_t> dh3(Constants::X_25519_KEY_SIZE);
         if (crypto_scalarmult(dh3.data(), spk_secret.data(), peer_ephemeral.data()) != 0) {
             SodiumInterop::SecureWipe(std::span(spk_secret));
@@ -690,12 +751,12 @@ namespace ecliptix::protocol::identity {
         offset += Constants::X_25519_KEY_SIZE;
         SodiumInterop::SecureWipe(std::span(dh3));
 
-        // DH4 = OPK_secret × peer.EphemeralX25519 (if initiator used an OPK)
-        // Only compute DH4 if the initiator explicitly communicated an OPK ID
-        // In 1-RTT fallback mode, no OPK is used (client doesn't have server's OPKs)
+        
+        
+        
         if (used_opk_id.has_value()) {
             fprintf(stderr, "[X3DH-RESPONDER] Initiator used OPK ID: %u\n", used_opk_id.value());
-            const OneTimePreKeyLocal* opk = FindOneTimePreKeyById(used_opk_id.value());
+            const OneTimePreKeyLocal* opk = FindOneTimePreKeyByIdLocked(used_opk_id.value());
             if (!opk) {
                 SodiumInterop::SecureWipe(std::span(spk_secret));
                 SodiumInterop::SecureWipe(std::span(identity_secret));
@@ -731,7 +792,7 @@ namespace ecliptix::protocol::identity {
             fprintf(stderr, "[X3DH-RESPONDER] No OPK ID provided by initiator, skipping DH4\n");
         }
 
-        // Clean up secrets
+        
         SodiumInterop::SecureWipe(std::span(spk_secret));
         SodiumInterop::SecureWipe(std::span(identity_secret));
 
@@ -743,6 +804,7 @@ namespace ecliptix::protocol::identity {
         const LocalPublicKeyBundle &remote_bundle,
         std::span<const uint8_t> info,
         bool is_initiator) {
+        std::unique_lock lock(*lock_);
         if (auto validation_result = ValidateX3dhPrerequisites(remote_bundle, info); validation_result.IsErr()) {
             return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
                 validation_result.UnwrapErr());
@@ -754,9 +816,10 @@ namespace ecliptix::protocol::identity {
 
         std::vector<uint8_t> dh_results(Constants::X_25519_KEY_SIZE * 4);
         size_t dh_offset = 0;
+        std::optional<uint32_t> used_opk_id;
 
         if (is_initiator) {
-            // INITIATOR path: use ephemeral and identity secrets with peer's SPK/IK
+            
             auto eph_read_result = ephemeral_secret_key_handle_.value().ReadBytes(
                 Constants::X_25519_PRIVATE_KEY_SIZE);
             if (eph_read_result.IsErr()) {
@@ -773,26 +836,29 @@ namespace ecliptix::protocol::identity {
             }
             auto identity_secret = std::move(id_read_result).Unwrap();
 
-            // Determine which OPK to use:
-            // 1. Server specified used_one_time_pre_key_id (1-RTT mode) - use that
-            // 2. Server sent OPKs without specifying (2-RTT mode) - client selects first
-            // 3. No OPKs available - skip DH4
+            
+            
+            
+            
             std::optional<uint32_t> opk_to_use = remote_bundle.GetUsedOpkId();
-            if (!opk_to_use.has_value() && remote_bundle.HasOneTimePreKeys() &&
-                !remote_bundle.GetOneTimePreKeys().empty()) {
-                // 2-RTT fallback: client selects first OPK
-                opk_to_use = remote_bundle.GetOneTimePreKeys()[0].GetPreKeyId();
+            const char *opk_source = nullptr;
+            if (opk_to_use.has_value()) {
+                opk_source = "server pre-selected";
+            } else if (selected_opk_id_.has_value()) {
+                opk_to_use = selected_opk_id_;
+                opk_source = "client selected";
             }
             bool use_opk = opk_to_use.has_value();
 
             if (use_opk) {
                 selected_opk_id_ = opk_to_use.value();
+                used_opk_id = opk_to_use;
                 fprintf(stderr, "[X3DH] Initiator using OPK ID: %u (source: %s)\n",
                     opk_to_use.value(),
-                    remote_bundle.GetUsedOpkId().has_value() ? "server pre-selected" : "client selected");
+                    opk_source ? opk_source : "unknown");
             } else {
                 selected_opk_id_.reset();
-                fprintf(stderr, "[X3DH] Initiator: no OPK available, skipping DH4\n");
+                fprintf(stderr, "[X3DH] Initiator: no explicit OPK selected, skipping DH4\n");
             }
 
             auto dh_result = PerformX3dhDiffieHellmanAsInitiator(
@@ -810,12 +876,12 @@ namespace ecliptix::protocol::identity {
             }
             dh_offset = std::move(dh_result).Unwrap();
         } else {
-            // RESPONDER path: use SPK and identity secrets with peer's ephemeral/IK
-            // In 1-RTT mode, server pre-selects OPK - use that instead of client's bundle
-            // In 2-RTT mode, client would tell us which OPK they used via remote_bundle
-            std::optional<uint32_t> used_opk_id = selected_opk_id_.has_value()
-                ? selected_opk_id_  // Server pre-selected OPK (1-RTT mode)
-                : remote_bundle.GetUsedOpkId();  // Client-selected OPK (2-RTT mode)
+            
+            
+            
+            used_opk_id = selected_opk_id_.has_value()
+                ? selected_opk_id_  
+                : remote_bundle.GetUsedOpkId();  
             fprintf(stderr, "[X3DH] Responder using OPK ID: %s (source: %s)\n",
                 used_opk_id.has_value() ? std::to_string(used_opk_id.value()).c_str() : "none",
                 selected_opk_id_.has_value() ? "server pre-selected" : "client bundle");
@@ -841,20 +907,20 @@ namespace ecliptix::protocol::identity {
                 hkdf_result.UnwrapErr());
         }
 
-        // Check if we already have stored Kyber artifacts (from BeginHandshakeWithPeerKyber)
+        
         std::vector<uint8_t> kyber_ciphertext;
         std::vector<uint8_t> kyber_ss_bytes;
         bool used_stored_artifacts = false;
 
         if (pending_kyber_handshake_.has_value()) {
-            // Case 1: SERVER - Use pre-stored artifacts from BeginHandshakeWithPeerKyber
+            
             kyber_ciphertext = pending_kyber_handshake_->kyber_ciphertext;
             kyber_ss_bytes = pending_kyber_handshake_->kyber_shared_secret;
             used_stored_artifacts = true;
         } else if (remote_bundle.HasKyberCiphertext()) {
-            // Case 2: CLIENT - Peer sent ciphertext, DECAPSULATE to get shared secret
+            
             const auto& peer_ciphertext = remote_bundle.GetKyberCiphertext().value();
-            auto decap_result = DecapsulateKyberCiphertext(
+            auto decap_result = DecapsulateKyberCiphertextLocked(
                 std::span<const uint8_t>(peer_ciphertext.data(), peer_ciphertext.size()));
             if (decap_result.IsErr()) {
                 SodiumInterop::SecureWipe(std::span(classical_shared));
@@ -864,10 +930,10 @@ namespace ecliptix::protocol::identity {
             auto artifacts = std::move(decap_result).Unwrap();
             kyber_ciphertext = std::move(artifacts.kyber_ciphertext);
             kyber_ss_bytes = std::move(artifacts.kyber_shared_secret);
-            // Store artifacts so they can be consumed by complete_handshake_auto
+            
             used_stored_artifacts = false;
         } else {
-            // Case 3: Fallback - Encapsulate to peer's Kyber public key
+            
             const auto &remote_kyber_public = remote_bundle.GetKyberPublicKey().value();
             auto encaps_result = KyberInterop::Encapsulate(remote_kyber_public);
             if (encaps_result.IsErr()) {
@@ -900,7 +966,7 @@ namespace ecliptix::protocol::identity {
                 hybrid_result.UnwrapErr());
         }
 
-        // Only store artifacts if we freshly encapsulated (not if we used stored ones)
+        
         if (!used_stored_artifacts) {
             pending_kyber_handshake_ = HybridHandshakeArtifacts{
                 std::move(kyber_ciphertext),
@@ -911,9 +977,18 @@ namespace ecliptix::protocol::identity {
         (void) _wipe_pq;
         auto handle = std::move(hybrid_result).Unwrap();
 
-        // Clear ephemeral key after use - ephemeral keys are single-use per Signal Protocol
+        
         if (is_initiator) {
-            ClearEphemeralKeyPair();
+            ClearEphemeralKeyPairLocked();
+        }
+
+        Result<Unit, EcliptixProtocolFailure> consume_result = Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        if (!is_initiator && used_opk_id.has_value()) {
+            consume_result = ConsumeOneTimePreKeyByIdLocked(used_opk_id.value());
+        }
+        selected_opk_id_.reset();
+        if (consume_result.IsErr()) {
+            return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(consume_result.UnwrapErr());
         }
 
         return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Ok(std::move(handle));
@@ -921,6 +996,7 @@ namespace ecliptix::protocol::identity {
 
     Result<EcliptixSystemIdentityKeys::HybridHandshakeArtifacts, EcliptixProtocolFailure>
     EcliptixSystemIdentityKeys::ConsumePendingKyberHandshake() {
+        std::unique_lock lock(*lock_);
         if (!pending_kyber_handshake_.has_value()) {
             return Result<HybridHandshakeArtifacts, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::InvalidInput("No pending Kyber handshake data"));
@@ -933,6 +1009,7 @@ namespace ecliptix::protocol::identity {
     void EcliptixSystemIdentityKeys::StorePendingKyberHandshake(
         std::vector<uint8_t> kyber_ciphertext,
         std::vector<uint8_t> kyber_shared_secret) {
+        std::unique_lock lock(*lock_);
         pending_kyber_handshake_ = HybridHandshakeArtifacts{
             std::move(kyber_ciphertext),
             std::move(kyber_shared_secret)
@@ -941,6 +1018,7 @@ namespace ecliptix::protocol::identity {
 
     Result<std::vector<uint8_t>, EcliptixProtocolFailure>
     EcliptixSystemIdentityKeys::GetPendingKyberCiphertext() const {
+        std::shared_lock lock(*lock_);
         if (!pending_kyber_handshake_.has_value()) {
             return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::InvalidInput("No pending Kyber handshake data"));
@@ -951,6 +1029,12 @@ namespace ecliptix::protocol::identity {
 
     Result<EcliptixSystemIdentityKeys::HybridHandshakeArtifacts, EcliptixProtocolFailure>
     EcliptixSystemIdentityKeys::DecapsulateKyberCiphertext(std::span<const uint8_t> ciphertext) const {
+        std::shared_lock lock(*lock_);
+        return DecapsulateKyberCiphertextLocked(ciphertext);
+    }
+
+    Result<EcliptixSystemIdentityKeys::HybridHandshakeArtifacts, EcliptixProtocolFailure>
+    EcliptixSystemIdentityKeys::DecapsulateKyberCiphertextLocked(std::span<const uint8_t> ciphertext) const {
         auto validate_result = KyberInterop::ValidateCiphertext(ciphertext);
         if (validate_result.IsErr()) {
             return Result<HybridHandshakeArtifacts, EcliptixProtocolFailure>::Err(
