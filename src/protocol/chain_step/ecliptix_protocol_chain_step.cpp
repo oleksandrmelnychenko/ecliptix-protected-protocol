@@ -488,7 +488,7 @@ namespace ecliptix::protocol::chain_step {
         }
         SecureMemoryHandle handle = std::move(it->second);
         cached_message_keys_.erase(it);
-        return std::move(handle);
+        return handle;
     }
 
     Result<Unit, EcliptixProtocolFailure> EcliptixProtocolChainStep::CheckDisposed() const {
