@@ -24,6 +24,13 @@ option(ECLIPTIX_BUILD_CLIENT_TARGET "Build client (desktop/mobile) target with C
 option(ECLIPTIX_BUILD_SERVER_TARGET "Build server target (core only)" ON)
 
 # ============================================================================
+# Position Independent Code (required for shared libraries)
+# ============================================================================
+if(ECLIPTIX_BUILD_SHARED)
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
+
+# ============================================================================
 # Compiler Warnings and Security Hardening
 # ============================================================================
 if(MSVC)
