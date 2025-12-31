@@ -7,6 +7,8 @@
 #include <span>
 #include <cstddef>
 #include <memory>
+#include <mutex>
+#include <atomic>
 namespace ecliptix::protocol::crypto {
 class SecureMemoryHandle;
 class SodiumInterop {
