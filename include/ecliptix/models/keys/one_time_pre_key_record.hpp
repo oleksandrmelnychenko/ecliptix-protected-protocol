@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include <cstdint>
+#include <optional>
 #include <span>
 namespace ecliptix::protocol::models {
 class OneTimePreKeyRecord {
