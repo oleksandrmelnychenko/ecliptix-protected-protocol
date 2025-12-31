@@ -11,6 +11,10 @@ on:
         required: true
         default: '1.0.0'
 
+permissions:
+  contents: read
+  packages: write
+
 env:
   DOTNET_VERSION: '8.0.x'
   VCPKG_BINARY_SOURCES: 'clear;x-gha,readwrite'
@@ -138,6 +142,9 @@ jobs:
   build-nuget:
     needs: build-native
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
 
@@ -145,6 +152,9 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+          source-url: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
+        env:
+          NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download all native libraries
         uses: actions/download-artifact@v4
