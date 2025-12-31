@@ -2,6 +2,7 @@
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/core/constants.hpp"
 #include <algorithm>
+#include <cstring>
 
 namespace ecliptix::protocol::crypto {
     Result<SecureMemoryHandle, SodiumFailure> SecureMemoryHandle::Allocate(const size_t size) {
