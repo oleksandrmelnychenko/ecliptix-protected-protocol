@@ -73,9 +73,36 @@ jobs:
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          vcpkg install libsodium:x64-windows protobuf:x64-windows liboqs:x64-windows
-          vcpkg install libsodium:x86-windows protobuf:x86-windows liboqs:x86-windows
+          $ErrorActionPreference = "Stop"
+          $deps = "$env:GITHUB_WORKSPACE\deps"
+          New-Item -ItemType Directory -Force -Path $deps | Out-Null
+
+          # Determine architecture
+          $arch = if ("${{ matrix.rid }}" -eq "win-x86") { "Win32" } else { "x64" }
+          $archLower = if ("${{ matrix.rid }}" -eq "win-x86") { "x86" } else { "x64" }
+
+          # Download libsodium (pre-built MSVC)
+          Write-Host "Downloading libsodium..."
+          Invoke-WebRequest -Uri "https://download.libsodium.org/libsodium/releases/libsodium-1.0.20-stable-msvc.zip" -OutFile "$deps\libsodium.zip"
+          Expand-Archive -Path "$deps\libsodium.zip" -DestinationPath "$deps\libsodium-extract"
+          Move-Item "$deps\libsodium-extract\libsodium" "$deps\libsodium"
+
+          # Download protobuf (pre-built)
+          Write-Host "Downloading protobuf..."
+          Invoke-WebRequest -Uri "https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protobuf-29.3-win64.zip" -OutFile "$deps\protobuf.zip"
+          Expand-Archive -Path "$deps\protobuf.zip" -DestinationPath "$deps"
+
+          # Download liboqs (pre-built from vcpkg export or build separately)
+          # Using vcpkg just for liboqs as it's smaller
+          Write-Host "Installing liboqs via vcpkg..."
+          vcpkg install liboqs:$archLower-windows
+
+          # Set environment variables for CMake
+          echo "SODIUM_ROOT=$deps\libsodium" >> $env:GITHUB_ENV
+          echo "Protobuf_ROOT=$deps\protobuf-29.3-win64" >> $env:GITHUB_ENV
+          echo "CMAKE_PREFIX_PATH=$deps\libsodium;$deps\protobuf-29.3-win64;$env:VCPKG_INSTALLATION_ROOT\installed\$archLower-windows" >> $env:GITHUB_ENV
 
       - name: Configure CMake (Unix)
         if: runner.os != 'Windows'
@@ -89,13 +116,19 @@ jobs:
 
       - name: Configure CMake (Windows)
         if: runner.os == 'Windows'
+        shell: pwsh
         run: |
+          $arch = if ("${{ matrix.rid }}" -eq "win-x86") { "x86" } else { "x64" }
+          $sodiumLib = "$env:GITHUB_WORKSPACE\deps\libsodium\$arch"
+
           cmake -B build -S . `
             -DCMAKE_BUILD_TYPE=Release `
             -DECLIPTIX_BUILD_TESTS=OFF `
             -DECLIPTIX_BUILD_EXAMPLES=OFF `
             -DECLIPTIX_BUILD_SHARED=ON `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -Dsodium_DIR="$sodiumLib" `
+            -DCMAKE_PREFIX_PATH="$env:CMAKE_PREFIX_PATH" `
             ${{ matrix.cmake_arch }}
 
       - name: Build
