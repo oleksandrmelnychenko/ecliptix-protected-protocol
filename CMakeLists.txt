@@ -61,8 +61,12 @@ else()
         -Werror=format-security
     )
 
-    # Position-independent code for Release builds
-    if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    # Position-independent code
+    if(ECLIPTIX_BUILD_SHARED)
+        # Shared libraries require -fPIC on all object files
+        add_compile_options(-fPIC)
+    elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
+        # Executables use -fPIE for ASLR
         add_compile_options(-fPIE)
         add_link_options(-pie)
     endif()
