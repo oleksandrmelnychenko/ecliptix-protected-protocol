@@ -27,14 +27,15 @@ jobs:
             rid: linux-arm64
             lib_prefix: lib
             lib_ext: so
-          - os: macos-13
-            rid: osx-x64
-            lib_prefix: lib
-            lib_ext: dylib
           - os: macos-14
             rid: osx-arm64
             lib_prefix: lib
             lib_ext: dylib
+          - os: macos-14
+            rid: osx-x64
+            lib_prefix: lib
+            lib_ext: dylib
+            cmake_arch: -DCMAKE_OSX_ARCHITECTURES=x86_64
           - os: windows-latest
             rid: win-x64
             lib_prefix: ''
@@ -79,7 +80,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DECLIPTIX_BUILD_TESTS=OFF \
             -DECLIPTIX_BUILD_EXAMPLES=OFF \
-            -DECLIPTIX_BUILD_SHARED=ON
+            -DECLIPTIX_BUILD_SHARED=ON \
+            ${{ matrix.cmake_arch }}
 
       - name: Configure CMake (Windows)
         if: runner.os == 'Windows'
