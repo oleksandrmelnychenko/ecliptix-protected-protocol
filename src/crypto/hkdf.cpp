@@ -3,6 +3,7 @@
 #include <openssl/evp.h>
 #include <openssl/kdf.h>
 #include <openssl/params.h>
+#include <cstring>
 
 namespace ecliptix::protocol::crypto {
     using OpenSSL = OpenSSLConstants;

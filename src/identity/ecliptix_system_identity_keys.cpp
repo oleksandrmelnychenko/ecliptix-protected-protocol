@@ -6,6 +6,7 @@
 #include "ecliptix/crypto/kyber_interop.hpp"
 #include <sodium.h>
 #include <algorithm>
+#include <cstring>
 #include <unordered_set>
 
 namespace ecliptix::protocol::identity {
@@ -488,8 +489,12 @@ namespace ecliptix::protocol::identity {
         return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
     }
 
-    Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemoteBundle(
-        const LocalPublicKeyBundle &remote_bundle) {
+Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemoteBundle(
+    const LocalPublicKeyBundle &remote_bundle) {
+        if (remote_bundle.GetEd25519Public().size() != Constants::ED_25519_PUBLIC_KEY_SIZE) {
+            return Result<Unit, EcliptixProtocolFailure>::Err(
+                EcliptixProtocolFailure::PeerPubKey("Invalid remote Ed25519 identity key"));
+        }
         if (remote_bundle.GetIdentityX25519().size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
             return Result<Unit, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::PeerPubKey("Invalid remote identity X25519 key"));
@@ -497,6 +502,13 @@ namespace ecliptix::protocol::identity {
         if (remote_bundle.GetSignedPreKeyPublic().size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
             return Result<Unit, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::PeerPubKey("Invalid remote signed pre-key public key"));
+        }
+        auto verify_result = VerifyRemoteSpkSignature(
+            remote_bundle.GetEd25519Public(),
+            remote_bundle.GetSignedPreKeyPublic(),
+            remote_bundle.GetSignedPreKeySignature());
+        if (verify_result.IsErr()) {
+            return Result<Unit, EcliptixProtocolFailure>::Err(verify_result.UnwrapErr());
         }
         if (!remote_bundle.HasKyberKey() || !remote_bundle.GetKyberPublicKey().has_value() ||
             remote_bundle.GetKyberPublicKey()->size() != KyberInterop::KYBER_768_PUBLIC_KEY_SIZE) {

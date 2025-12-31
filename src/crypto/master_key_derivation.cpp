@@ -1,5 +1,6 @@
 #include "ecliptix/crypto/master_key_derivation.hpp"
 #include <sodium.h>
+#include <cstring>
 
 namespace ecliptix::protocol::crypto {
     std::vector<uint8_t> MasterKeyDerivation::DeriveEd25519Seed(
