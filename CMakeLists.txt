@@ -29,14 +29,23 @@ option(ECLIPTIX_BUILD_SERVER_TARGET "Build server target (core only)" ON)
 if(MSVC)
     add_compile_options(/W4 /WX)
 else()
+    # Common warnings for GCC/Clang
     add_compile_options(
-        -Wall -Wextra -Wpedantic -Werror
+        -Wall -Wextra -Werror
         -Wno-unused-parameter
         -Wno-missing-field-initializers
-        -Wno-gnu-statement-expression-from-macro-expansion
     )
 
-    # Security hardening flags
+    # Clang-specific: enable -Wpedantic with GNU extension exception
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        add_compile_options(
+            -Wpedantic
+            -Wno-gnu-statement-expression-from-macro-expansion
+        )
+    endif()
+    # GCC: skip -Wpedantic as it rejects GNU statement expressions used by TRY macro
+
+    # Security hardening flags (GCC/Clang)
     add_compile_options(
         -fstack-protector-strong
         -D_FORTIFY_SOURCE=2
