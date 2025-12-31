@@ -32,10 +32,12 @@ jobs:
             rid: osx-arm64
             lib_prefix: lib
             lib_ext: dylib
-          - os: windows-latest
-            rid: win-x64
-            lib_prefix: ''
-            lib_ext: dll
+          # Windows disabled temporarily - vcpkg builds take 40+ min
+          # TODO: Add pre-built dependencies or use NuGet packages
+          # - os: windows-latest
+          #   rid: win-x64
+          #   lib_prefix: ''
+          #   lib_ext: dll
 
     runs-on: ${{ matrix.os }}
     steps:
