@@ -1,0 +1,219 @@
+name: Build and Publish NuGet Packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version (e.g., 1.0.0)'
+        required: true
+        default: '1.0.0'
+
+env:
+  DOTNET_VERSION: '8.0.x'
+
+jobs:
+  build-native:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+            lib_prefix: lib
+            lib_ext: so
+          - os: ubuntu-24.04-arm
+            rid: linux-arm64
+            lib_prefix: lib
+            lib_ext: so
+          - os: macos-13
+            rid: osx-x64
+            lib_prefix: lib
+            lib_ext: dylib
+          - os: macos-14
+            rid: osx-arm64
+            lib_prefix: lib
+            lib_ext: dylib
+          - os: windows-latest
+            rid: win-x64
+            lib_prefix: ''
+            lib_ext: dll
+          - os: windows-latest
+            rid: win-x86
+            lib_prefix: ''
+            lib_ext: dll
+            cmake_arch: -A Win32
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsodium-dev protobuf-compiler libprotobuf-dev
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install libsodium protobuf pkg-config
+
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          vcpkg install libsodium:x64-windows protobuf:x64-windows
+          vcpkg install libsodium:x86-windows protobuf:x86-windows
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -S . \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DECLIPTIX_BUILD_TESTS=OFF \
+            -DECLIPTIX_BUILD_EXAMPLES=OFF \
+            -DECLIPTIX_BUILD_SHARED=ON \
+            ${{ matrix.cmake_arch }}
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Strip symbols (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            strip --strip-debug build/${{ matrix.lib_prefix }}ecliptix_protocol.${{ matrix.lib_ext }} || true
+            strip --strip-debug build/${{ matrix.lib_prefix }}ecliptix_protocol_server.${{ matrix.lib_ext }} || true
+          else
+            strip -x build/${{ matrix.lib_prefix }}ecliptix_protocol.${{ matrix.lib_ext }} || true
+            strip -x build/${{ matrix.lib_prefix }}ecliptix_protocol_server.${{ matrix.lib_ext }} || true
+          fi
+
+      - name: Upload native libraries
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.rid }}
+          path: |
+            build/${{ matrix.lib_prefix }}ecliptix_protocol.${{ matrix.lib_ext }}
+            build/${{ matrix.lib_prefix }}ecliptix_protocol_server.${{ matrix.lib_ext }}
+
+  build-nuget:
+    needs: build-native
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Download all native libraries
+        uses: actions/download-artifact@v4
+        with:
+          path: native-artifacts
+
+      - name: Organize native libraries
+        run: |
+          # Linux x64
+          mkdir -p nuget/Ecliptix.Protocol.Client/runtimes/linux-x64/native
+          mkdir -p nuget/Ecliptix.Protocol.Server/runtimes/linux-x64/native
+          cp native-artifacts/native-linux-x64/libecliptix_protocol.so nuget/Ecliptix.Protocol.Client/runtimes/linux-x64/native/ || true
+          cp native-artifacts/native-linux-x64/libecliptix_protocol_server.so nuget/Ecliptix.Protocol.Server/runtimes/linux-x64/native/ || true
+
+          # Linux arm64
+          mkdir -p nuget/Ecliptix.Protocol.Client/runtimes/linux-arm64/native
+          mkdir -p nuget/Ecliptix.Protocol.Server/runtimes/linux-arm64/native
+          cp native-artifacts/native-linux-arm64/libecliptix_protocol.so nuget/Ecliptix.Protocol.Client/runtimes/linux-arm64/native/ || true
+          cp native-artifacts/native-linux-arm64/libecliptix_protocol_server.so nuget/Ecliptix.Protocol.Server/runtimes/linux-arm64/native/ || true
+
+          # macOS x64
+          mkdir -p nuget/Ecliptix.Protocol.Client/runtimes/osx-x64/native
+          mkdir -p nuget/Ecliptix.Protocol.Server/runtimes/osx-x64/native
+          cp native-artifacts/native-osx-x64/libecliptix_protocol.dylib nuget/Ecliptix.Protocol.Client/runtimes/osx-x64/native/ || true
+          cp native-artifacts/native-osx-x64/libecliptix_protocol_server.dylib nuget/Ecliptix.Protocol.Server/runtimes/osx-x64/native/ || true
+
+          # macOS arm64
+          mkdir -p nuget/Ecliptix.Protocol.Client/runtimes/osx-arm64/native
+          mkdir -p nuget/Ecliptix.Protocol.Server/runtimes/osx-arm64/native
+          cp native-artifacts/native-osx-arm64/libecliptix_protocol.dylib nuget/Ecliptix.Protocol.Client/runtimes/osx-arm64/native/ || true
+          cp native-artifacts/native-osx-arm64/libecliptix_protocol_server.dylib nuget/Ecliptix.Protocol.Server/runtimes/osx-arm64/native/ || true
+
+          # Windows x64
+          mkdir -p nuget/Ecliptix.Protocol.Client/runtimes/win-x64/native
+          mkdir -p nuget/Ecliptix.Protocol.Server/runtimes/win-x64/native
+          cp native-artifacts/native-win-x64/ecliptix_protocol.dll nuget/Ecliptix.Protocol.Client/runtimes/win-x64/native/ || true
+          cp native-artifacts/native-win-x64/ecliptix_protocol_server.dll nuget/Ecliptix.Protocol.Server/runtimes/win-x64/native/ || true
+
+          # Windows x86
+          mkdir -p nuget/Ecliptix.Protocol.Client/runtimes/win-x86/native
+          mkdir -p nuget/Ecliptix.Protocol.Server/runtimes/win-x86/native
+          cp native-artifacts/native-win-x86/ecliptix_protocol.dll nuget/Ecliptix.Protocol.Client/runtimes/win-x86/native/ || true
+          cp native-artifacts/native-win-x86/ecliptix_protocol_server.dll nuget/Ecliptix.Protocol.Server/runtimes/win-x86/native/ || true
+
+          # List what we have
+          echo "=== Native library structure ==="
+          find nuget -name "*.so" -o -name "*.dylib" -o -name "*.dll" | sort
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Build NuGet packages
+        run: |
+          cd nuget
+
+          # Build Client package
+          dotnet pack Ecliptix.Protocol.Client/Ecliptix.Protocol.Client.csproj \
+            -c Release \
+            -o output \
+            /p:Version=${{ steps.version.outputs.version }} \
+            /p:PackageVersion=${{ steps.version.outputs.version }}
+
+          # Build Server package
+          dotnet pack Ecliptix.Protocol.Server/Ecliptix.Protocol.Server.csproj \
+            -c Release \
+            -o output \
+            /p:Version=${{ steps.version.outputs.version }} \
+            /p:PackageVersion=${{ steps.version.outputs.version }}
+
+      - name: Upload NuGet packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages
+          path: nuget/output/*.nupkg
+
+      - name: Publish to GitHub Packages
+        run: |
+          cd nuget/output
+          for pkg in *.nupkg; do
+            dotnet nuget push "$pkg" \
+              --source "https://nuget.pkg.github.com/oleksandrmelnychenko/index.json" \
+              --api-key ${{ secrets.GITHUB_TOKEN }} \
+              --skip-duplicate
+          done
+
+  create-release:
+    needs: build-nuget
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - name: Download NuGet packages
+        uses: actions/download-artifact@v4
+        with:
+          name: nuget-packages
+          path: packages
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: packages/*.nupkg
+          generate_release_notes: true

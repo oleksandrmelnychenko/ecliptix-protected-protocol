@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <EcliptixProtocolServerNativeDir>$(MSBuildThisFileDirectory)..\runtimes\</EcliptixProtocolServerNativeDir>
+  </PropertyGroup>
+
+  <!-- Auto-copy native libraries to output for development builds -->
+  <Target Name="EcliptixProtocolServerCopyNativeLibraries" AfterTargets="Build" Condition="'$(RuntimeIdentifier)' == ''">
+    <PropertyGroup>
+      <!-- Detect platform and architecture -->
+      <_ProtocolServerRID Condition="$([MSBuild]::IsOSPlatform('Windows')) And '$(PlatformTarget)' == 'x64'">win-x64</_ProtocolServerRID>
+      <_ProtocolServerRID Condition="$([MSBuild]::IsOSPlatform('Windows')) And '$(PlatformTarget)' == 'x86'">win-x86</_ProtocolServerRID>
+      <_ProtocolServerRID Condition="$([MSBuild]::IsOSPlatform('Windows')) And '$(PlatformTarget)' == 'arm64'">win-x64</_ProtocolServerRID>
+      <_ProtocolServerRID Condition="$([MSBuild]::IsOSPlatform('Linux')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'">linux-x64</_ProtocolServerRID>
+      <_ProtocolServerRID Condition="$([MSBuild]::IsOSPlatform('Linux')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'">linux-arm64</_ProtocolServerRID>
+      <_ProtocolServerRID Condition="$([MSBuild]::IsOSPlatform('OSX')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'">osx-x64</_ProtocolServerRID>
+      <_ProtocolServerRID Condition="$([MSBuild]::IsOSPlatform('OSX')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'">osx-arm64</_ProtocolServerRID>
+      <!-- Fallback based on OS -->
+      <_ProtocolServerRID Condition="'$(_ProtocolServerRID)' == '' And $([MSBuild]::IsOSPlatform('Windows'))">win-x64</_ProtocolServerRID>
+      <_ProtocolServerRID Condition="'$(_ProtocolServerRID)' == '' And $([MSBuild]::IsOSPlatform('Linux'))">linux-x64</_ProtocolServerRID>
+      <_ProtocolServerRID Condition="'$(_ProtocolServerRID)' == '' And $([MSBuild]::IsOSPlatform('OSX'))">osx-arm64</_ProtocolServerRID>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <_ProtocolServerNativeFiles Include="$(EcliptixProtocolServerNativeDir)$(_ProtocolServerRID)\native\*.*" />
+    </ItemGroup>
+
+    <Copy SourceFiles="@(_ProtocolServerNativeFiles)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" Condition="Exists('$(EcliptixProtocolServerNativeDir)$(_ProtocolServerRID)\native\')" />
+  </Target>
+
+  <!-- Include native libraries in publish output -->
+  <Target Name="EcliptixProtocolServerIncludeNativeForPublish" AfterTargets="ComputeFilesToPublish" Condition="'$(RuntimeIdentifier)' != ''">
+    <ItemGroup>
+      <ResolvedFileToPublish Include="$(EcliptixProtocolServerNativeDir)$(RuntimeIdentifier)\native\*.*" Condition="Exists('$(EcliptixProtocolServerNativeDir)$(RuntimeIdentifier)\native\')">
+        <RelativePath>%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+</Project>
