@@ -59,7 +59,11 @@ target_include_directories(ecliptix_proto
 target_compile_features(ecliptix_proto PUBLIC cxx_std_20)
 
 # Disable strict warnings for generated protobuf code
-if(NOT MSVC)
+if(MSVC)
+    target_compile_options(ecliptix_proto PRIVATE
+        /w  # Suppress all warnings for generated protobuf code
+    )
+else()
     target_compile_options(ecliptix_proto PRIVATE
         -w  # Suppress all warnings for generated protobuf code
     )
