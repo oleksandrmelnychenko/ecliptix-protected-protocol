@@ -1,5 +1,10 @@
 # Protobuf code generation for Ecliptix Protocol
 
+# Prefer static protobuf for distribution builds to avoid runtime dependency issues
+if(ECLIPTIX_BUILD_SHARED)
+    set(Protobuf_USE_STATIC_LIBS ON)
+endif()
+
 # Find protobuf compiler
 find_package(Protobuf REQUIRED)
 find_package(absl QUIET)
