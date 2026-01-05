@@ -8,16 +8,33 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
-    - name: configure
-      run: ./configure
-    - name: make
-      run: make
-    - name: make check
-      run: make check
-    - name: make distcheck
-      run: make distcheck
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libsodium-dev protobuf-compiler libprotobuf-dev cmake ninja-build
+        # Build and install liboqs from source
+        git clone --depth 1 --branch 0.10.1 https://github.com/open-quantum-safe/liboqs.git
+        cd liboqs
+        cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DOQS_BUILD_ONLY_LIB=ON
+        cmake --build build -j$(nproc)
+        sudo cmake --install build
+
+    - name: Configure CMake
+      run: |
+        cmake -B build -S . \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DECLIPTIX_BUILD_TESTS=ON \
+          -DECLIPTIX_BUILD_SHARED=ON
+
+    - name: Build
+      run: cmake --build build --config Release -j$(nproc)
+
+    - name: Run tests
+      run: |
+        cd build
+        ctest --output-on-failure
