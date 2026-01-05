@@ -2,7 +2,7 @@ name: Build and Publish NuGet Packages
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
     tags: ['v*']
   workflow_dispatch:
     inputs:
