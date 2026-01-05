@@ -72,7 +72,7 @@ namespace ecliptix::protocol {
         void SetConnection(std::unique_ptr<EcliptixProtocolConnection> connection);
 
         [[nodiscard]] const EcliptixSystemIdentityKeys &GetIdentityKeys() const;
-        [[nodiscard]] EcliptixSystemIdentityKeys &GetIdentityKeysMutable();
+        [[nodiscard]] EcliptixSystemIdentityKeys &GetIdentityKeysMutable() const;
 
         void SetEventHandler(std::shared_ptr<IProtocolEventHandler> handler);
 
@@ -103,7 +103,7 @@ namespace ecliptix::protocol {
         // Set Kyber handshake secrets on the active connection (for hybrid PQ mode)
         [[nodiscard]] Result<Unit, EcliptixProtocolFailure> SetConnectionKyberSecrets(
             std::span<const uint8_t> kyber_ciphertext,
-            std::span<const uint8_t> kyber_shared_secret);
+            std::span<const uint8_t> kyber_shared_secret) const;
 
         EcliptixProtocolSystem(EcliptixProtocolSystem &&) noexcept = default;
 

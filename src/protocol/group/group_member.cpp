@@ -11,19 +11,19 @@ namespace {
     constexpr size_t MIN_DEVICE_ID_SIZE = 16;
     constexpr size_t EXPECTED_PUBLIC_KEY_SIZE = 32;
 
-    DeviceType ProtoDeviceTypeToEnum(proto::group::GroupMember_DeviceType proto_type) {
+    DeviceType ProtoDeviceTypeToEnum(const proto::group::GroupMember_DeviceType proto_type) {
         return proto_type == proto::group::GroupMember_DeviceType_MOBILE
             ? DeviceType::Mobile
             : DeviceType::Desktop;
     }
 
-    proto::group::GroupMember_DeviceType EnumToProtoDeviceType(DeviceType type) {
+    proto::group::GroupMember_DeviceType EnumToProtoDeviceType(const DeviceType type) {
         return type == DeviceType::Mobile
             ? proto::group::GroupMember_DeviceType_MOBILE
             : proto::group::GroupMember_DeviceType_DESKTOP;
     }
 
-    MemberRole ProtoRoleToEnum(proto::group::GroupMember_MemberRole proto_role) {
+    MemberRole ProtoRoleToEnum(const proto::group::GroupMember_MemberRole proto_role) {
         switch (proto_role) {
             case proto::group::GroupMember_MemberRole_MEMBER:
                 return MemberRole::Member;
@@ -36,7 +36,7 @@ namespace {
         }
     }
 
-    proto::group::GroupMember_MemberRole EnumToProtoRole(MemberRole role) {
+    proto::group::GroupMember_MemberRole EnumToProtoRole(const MemberRole role) {
         switch (role) {
             case MemberRole::Member:
                 return proto::group::GroupMember_MemberRole_MEMBER;
@@ -77,9 +77,9 @@ Result<GroupMember, EcliptixProtocolFailure> GroupMember::Create(
     std::span<const uint8_t> account_id,
     std::span<const uint8_t> app_instance_id,
     std::span<const uint8_t> device_id,
-    DeviceType device_type,
+    const DeviceType device_type,
     std::span<const uint8_t> identity_public_key,
-    MemberRole role) {
+    const MemberRole role) {
 
     if (member_id.size() < MIN_MEMBER_ID_SIZE) {
         return Result<GroupMember, EcliptixProtocolFailure>::Err(
@@ -211,11 +211,11 @@ bool GroupMember::IsActive() const noexcept {
     return is_active_;
 }
 
-void GroupMember::SetRole(MemberRole role) noexcept {
+void GroupMember::SetRole(const MemberRole role) noexcept {
     role_ = role;
 }
 
-void GroupMember::SetActive(bool is_active) noexcept {
+void GroupMember::SetActive(const bool is_active) noexcept {
     is_active_ = is_active;
 }
 

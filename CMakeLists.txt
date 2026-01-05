@@ -174,6 +174,12 @@ set(ECLIPTIX_CLIENT_SOURCES
     ${ECLIPTIX_SOURCE_DIR}/c_api/ecliptix_c_api.cpp
 )
 
+# Server sources include core + server-specific C API
+set(ECLIPTIX_SERVER_SOURCES
+    ${ECLIPTIX_CORE_SOURCES}
+    ${ECLIPTIX_SOURCE_DIR}/c_api/ecliptix_server_c_api.cpp
+)
+
 function(configure_protocol_target target_name output_name)
     if(ECLIPTIX_BUILD_SHARED)
         add_library(${target_name} SHARED ${ARGN})
@@ -231,7 +237,7 @@ if(ECLIPTIX_BUILD_CLIENT_TARGET)
 endif()
 
 if(ECLIPTIX_BUILD_SERVER_TARGET)
-    configure_protocol_target(Ecliptix_Protocol_Server "ecliptix_protocol_server" ${ECLIPTIX_CORE_SOURCES})
+    configure_protocol_target(Ecliptix_Protocol_Server "ecliptix_protocol_server" ${ECLIPTIX_SERVER_SOURCES})
     add_library(Ecliptix::ProtocolServer ALIAS Ecliptix_Protocol_Server)
 endif()
 
@@ -280,7 +286,7 @@ install(TARGETS ${ECLIPTIX_INSTALL_TARGETS}
 # Install headers
 install(DIRECTORY ${ECLIPTIX_INCLUDE_DIR}/ecliptix
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-    FILES_MATCHING PATTERN "*.hpp"
+    FILES_MATCHING PATTERN "*.hpp" PATTERN "*.h"
 )
 
 # Install CMake config

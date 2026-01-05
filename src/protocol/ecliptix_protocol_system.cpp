@@ -44,16 +44,16 @@ namespace ecliptix::protocol {
     Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>
     EcliptixProtocolSystem::CreateFromRootAndPeerBundle(
         std::unique_ptr<EcliptixSystemIdentityKeys> identity_keys,
-        std::span<const uint8_t> root_key,
-        const proto::protocol::PublicKeyBundle &peer_bundle,
-        bool is_initiator) {
+        const std::span<const uint8_t> root_key,
+        const PublicKeyBundle &peer_bundle,
+        const bool is_initiator) {
         if (!identity_keys) {
             return Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::InvalidInput("Identity keys cannot be null"));
         }
         auto system = std::unique_ptr<EcliptixProtocolSystem>(
             new EcliptixProtocolSystem(std::move(identity_keys)));
-        auto conn_result = connection::EcliptixProtocolConnection::FromRootAndPeerBundle(
+        auto conn_result = EcliptixProtocolConnection::FromRootAndPeerBundle(
             root_key,
             peer_bundle,
             is_initiator);
@@ -70,7 +70,7 @@ namespace ecliptix::protocol {
     EcliptixProtocolSystem::CreateFromRootAndPeerBundle(
         std::unique_ptr<EcliptixSystemIdentityKeys> identity_keys,
         std::span<const uint8_t> root_key,
-        const proto::protocol::PublicKeyBundle &peer_bundle,
+        const PublicKeyBundle &peer_bundle,
         bool is_initiator,
         std::span<const uint8_t> kyber_ciphertext,
         std::span<const uint8_t> kyber_shared_secret) {
@@ -79,13 +79,10 @@ namespace ecliptix::protocol {
                 EcliptixProtocolFailure::InvalidInput("Identity keys cannot be null"));
         }
 
-        // Extract the correct DH keys for metadata derivation BEFORE moving identity_keys
-        // Initiator uses ephemeral key, Responder uses SPK
         std::vector<uint8_t> initial_dh_public;
         std::vector<uint8_t> initial_dh_private;
 
         if (is_initiator) {
-            // Initiator uses their ephemeral key (what they sent in handshake)
             auto ephemeral_opt = identity_keys->GetEphemeralX25519PublicKeyCopy();
             if (!ephemeral_opt.has_value() || ephemeral_opt->empty()) {
                 return Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>::Err(
@@ -100,7 +97,6 @@ namespace ecliptix::protocol {
             }
             initial_dh_private = private_result.Unwrap();
         } else {
-            // Responder uses their SPK (what initiator knows from bundle)
             initial_dh_public = identity_keys->GetSignedPreKeyPublicCopy();
 
             auto private_result = identity_keys->GetSignedPreKeyPrivateCopy();
@@ -114,8 +110,7 @@ namespace ecliptix::protocol {
         auto system = std::unique_ptr<EcliptixProtocolSystem>(
             new EcliptixProtocolSystem(std::move(identity_keys)));
 
-        // Use Version 3 of FromRootAndPeerBundle with explicit DH keys
-        auto conn_result = connection::EcliptixProtocolConnection::FromRootAndPeerBundle(
+        auto conn_result = EcliptixProtocolConnection::FromRootAndPeerBundle(
             root_key,
             peer_bundle,
             is_initiator,
@@ -124,8 +119,7 @@ namespace ecliptix::protocol {
             initial_dh_public,
             initial_dh_private);
 
-        // Securely wipe private key material
-        auto _wipe = crypto::SodiumInterop::SecureWipe(std::span(initial_dh_private));
+        auto _wipe = SodiumInterop::SecureWipe(std::span(initial_dh_private));
         (void) _wipe;
 
         if (conn_result.IsErr()) {
@@ -147,7 +141,7 @@ namespace ecliptix::protocol {
         }
         auto system = std::unique_ptr<EcliptixProtocolSystem>(
             new EcliptixProtocolSystem(std::move(identity_keys)));
-        auto conn_result = connection::EcliptixProtocolConnection::FromProtoState(
+        auto conn_result = EcliptixProtocolConnection::FromProtoState(
              0,
             state,
             configuration::RatchetConfig::Default(),
@@ -166,7 +160,7 @@ namespace ecliptix::protocol {
         std::shared_ptr<IProtocolEventHandler> handler;
         {
             std::unique_lock lock(*mutex_);
-            connection_ = std::shared_ptr<EcliptixProtocolConnection>(std::move(connection));
+            connection_ = std::shared_ptr(std::move(connection));
             shared_connection = connection_;
             handler = event_handler_;
         }
@@ -176,10 +170,10 @@ namespace ecliptix::protocol {
     }
 
     Result<Unit, EcliptixProtocolFailure> EcliptixProtocolSystem::FinalizeWithRootAndPeerBundle(
-        std::span<const uint8_t> root_key,
-        const proto::protocol::PublicKeyBundle &peer_bundle,
-        bool is_initiator) {
-        auto conn_result = connection::EcliptixProtocolConnection::FromRootAndPeerBundle(
+        const std::span<const uint8_t> root_key,
+        const PublicKeyBundle &peer_bundle,
+        const bool is_initiator) {
+        auto conn_result = EcliptixProtocolConnection::FromRootAndPeerBundle(
             root_key,
             peer_bundle,
             is_initiator);
@@ -192,19 +186,17 @@ namespace ecliptix::protocol {
 
     Result<Unit, EcliptixProtocolFailure> EcliptixProtocolSystem::FinalizeWithRootAndPeerBundle(
         std::span<const uint8_t> root_key,
-        const proto::protocol::PublicKeyBundle &peer_bundle,
+        const PublicKeyBundle &peer_bundle,
         bool is_initiator,
         std::span<const uint8_t> kyber_ciphertext,
         std::span<const uint8_t> kyber_shared_secret) {
-        // Extract the correct DH keys for metadata derivation from identity_keys_
-        // Initiator uses ephemeral key, Responder uses SPK
+
         std::vector<uint8_t> initial_dh_public;
         std::vector<uint8_t> initial_dh_private;
 
         {
             std::shared_lock lock(*mutex_);
             if (is_initiator) {
-                // Initiator uses their ephemeral key (what they sent in handshake)
                 auto ephemeral_opt = identity_keys_->GetEphemeralX25519PublicKeyCopy();
                 if (!ephemeral_opt.has_value() || ephemeral_opt->empty()) {
                     return Result<Unit, EcliptixProtocolFailure>::Err(
@@ -218,7 +210,6 @@ namespace ecliptix::protocol {
                 }
                 initial_dh_private = private_result.Unwrap();
             } else {
-                // Responder uses their SPK (what initiator knows from bundle)
                 initial_dh_public = identity_keys_->GetSignedPreKeyPublicCopy();
 
                 auto private_result = identity_keys_->GetSignedPreKeyPrivateCopy();
@@ -229,8 +220,7 @@ namespace ecliptix::protocol {
             }
         }
 
-        // Use Version 3 of FromRootAndPeerBundle with explicit DH keys
-        auto conn_result = connection::EcliptixProtocolConnection::FromRootAndPeerBundle(
+        auto conn_result = EcliptixProtocolConnection::FromRootAndPeerBundle(
             root_key,
             peer_bundle,
             is_initiator,
@@ -239,8 +229,7 @@ namespace ecliptix::protocol {
             initial_dh_public,
             initial_dh_private);
 
-        // Securely wipe private key material
-        auto _wipe = crypto::SodiumInterop::SecureWipe(std::span(initial_dh_private));
+        auto _wipe = SodiumInterop::SecureWipe(std::span(initial_dh_private));
         (void) _wipe;
 
         if (conn_result.IsErr()) {
@@ -251,14 +240,14 @@ namespace ecliptix::protocol {
     }
 
     Result<Unit, EcliptixProtocolFailure> EcliptixProtocolSystem::FinalizeWithRootAndPeerBundle(
-        std::span<const uint8_t> root_key,
-        const proto::protocol::PublicKeyBundle &peer_bundle,
-        bool is_initiator,
-        std::span<const uint8_t> kyber_ciphertext,
-        std::span<const uint8_t> kyber_shared_secret,
-        std::span<const uint8_t> initial_dh_public_key,
-        std::span<const uint8_t> initial_dh_private_key) {
-        auto conn_result = connection::EcliptixProtocolConnection::FromRootAndPeerBundle(
+        const std::span<const uint8_t> root_key,
+        const PublicKeyBundle &peer_bundle,
+        const bool is_initiator,
+        const std::span<const uint8_t> kyber_ciphertext,
+        const std::span<const uint8_t> kyber_shared_secret,
+        const std::span<const uint8_t> initial_dh_public_key,
+        const std::span<const uint8_t> initial_dh_private_key) {
+        auto conn_result = EcliptixProtocolConnection::FromRootAndPeerBundle(
             root_key,
             peer_bundle,
             is_initiator,
@@ -278,7 +267,7 @@ namespace ecliptix::protocol {
         return *identity_keys_;
     }
 
-    EcliptixSystemIdentityKeys &EcliptixProtocolSystem::GetIdentityKeysMutable() {
+    EcliptixSystemIdentityKeys &EcliptixProtocolSystem::GetIdentityKeysMutable() const {
         std::unique_lock lock(*mutex_);
         return *identity_keys_;
     }
@@ -331,8 +320,8 @@ namespace ecliptix::protocol {
     }
 
     Result<Unit, EcliptixProtocolFailure> EcliptixProtocolSystem::SetConnectionKyberSecrets(
-        std::span<const uint8_t> kyber_ciphertext,
-        std::span<const uint8_t> kyber_shared_secret) {
+        const std::span<const uint8_t> kyber_ciphertext,
+        const std::span<const uint8_t> kyber_shared_secret) const {
         std::shared_ptr<EcliptixProtocolConnection> connection = GetConnectionSafe();
         if (!connection) {
             return Result<Unit, EcliptixProtocolFailure>::Err(
@@ -402,7 +391,7 @@ namespace ecliptix::protocol {
                             kyber_ct_result.UnwrapErr());
                         break;
                     }
-                    if (auto kyber_opt = kyber_ct_result.Unwrap(); kyber_opt.has_value()) {
+                    if (const auto& kyber_opt = kyber_ct_result.Unwrap(); kyber_opt.has_value()) {
                         kyber_ciphertext = kyber_opt.value();
                     } else {
                         result = Result<proto::common::SecureEnvelope, EcliptixProtocolFailure>::Err(
@@ -430,7 +419,7 @@ namespace ecliptix::protocol {
                 }
                 auto encrypt_result = ratchet_key.WithKeyMaterial<std::vector<uint8_t> >(
                     [&payload, &nonce, &ad](
-                std::span<const uint8_t> key_material) -> Result<std::vector<uint8_t>, EcliptixProtocolFailure> {
+                const std::span<const uint8_t> key_material) -> Result<std::vector<uint8_t>, EcliptixProtocolFailure> {
                         return AesGcm::Encrypt(key_material, nonce, payload, ad);
                     });
                 if (encrypt_result.IsErr()) {
@@ -499,23 +488,23 @@ namespace ecliptix::protocol {
                     std::format("Exception during message send: {}", ex.what())));
         }
         {
-            auto __wipe1 = SodiumInterop::SecureWipe(std::span(nonce));
-            (void) __wipe1;
+            auto _wipe1 = SodiumInterop::SecureWipe(std::span(nonce));
+            (void) _wipe1;
         } {
-            auto __wipe2 = SodiumInterop::SecureWipe(std::span(ad));
-            (void) __wipe2;
+            auto _wipe2 = SodiumInterop::SecureWipe(std::span(ad));
+            (void) _wipe2;
         } {
-            auto __wipe3 = SodiumInterop::SecureWipe(std::span(encrypted_payload));
-            (void) __wipe3;
+            auto _wipe3 = SodiumInterop::SecureWipe(std::span(encrypted_payload));
+            (void) _wipe3;
         } {
-            auto __wipe4 = SodiumInterop::SecureWipe(std::span(sender_dh_key));
-            (void) __wipe4;
+            auto _wipe4 = SodiumInterop::SecureWipe(std::span(sender_dh_key));
+            (void) _wipe4;
         } {
-            auto __wipe5 = SodiumInterop::SecureWipe(std::span(metadata_key));
-            (void) __wipe5;
+            auto _wipe5 = SodiumInterop::SecureWipe(std::span(metadata_key));
+            (void) _wipe5;
         } {
-            auto __wipe6 = SodiumInterop::SecureWipe(std::span(kyber_ciphertext));
-            (void) __wipe6;
+            auto _wipe6 = SodiumInterop::SecureWipe(std::span(kyber_ciphertext));
+            (void) _wipe6;
         }
         return result;
     }
@@ -532,8 +521,7 @@ namespace ecliptix::protocol {
                 EcliptixProtocolFailure::Decode("Missing ratchet epoch"));
         }
         const uint64_t envelope_epoch = envelope.ratchet_epoch();
-        const uint64_t current_epoch = connection->GetReceivingRatchetEpoch();
-        if (envelope_epoch < current_epoch) {
+        if (const uint64_t current_epoch = connection->GetReceivingRatchetEpoch(); envelope_epoch < current_epoch) {
             return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Decode("Stale ratchet epoch; re-establish session"));
         }
@@ -544,7 +532,7 @@ namespace ecliptix::protocol {
         std::vector<uint8_t> encrypted_payload;
         std::vector<uint8_t> dh_public_key;
         std::vector<uint8_t> kyber_ciphertext;
-        std::optional<connection::EcliptixProtocolConnection::ReceivingRatchetPreview> receiving_preview;
+        std::optional<EcliptixProtocolConnection::ReceivingRatchetPreview> receiving_preview;
         try {
             if (envelope.header_nonce().size() != Constants::AES_GCM_NONCE_SIZE) {
                 return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
@@ -689,7 +677,7 @@ namespace ecliptix::protocol {
                 envelope.encrypted_payload().end());
             auto decrypt_result = ratchet_key.WithKeyMaterial<std::vector<uint8_t> >(
                 [&encrypted_payload, &payload_nonce, &ad](
-            std::span<const uint8_t> key_material) -> Result<std::vector<uint8_t>, EcliptixProtocolFailure> {
+            const std::span<const uint8_t> key_material) -> Result<std::vector<uint8_t>, EcliptixProtocolFailure> {
                     return AesGcm::Decrypt(key_material, payload_nonce, encrypted_payload, ad);
                 }); {
                 auto __wipe = SodiumInterop::SecureWipe(std::span(payload_nonce));

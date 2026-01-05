@@ -321,6 +321,43 @@ TEST_CASE("X3DH Test Vectors - Signed PreKey Verification", "[x3dh][interop][vec
     }
 }
 
+TEST_CASE("X3DH rejects tampered SPK signature during handshake", "[x3dh][security][signature]") {
+    REQUIRE(SodiumInterop::Initialize().IsOk());
+
+    auto alice_keys_result = EcliptixSystemIdentityKeys::Create(1);
+    REQUIRE(alice_keys_result.IsOk());
+    auto alice_keys = std::move(alice_keys_result).Unwrap();
+    alice_keys.GenerateEphemeralKeyPair();
+
+    auto bob_keys_result = EcliptixSystemIdentityKeys::Create(1);
+    REQUIRE(bob_keys_result.IsOk());
+    auto bob_keys = std::move(bob_keys_result).Unwrap();
+
+    auto bob_bundle_result = bob_keys.CreatePublicBundle();
+    REQUIRE(bob_bundle_result.IsOk());
+    auto bob_bundle = std::move(bob_bundle_result).Unwrap();
+
+    auto tampered_signature = bob_bundle.GetSignedPreKeySignature();
+    tampered_signature[0] ^= 0xFF;
+
+    LocalPublicKeyBundle tampered_bundle(
+        bob_bundle.GetEd25519Public(),
+        bob_bundle.GetIdentityX25519(),
+        bob_bundle.GetSignedPreKeyId(),
+        bob_bundle.GetSignedPreKeyPublic(),
+        tampered_signature,
+        bob_bundle.GetOneTimePreKeys(),
+        bob_bundle.GetEphemeralX25519Public(),
+        bob_bundle.GetKyberPublicKey(),
+        bob_bundle.GetKyberCiphertext(),
+        bob_bundle.GetUsedOpkId());
+
+    std::vector<uint8_t> info(ProtocolConstants::X3DH_INFO.begin(), ProtocolConstants::X3DH_INFO.end());
+    auto shared_secret_result = alice_keys.X3dhDeriveSharedSecret(tampered_bundle, info, true);
+
+    REQUIRE(shared_secret_result.IsErr());
+}
+
 TEST_CASE("X3DH Test Vectors - One-Time PreKey Consumption", "[x3dh][interop][vectors]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
 

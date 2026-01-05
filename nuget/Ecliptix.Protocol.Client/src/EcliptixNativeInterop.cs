@@ -104,6 +104,13 @@ public static class EcliptixNativeInterop
         out EcliptixError outError);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern EcliptixErrorCode ecliptix_identity_keys_get_public_kyber(
+        IntPtr handle,
+        [Out] byte[] outKey,
+        nuint outKeyLength,
+        out EcliptixError outError);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     public static extern void ecliptix_identity_keys_destroy(IntPtr handle);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]

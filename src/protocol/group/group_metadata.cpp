@@ -12,7 +12,7 @@ namespace {
     constexpr uint32_t MIN_MAX_MEMBERS = 2;
     constexpr uint32_t MAX_MAX_MEMBERS = 100000;
 
-    GroupType ProtoGroupTypeToEnum(proto::group::GroupMetadata_GroupType proto_type) {
+    GroupType ProtoGroupTypeToEnum(const proto::group::GroupMetadata_GroupType proto_type) {
         switch (proto_type) {
             case proto::group::GroupMetadata_GroupType_PRIVATE:
                 return GroupType::Private;
@@ -25,7 +25,7 @@ namespace {
         }
     }
 
-    proto::group::GroupMetadata_GroupType EnumToProtoGroupType(GroupType type) {
+    proto::group::GroupMetadata_GroupType EnumToProtoGroupType(const GroupType type) {
         switch (type) {
             case GroupType::Private:
                 return proto::group::GroupMetadata_GroupType_PRIVATE;
@@ -65,8 +65,8 @@ Result<GroupMetadata, EcliptixProtocolFailure> GroupMetadata::Create(
     std::span<const uint8_t> group_id,
     std::string group_name,
     std::span<const uint8_t> creator_id,
-    GroupType type,
-    uint32_t max_members,
+    const GroupType type,
+    const uint32_t max_members,
     std::optional<std::string> description) {
 
     if (group_id.size() < MIN_GROUP_ID_SIZE) {
@@ -215,7 +215,7 @@ void GroupMetadata::SetDescription(std::optional<std::string> description) {
     version_++;
 }
 
-void GroupMetadata::SetMaxMembers(uint32_t max_members) noexcept {
+void GroupMetadata::SetMaxMembers(const uint32_t max_members) noexcept {
     max_members_ = max_members;
     last_modified_timestamp_ = std::chrono::system_clock::now();
     version_++;

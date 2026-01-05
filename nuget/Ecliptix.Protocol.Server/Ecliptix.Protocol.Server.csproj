@@ -10,7 +10,7 @@
 
     <!-- Package metadata -->
     <PackageId>Ecliptix.Protocol.Server</PackageId>
-    <Version>1.0.0</Version>
+    <Version>1.0.5</Version>
     <Authors>Ecliptix</Authors>
     <Company>Ecliptix</Company>
     <Product>Ecliptix Protocol Server</Product>

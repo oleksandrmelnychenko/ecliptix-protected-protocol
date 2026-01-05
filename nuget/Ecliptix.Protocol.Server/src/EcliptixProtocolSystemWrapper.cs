@@ -475,6 +475,31 @@ public sealed class EcliptixIdentityKeysWrapper : IDisposable
         return Result<byte[], EcliptixProtocolFailure>.Ok(publicKey);
     }
 
+    /// <summary>
+    /// Gets the identity Kyber (ML-KEM-768) public key (1184 bytes).
+    /// </summary>
+    public Result<byte[], EcliptixProtocolFailure> GetPublicKyber()
+    {
+        ThrowIfDisposed();
+
+        byte[] publicKey = new byte[1184]; // ML-KEM-768 public key size
+        EcliptixErrorCode result = EcliptixNativeInterop.ecliptix_identity_keys_get_public_kyber(
+            _handle,
+            publicKey,
+            (nuint)publicKey.Length,
+            out EcliptixError error);
+
+        if (result != EcliptixErrorCode.Success)
+        {
+            string errorMessage = error.GetMessage();
+            EcliptixNativeInterop.ecliptix_error_free(ref error);
+            return Result<byte[], EcliptixProtocolFailure>.Err(
+                EcliptixProtocolFailure.KeyGeneration(errorMessage));
+        }
+
+        return Result<byte[], EcliptixProtocolFailure>.Ok(publicKey);
+    }
+
     private void ThrowIfDisposed()
     {
         if (_disposed)

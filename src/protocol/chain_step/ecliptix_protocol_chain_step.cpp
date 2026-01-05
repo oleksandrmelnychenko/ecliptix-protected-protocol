@@ -299,7 +299,7 @@ namespace ecliptix::protocol::chain_step {
         return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
     }
 
-    Result<Unit, EcliptixProtocolFailure> EcliptixProtocolChainStep::SkipKeysUntil(uint32_t target_index) {
+    Result<Unit, EcliptixProtocolFailure> EcliptixProtocolChainStep::SkipKeysUntil(const uint32_t target_index) {
         std::lock_guard guard(*lock_);
         if (auto disposed_check = CheckDisposed(); disposed_check.IsErr()) {
             return disposed_check;
