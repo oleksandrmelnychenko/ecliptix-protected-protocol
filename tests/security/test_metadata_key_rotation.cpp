@@ -8,8 +8,16 @@
 #include "common/secure_envelope.pb.h"
 #include <vector>
 #include <set>
+#include <algorithm>
 
 using namespace ecliptix::protocol;
+
+// Custom comparator to avoid GCC 13 false positive with spaceship operator on vector<uint8_t>
+struct ByteVectorLess {
+    bool operator()(const std::vector<uint8_t>& a, const std::vector<uint8_t>& b) const {
+        return std::lexicographical_compare(a.begin(), a.end(), b.begin(), b.end());
+    }
+};
 using namespace ecliptix::protocol::connection;
 using namespace ecliptix::protocol::crypto;
 using namespace ecliptix::protocol::utilities;
@@ -187,7 +195,7 @@ TEST_CASE("Metadata Key Rotation - Uniqueness Across Ratchets", "[security][meta
         REQUIRE(alice->FinalizeChainAndDhKeys(root_key, bob_dh).IsOk());
         REQUIRE(bob->FinalizeChainAndDhKeys(root_key, alice_dh).IsOk());
 
-        std::set<std::vector<uint8_t>> observed_keys;
+        std::set<std::vector<uint8_t>, ByteVectorLess> observed_keys;
         observed_keys.insert(alice->GetMetadataEncryptionKey().Unwrap());
 
         uint64_t nonce_counter = 0;
@@ -307,7 +315,7 @@ TEST_CASE("Metadata Key Rotation - High-Frequency Ratchets", "[security][metadat
         REQUIRE(alice->FinalizeChainAndDhKeys(root_key, bob_dh).IsOk());
         REQUIRE(bob->FinalizeChainAndDhKeys(root_key, alice_dh).IsOk());
 
-        std::set<std::vector<uint8_t>> observed_keys;
+        std::set<std::vector<uint8_t>, ByteVectorLess> observed_keys;
         auto initial_key = alice->GetMetadataEncryptionKey().Unwrap();
         observed_keys.insert(initial_key);
 
