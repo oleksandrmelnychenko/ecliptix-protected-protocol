@@ -438,6 +438,32 @@ EcliptixErrorCode ecliptix_identity_keys_get_public_ed25519(
     return ECLIPTIX_SUCCESS;
 }
 
+EcliptixErrorCode ecliptix_identity_keys_get_public_kyber(
+    const EcliptixIdentityKeysHandle *handle,
+    uint8_t *out_key,
+    size_t out_key_length,
+    EcliptixError *out_error) {
+    if (!handle || !handle->identity_keys) {
+        fill_error(out_error, ECLIPTIX_ERROR_NULL_POINTER, "Identity keys handle is null");
+        return ECLIPTIX_ERROR_NULL_POINTER;
+    }
+
+    if (!validate_buffer_param(out_key, out_key_length, out_error)) {
+        return out_error->code;
+    }
+
+    if (out_key_length != KyberInterop::KYBER_768_PUBLIC_KEY_SIZE) {
+        fill_error(out_error, ECLIPTIX_ERROR_BUFFER_TOO_SMALL,
+                   "Output buffer must be " + std::to_string(KyberInterop::KYBER_768_PUBLIC_KEY_SIZE) + " bytes");
+        return ECLIPTIX_ERROR_BUFFER_TOO_SMALL;
+    }
+
+    const auto &key = handle->identity_keys->GetKyberPublicKeyCopy();
+    std::memcpy(out_key, key.data(), key.size());
+
+    return ECLIPTIX_SUCCESS;
+}
+
 void ecliptix_identity_keys_destroy(EcliptixIdentityKeysHandle *handle) {
     delete handle;
 }
@@ -1445,9 +1471,13 @@ EcliptixBuffer *ecliptix_buffer_allocate(size_t capacity) {
     return buffer;
 }
 
-void ecliptix_buffer_free(uint8_t *data) {
-    if (data) {
-        delete[] data;
+void ecliptix_buffer_free(EcliptixBuffer *buffer) {
+    if (buffer) {
+        if (buffer->data) {
+            SodiumInterop::SecureWipe(std::span<uint8_t>(buffer->data, buffer->length));
+            delete[] buffer->data;
+        }
+        delete buffer;
     }
 }
 

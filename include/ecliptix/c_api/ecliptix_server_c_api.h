@@ -289,7 +289,7 @@ EcliptixErrorCode ecliptix_derive_root_from_opaque_session_key(
 EcliptixBuffer* ecliptix_buffer_allocate(size_t capacity);
 
 /** Free an allocated buffer */
-void ecliptix_buffer_free(uint8_t* data);
+void ecliptix_buffer_free(EcliptixBuffer* buffer);
 
 /** Free an error structure */
 void ecliptix_error_free(EcliptixError* error);
