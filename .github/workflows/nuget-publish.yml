@@ -101,23 +101,18 @@ jobs:
             -DECLIPTIX_BUILD_SHARED=ON \
             ${{ matrix.cmake_arch }}
 
-      - name: Ensure Ninja is available (Windows)
+      - name: Setup MSVC environment (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) {
-            Write-Host "Ninja not found, installing via choco..."
-            choco install ninja -y
-          }
-          Write-Host "Ninja version: $(ninja --version)"
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
       - name: Configure CMake (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          if (-not $env:PKG_CONFIG_PATH) {
-            $env:PKG_CONFIG_PATH = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\lib\pkgconfig;$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\share\pkgconfig"
-          }
+          $env:PKG_CONFIG_PATH = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\lib\pkgconfig;$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\share\pkgconfig"
+          $env:PKG_CONFIG_EXECUTABLE = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\tools\pkgconf\pkgconf.exe"
 
           cmake -B build -S . `
             -G "Ninja" `
