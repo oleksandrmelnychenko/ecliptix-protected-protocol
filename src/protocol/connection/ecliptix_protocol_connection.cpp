@@ -1726,11 +1726,11 @@ EcliptixProtocolConnection::GetCurrentKyberCiphertext() const {
                 (void) _wipe;
             }
             if (hkdf_output_result.IsErr()) {
-                auto _wipe = SodiumInterop::SecureWipe(std::span(our_priv_bytes));
-                (void) _wipe;
+                auto _wipe_priv = SodiumInterop::SecureWipe(std::span(our_priv_bytes));
+                (void) _wipe_priv;
                 if (kyber_shared_secret.has_value()) {
-                    auto _wipe = SodiumInterop::SecureWipe(std::span(*kyber_shared_secret));
-                    (void) _wipe;
+                    auto _wipe_kyber = SodiumInterop::SecureWipe(std::span(*kyber_shared_secret));
+                    (void) _wipe_kyber;
                 }
                 return Result<ReceivingRatchetPreview, EcliptixProtocolFailure>::Err(
                     hkdf_output_result.UnwrapErr());
@@ -2480,6 +2480,7 @@ EcliptixProtocolConnection::GetCurrentKyberCiphertext() const {
     }
 
     void EcliptixProtocolConnection::PerformCleanupIfNeeded(uint32_t received_index) {
+        (void)received_index;  // Reserved for future use
         if (receiving_step_) {
             receiving_step_->PruneOldKeys();
         }

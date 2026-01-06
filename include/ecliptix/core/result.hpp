@@ -171,6 +171,17 @@ private:
         : value_(idx, std::forward<Args>(args)...)
         , is_ok_(I == 0) {}
 };
+// MSVC doesn't support GNU statement expressions, use do-while version
+// Note: This version discards the Unwrap() result - only use when not capturing the value
+#ifdef _MSC_VER
+#define TRY(result_expr) \
+    do { \
+        auto&& __ecliptix_result = (result_expr); \
+        if (__ecliptix_result.IsErr()) { \
+            return std::move(__ecliptix_result).MapErr([](auto&& e) { return std::forward<decltype(e)>(e); }); \
+        } \
+    } while(0)
+#else
 #define TRY(result_expr) \
     ({ \
         auto&& __result = (result_expr); \
@@ -179,6 +190,7 @@ private:
         } \
         std::move(__result).Unwrap(); \
     })
+#endif
 #define TRY_UNIT(result_expr) \
     do { \
         auto&& __result = (result_expr); \

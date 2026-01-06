@@ -43,6 +43,8 @@ endif()
 # ============================================================================
 if(MSVC)
     add_compile_options(/W4 /WX)
+    # Suppress CRT secure warnings for getenv, etc.
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 else()
     # Common warnings for GCC/Clang
     add_compile_options(
