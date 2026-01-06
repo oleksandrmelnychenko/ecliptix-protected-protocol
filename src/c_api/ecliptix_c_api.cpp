@@ -69,6 +69,8 @@ namespace {
         }
 
         void OnRatchetRequired(uint32_t connect_id, const std::string &reason) override {
+            (void)connect_id;
+            (void)reason;
         }
 
     private:
@@ -79,7 +81,11 @@ namespace {
     void fill_error(EcliptixError *out_error, EcliptixErrorCode code, const std::string &message) {
         if (out_error) {
             out_error->code = code;
+#ifdef _WIN32
+            out_error->message = _strdup(message.c_str());
+#else
             out_error->message = strdup(message.c_str());
+#endif
         }
     }
 
