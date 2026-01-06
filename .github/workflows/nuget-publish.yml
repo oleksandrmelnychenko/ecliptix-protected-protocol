@@ -89,9 +89,14 @@ jobs:
       - name: Configure CMake (Unix)
         if: runner.os != 'Windows'
         run: |
+          # Enable tests only on Linux x64
+          BUILD_TESTS="OFF"
+          if [ "${{ matrix.rid }}" = "linux-x64" ]; then
+            BUILD_TESTS="ON"
+          fi
           cmake -B build -S . \
             -DCMAKE_BUILD_TYPE=Release \
-            -DECLIPTIX_BUILD_TESTS=OFF \
+            -DECLIPTIX_BUILD_TESTS=$BUILD_TESTS \
             -DECLIPTIX_BUILD_EXAMPLES=OFF \
             -DECLIPTIX_BUILD_SHARED=ON \
             ${{ matrix.cmake_arch }}
@@ -125,6 +130,12 @@ jobs:
 
       - name: Build
         run: cmake --build build --config Release
+
+      - name: Run tests (Linux x64 only)
+        if: matrix.rid == 'linux-x64'
+        run: |
+          cd build
+          ctest --output-on-failure
 
       - name: Strip symbols (Unix)
         if: runner.os != 'Windows'
