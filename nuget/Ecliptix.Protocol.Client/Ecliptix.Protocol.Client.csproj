@@ -1,16 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <LangVersion>12</LangVersion>
+    <LangVersion>14</LangVersion>
     <RootNamespace>Ecliptix.Protocol.Client</RootNamespace>
 
     <!-- Package metadata -->
     <PackageId>Ecliptix.Protocol.Client</PackageId>
-    <Version>1.0.5</Version>
+    <Version>1.1.0</Version>
     <Authors>Ecliptix</Authors>
     <Company>Ecliptix</Company>
     <Product>Ecliptix Protocol Client</Product>
@@ -31,6 +31,19 @@
     <!-- Signing (optional - enable when .snk file available) -->
     <SignAssembly>false</SignAssembly>
   </PropertyGroup>
+
+  <!-- Package dependencies -->
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" Version="3.33.0" />
+    <PackageReference Include="Sodium.Core" Version="1.4.0" />
+    <PackageReference Include="Konscious.Security.Cryptography.Argon2" Version="1.3.1" />
+    <PackageReference Include="Serilog" Version="4.3.0" />
+  </ItemGroup>
+
+  <!-- Shared C# source files -->
+  <ItemGroup>
+    <Compile Include="..\shared\src\**\*.cs" Link="%(Filename)%(Extension)" />
+  </ItemGroup>
 
   <!-- Native library runtime assets -->
   <ItemGroup>

@@ -7,10 +7,11 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <LangVersion>12</LangVersion>
     <RootNamespace>Ecliptix.Protocol.Server</RootNamespace>
+    <DefineConstants>$(DefineConstants);ECLIPTIX_SERVER</DefineConstants>
 
     <!-- Package metadata -->
     <PackageId>Ecliptix.Protocol.Server</PackageId>
-    <Version>1.0.5</Version>
+    <Version>1.0.6</Version>
     <Authors>Ecliptix</Authors>
     <Company>Ecliptix</Company>
     <Product>Ecliptix Protocol Server</Product>
@@ -31,6 +32,11 @@
     <!-- Signing (optional - enable when .snk file available) -->
     <SignAssembly>false</SignAssembly>
   </PropertyGroup>
+
+  <!-- Shared C# interop source files -->
+  <ItemGroup>
+    <Compile Include="..\shared\src\**\*.cs" Link="%(Filename)%(Extension)" />
+  </ItemGroup>
 
   <!-- Native library runtime assets -->
   <ItemGroup>
