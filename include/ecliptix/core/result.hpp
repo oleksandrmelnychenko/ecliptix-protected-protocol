@@ -171,9 +171,7 @@ private:
         : value_(idx, std::forward<Args>(args)...)
         , is_ok_(I == 0) {}
 };
-// MSVC doesn't support GNU statement expressions, use do-while version
-// Note: This version discards the Unwrap() result - only use when not capturing the value
-#ifdef _MSC_VER
+// TRY helpers are written without GNU statement expressions to stay MSVC-friendly.
 #define TRY(result_expr) \
     do { \
         auto&& __ecliptix_result = (result_expr); \
@@ -181,21 +179,6 @@ private:
             return std::move(__ecliptix_result).MapErr([](auto&& e) { return std::forward<decltype(e)>(e); }); \
         } \
     } while(0)
-#else
-#define TRY(result_expr) \
-    ({ \
-        auto&& __result = (result_expr); \
-        if (__result.IsErr()) { \
-            return std::move(__result).MapErr([](auto&& e) { return std::forward<decltype(e)>(e); }); \
-        } \
-        std::move(__result).Unwrap(); \
-    })
-#endif
-#define TRY_UNIT(result_expr) \
-    do { \
-        auto&& __result = (result_expr); \
-        if (__result.IsErr()) { \
-            return std::move(__result).MapErr([](auto&& e) { return std::forward<decltype(e)>(e); }); \
-        } \
-    } while(0)
-} 
+
+#define TRY_UNIT(result_expr) TRY(result_expr)
+}
