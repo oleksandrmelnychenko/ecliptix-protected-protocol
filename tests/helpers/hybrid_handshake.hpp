@@ -65,17 +65,9 @@ namespace ecliptix::protocol::test_helpers {
         const std::unique_ptr<protocol::connection::EcliptixProtocolConnection>& sender) {
         auto ct_result = sender->GetCurrentKyberCiphertext();
         REQUIRE(ct_result.IsOk());
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
         auto ct_opt = std::move(ct_result).Unwrap();
         REQUIRE(ct_opt.has_value());
-        auto result = std::move(ct_opt).value();
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
-        return result;
+        return std::move(ct_opt).value();
     }
 
     inline std::vector<uint8_t> EncapsulateTo(

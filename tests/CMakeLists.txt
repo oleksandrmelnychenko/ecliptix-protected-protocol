@@ -81,6 +81,11 @@ target_compile_definitions(ecliptix_tests
         ECLIPTIX_TEST_BUILD=1
 )
 
+# Suppress GCC 13 false positive with std::optional<std::vector<>> move semantics
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(ecliptix_tests PRIVATE -Wno-maybe-uninitialized)
+endif()
+
 # Register tests with CTest for CLion test runner
 include(CTest)
 list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
