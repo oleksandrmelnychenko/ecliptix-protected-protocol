@@ -31,6 +31,14 @@ if(ECLIPTIX_BUILD_SHARED)
 endif()
 
 # ============================================================================
+# Windows DLL Symbol Export
+# ============================================================================
+# Export all symbols from DLLs on Windows (required for C API)
+if(WIN32 AND ECLIPTIX_BUILD_SHARED)
+    set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+endif()
+
+# ============================================================================
 # Compiler Warnings and Security Hardening
 # ============================================================================
 if(MSVC)
