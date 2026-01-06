@@ -52,6 +52,11 @@ else()
     endif()
     # GCC: skip -Wpedantic as it rejects GNU statement expressions used by TRY macro
 
+    # MinGW/GCC 15: suppress false positive with vector comparison
+    if(MINGW)
+        add_compile_options(-Wno-stringop-overread)
+    endif()
+
     # Security hardening flags (GCC/Clang)
     add_compile_options(
         -fstack-protector-strong
