@@ -1,10 +1,10 @@
 using System.Buffers;
 
-#if ECLIPTIX_SERVER
-namespace Ecliptix.Protocol.Server.Utilities;
-#else
-namespace Ecliptix.Protocol.Client.Utilities;
-#endif
+
+namespace EPP.Utilities;
+
+
+
 
 internal readonly struct SecurePooledArray<T> : IDisposable where T : struct
 {

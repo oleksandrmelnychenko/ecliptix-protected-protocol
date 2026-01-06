@@ -1,15 +1,15 @@
-#if ECLIPTIX_SERVER
-using Ecliptix.Protocol.Server.Sodium;
-#else
-using Ecliptix.Protocol.Client.Sodium;
-#endif
+
+using EPP.Sodium;
+
+using EPP.Sodium;
+
 using Google.Protobuf;
 
-#if ECLIPTIX_SERVER
-namespace Ecliptix.Protocol.Server.Utilities;
-#else
-namespace Ecliptix.Protocol.Client.Utilities;
-#endif
+
+namespace EPP.Utilities;
+
+
+
 
 public static class SecureByteStringInterop
 {

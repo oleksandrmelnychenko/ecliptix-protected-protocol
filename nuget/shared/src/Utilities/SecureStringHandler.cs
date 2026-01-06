@@ -1,16 +1,16 @@
 using System.Security.Cryptography;
 using System.Text;
-#if ECLIPTIX_SERVER
-using Ecliptix.Protocol.Server.Sodium;
-#else
-using Ecliptix.Protocol.Client.Sodium;
-#endif
 
-#if ECLIPTIX_SERVER
-namespace Ecliptix.Protocol.Server.Utilities;
-#else
-namespace Ecliptix.Protocol.Client.Utilities;
-#endif
+using EPP.Sodium;
+
+using EPP.Sodium;
+
+
+
+namespace EPP.Utilities;
+
+
+
 
 internal sealed class SecureStringHandler : IDisposable
 {

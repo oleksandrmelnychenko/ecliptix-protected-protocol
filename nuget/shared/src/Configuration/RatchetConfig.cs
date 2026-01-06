@@ -1,8 +1,8 @@
-#if ECLIPTIX_SERVER
-namespace Ecliptix.Protocol.Server.Configuration;
-#else
-namespace Ecliptix.Protocol.Client.Configuration;
-#endif
+
+namespace EPP.Configuration;
+
+
+
 
 internal sealed class RatchetConfig
 {

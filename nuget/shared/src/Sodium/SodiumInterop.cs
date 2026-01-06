@@ -2,11 +2,11 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Sodium;
 
-#if ECLIPTIX_SERVER
-namespace Ecliptix.Protocol.Server.Sodium;
-#else
-namespace Ecliptix.Protocol.Client.Sodium;
-#endif
+
+namespace EPP.Sodium;
+
+
+
 
 internal static partial class SodiumInterop
 {

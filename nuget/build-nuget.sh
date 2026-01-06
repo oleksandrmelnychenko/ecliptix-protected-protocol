@@ -195,11 +195,11 @@ copy_native_lib() {
     local EXT=$(get_lib_extension "$RID")
     local PREFIX=$(get_lib_prefix "$RID")
 
-    local CLIENT_SRC="$BUILD_DIR/${PREFIX}ecliptix_protocol.$EXT"
-    local SERVER_SRC="$BUILD_DIR/${PREFIX}ecliptix_protocol_server.$EXT"
+    local CLIENT_SRC="$BUILD_DIR/${PREFIX}epp_agent.$EXT"
+    local SERVER_SRC="$BUILD_DIR/${PREFIX}epp_relay.$EXT"
 
-    local CLIENT_DEST="$SCRIPT_DIR/Ecliptix.Protocol.Client/runtimes/$RID/native/"
-    local SERVER_DEST="$SCRIPT_DIR/Ecliptix.Protocol.Server/runtimes/$RID/native/"
+    local CLIENT_DEST="$SCRIPT_DIR/EPP.Agent/runtimes/$RID/native/"
+    local SERVER_DEST="$SCRIPT_DIR/EPP.Relay/runtimes/$RID/native/"
 
     mkdir -p "$CLIENT_DEST" "$SERVER_DEST"
 
@@ -239,13 +239,13 @@ if [ "$SKIP_PROTECT" = false ]; then
             ;;
         linux-*)
             echo "Stripping debug symbols from Linux libraries..."
-            find "$SCRIPT_DIR/Ecliptix.Protocol.Client/runtimes/$CURRENT_RID/native" -name "*.so" -exec strip --strip-debug {} \; 2>/dev/null || true
-            find "$SCRIPT_DIR/Ecliptix.Protocol.Server/runtimes/$CURRENT_RID/native" -name "*.so" -exec strip --strip-debug {} \; 2>/dev/null || true
+            find "$SCRIPT_DIR/EPP.Agent/runtimes/$CURRENT_RID/native" -name "*.so" -exec strip --strip-debug {} \; 2>/dev/null || true
+            find "$SCRIPT_DIR/EPP.Relay/runtimes/$CURRENT_RID/native" -name "*.so" -exec strip --strip-debug {} \; 2>/dev/null || true
             ;;
         osx-*)
             echo "Stripping debug symbols from macOS libraries..."
-            find "$SCRIPT_DIR/Ecliptix.Protocol.Client/runtimes/$CURRENT_RID/native" -name "*.dylib" -exec strip -x {} \; 2>/dev/null || true
-            find "$SCRIPT_DIR/Ecliptix.Protocol.Server/runtimes/$CURRENT_RID/native" -name "*.dylib" -exec strip -x {} \; 2>/dev/null || true
+            find "$SCRIPT_DIR/EPP.Agent/runtimes/$CURRENT_RID/native" -name "*.dylib" -exec strip -x {} \; 2>/dev/null || true
+            find "$SCRIPT_DIR/EPP.Relay/runtimes/$CURRENT_RID/native" -name "*.dylib" -exec strip -x {} \; 2>/dev/null || true
             ;;
     esac
 else
@@ -268,16 +268,16 @@ if [ "$SKIP_SIGN" = false ]; then
         osx-*)
             if [ -n "$APPLE_SIGN_IDENTITY" ]; then
                 echo "Signing macOS libraries..."
-                find "$SCRIPT_DIR/Ecliptix.Protocol.Client/runtimes/$CURRENT_RID/native" -name "*.dylib" -exec codesign --force --sign "$APPLE_SIGN_IDENTITY" {} \; 2>/dev/null || print_warning "codesign failed"
-                find "$SCRIPT_DIR/Ecliptix.Protocol.Server/runtimes/$CURRENT_RID/native" -name "*.dylib" -exec codesign --force --sign "$APPLE_SIGN_IDENTITY" {} \; 2>/dev/null || print_warning "codesign failed"
+                find "$SCRIPT_DIR/EPP.Agent/runtimes/$CURRENT_RID/native" -name "*.dylib" -exec codesign --force --sign "$APPLE_SIGN_IDENTITY" {} \; 2>/dev/null || print_warning "codesign failed"
+                find "$SCRIPT_DIR/EPP.Relay/runtimes/$CURRENT_RID/native" -name "*.dylib" -exec codesign --force --sign "$APPLE_SIGN_IDENTITY" {} \; 2>/dev/null || print_warning "codesign failed"
             else
                 print_warning "No macOS signing identity available (APPLE_SIGN_IDENTITY)"
             fi
             ;;
         linux-*)
             echo "Creating SHA256 checksums for Linux libraries..."
-            find "$SCRIPT_DIR/Ecliptix.Protocol.Client/runtimes/$CURRENT_RID/native" -name "*.so" -exec sha256sum {} \; > "$OUTPUT_DIR/checksums-client-$CURRENT_RID.txt" 2>/dev/null || true
-            find "$SCRIPT_DIR/Ecliptix.Protocol.Server/runtimes/$CURRENT_RID/native" -name "*.so" -exec sha256sum {} \; > "$OUTPUT_DIR/checksums-server-$CURRENT_RID.txt" 2>/dev/null || true
+            find "$SCRIPT_DIR/EPP.Agent/runtimes/$CURRENT_RID/native" -name "*.so" -exec sha256sum {} \; > "$OUTPUT_DIR/checksums-client-$CURRENT_RID.txt" 2>/dev/null || true
+            find "$SCRIPT_DIR/EPP.Relay/runtimes/$CURRENT_RID/native" -name "*.so" -exec sha256sum {} \; > "$OUTPUT_DIR/checksums-server-$CURRENT_RID.txt" 2>/dev/null || true
             ;;
     esac
 else
@@ -290,16 +290,16 @@ print_header "Step 5: Building NuGet Packages"
 cd "$SCRIPT_DIR"
 
 # Build Client package
-echo "Building Ecliptix.Protocol.Client package..."
-dotnet pack Ecliptix.Protocol.Client/Ecliptix.Protocol.Client.csproj \
+echo "Building EPP.Agent package..."
+dotnet pack EPP.Agent/EPP.Agent.csproj \
     -c Release \
     -o "$OUTPUT_DIR" \
     /p:Version="$VERSION" \
     /p:PackageVersion="$VERSION"
 
 # Build Server package
-echo "Building Ecliptix.Protocol.Server package..."
-dotnet pack Ecliptix.Protocol.Server/Ecliptix.Protocol.Server.csproj \
+echo "Building EPP.Relay package..."
+dotnet pack EPP.Relay/EPP.Relay.csproj \
     -c Release \
     -o "$OUTPUT_DIR" \
     /p:Version="$VERSION" \
@@ -351,5 +351,5 @@ echo "Packages created in: $OUTPUT_DIR"
 ls -la "$OUTPUT_DIR"/*.nupkg 2>/dev/null || echo "No packages found"
 echo ""
 echo "To publish manually:"
-echo "  dotnet nuget push $OUTPUT_DIR/Ecliptix.Protocol.Client.$VERSION.nupkg --source github --api-key \$GITHUB_TOKEN"
-echo "  dotnet nuget push $OUTPUT_DIR/Ecliptix.Protocol.Server.$VERSION.nupkg --source github --api-key \$GITHUB_TOKEN"
+echo "  dotnet nuget push $OUTPUT_DIR/EPP.Agent.$VERSION.nupkg --source github --api-key \$GITHUB_TOKEN"
+echo "  dotnet nuget push $OUTPUT_DIR/EPP.Relay.$VERSION.nupkg --source github --api-key \$GITHUB_TOKEN"

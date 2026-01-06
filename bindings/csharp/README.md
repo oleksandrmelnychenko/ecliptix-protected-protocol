@@ -149,9 +149,9 @@ cmake --build build
 ```
 
 2. The library will be output to:
-   - macOS: `build/libecliptix_protocol.dylib`
-   - Linux: `build/libecliptix_protocol.so`
-   - Windows: `build/ecliptix_protocol.dll`
+   - macOS: `build/libepp_agent.dylib`
+   - Linux: `build/libepp_agent.so`
+   - Windows: `build/epp_agent.dll`
 
 ### Integration into C# Project
 
@@ -168,7 +168,7 @@ cmake --build build
 3. Ensure the native library is copied to output:
    ```xml
    <ItemGroup>
-     <None Include="libecliptix_protocol.dylib">
+     <None Include="libepp_agent.dylib">
        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
      </None>
    </ItemGroup>
@@ -254,7 +254,7 @@ All API calls are thread-safe. The C++ implementation uses fine-grained locking 
 
 ### Library Not Found
 
-**Error:** `DllNotFoundException: Unable to load DLL 'ecliptix_protocol'`
+**Error:** `DllNotFoundException: Unable to load DLL 'epp_agent'`
 
 **Solution:**
 1. Ensure the library is in the same directory as your executable

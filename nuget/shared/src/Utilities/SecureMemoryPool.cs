@@ -1,10 +1,10 @@
 using System.Collections.Concurrent;
 
-#if ECLIPTIX_SERVER
-namespace Ecliptix.Protocol.Server.Utilities;
-#else
-namespace Ecliptix.Protocol.Client.Utilities;
-#endif
+
+namespace EPP.Utilities;
+
+
+
 
 internal sealed class SecureMemoryPool : IDisposable
 {

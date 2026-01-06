@@ -1,8 +1,8 @@
-#if ECLIPTIX_SERVER
-namespace Ecliptix.Protocol.Server.Enums;
-#else
-namespace Ecliptix.Protocol.Client.Enums;
-#endif
+
+namespace EPP.Enums;
+
+
+
 
 internal enum ChainStepType
 {

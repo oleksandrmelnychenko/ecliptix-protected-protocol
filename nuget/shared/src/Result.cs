@@ -1,10 +1,10 @@
 using System.Diagnostics.CodeAnalysis;
 
-#if ECLIPTIX_SERVER
-namespace Ecliptix.Protocol.Server;
-#else
-namespace Ecliptix.Protocol.Client;
-#endif
+
+namespace EPP;
+
+
+
 
 public readonly struct Result<T, TE> : IEquatable<Result<T, TE>>
 {

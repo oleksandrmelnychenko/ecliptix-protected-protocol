@@ -2,11 +2,11 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
-#if ECLIPTIX_SERVER
-namespace Ecliptix.Protocol.Server.Sodium;
-#else
-namespace Ecliptix.Protocol.Client.Sodium;
-#endif
+
+namespace EPP.Sodium;
+
+
+
 
 public sealed class SodiumSecureMemoryHandle : SafeHandle
 {

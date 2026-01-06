@@ -1,6 +1,6 @@
-# Ecliptix.Protocol.Client
+# EPP.Agent
 
-High-performance native Signal Protocol client implementation for .NET applications.
+High-performance native Ecliptix Protected Protocol agent implementation for .NET applications.
 
 ## Features
 
@@ -14,13 +14,13 @@ High-performance native Signal Protocol client implementation for .NET applicati
 ## Installation
 
 ```bash
-dotnet add package Ecliptix.Protocol.Client
+dotnet add package EPP.Agent
 ```
 
 Or add to your project file:
 
 ```xml
-<PackageReference Include="Ecliptix.Protocol.Client" Version="1.0.0" />
+<PackageReference Include="EPP.Agent" Version="1.0.0" />
 ```
 
 ### GitHub Packages
@@ -38,10 +38,11 @@ Add the GitHub Packages source to your NuGet configuration:
 ## Quick Start
 
 ```csharp
-using Ecliptix.Protocol.Client;
+using EPP;
+using EPP.Agent;
 
 // Initialize the library (once per application)
-EcliptixNativeInterop.ecliptix_initialize();
+AgentNativeInterop.ecliptix_initialize();
 
 // Create identity keys
 var identityKeysResult = EcliptixIdentityKeysWrapper.Create();
@@ -79,7 +80,7 @@ if (receiveResult.IsOk)
 }
 
 // Cleanup (once per application)
-EcliptixNativeInterop.ecliptix_shutdown();
+AgentNativeInterop.ecliptix_shutdown();
 ```
 
 ## Platform Support

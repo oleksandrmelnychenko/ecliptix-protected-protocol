@@ -2,13 +2,13 @@
 
 We now produce two binaries so desktop/mobile apps and server-side services can be built independently:
 
-- **Client target** (`Ecliptix_Protocol_System`, alias `Ecliptix::Protocol`)  
-  - Sources: core + C API (`src/c_api/ecliptix_c_api.cpp`) for native/mobile bindings.  
-  - Output name: `ecliptix_protocol` (shared if `ECLIPTIX_BUILD_SHARED=ON`, otherwise static).
+- **Agent target** (`Ecliptix_Protocol_System`, alias `Ecliptix::Protocol`)
+  - Sources: core + C API (`src/c_api/ecliptix_c_api.cpp`) for native/mobile bindings.
+  - Output name: `epp_agent` (shared if `ECLIPTIX_BUILD_SHARED=ON`, otherwise static).
 
-- **Server target** (`Ecliptix_Protocol_Server`, alias `Ecliptix::ProtocolServer`)  
-  - Sources: core only (no C API), minimal surface for headless/server deployments.  
-  - Output name: `ecliptix_protocol_server`.
+- **Relay target** (`Ecliptix_Protocol_Server`, alias `Ecliptix::ProtocolServer`)
+  - Sources: core only (no C API), minimal surface for headless/server deployments.
+  - Output name: `epp_relay`.
 
 Options (CMake):
 ```
@@ -33,6 +33,6 @@ cmake --build build
 ```
 
 Bindings:
-- C#/PInvoke targets the client library name (`ecliptix_protocol`) by default. If you **must** point it at a differently named artifact, define `ECLIPTIX_SERVER_NATIVE` in your C# build to switch the DllImport library name to `ecliptix_protocol_server` (note: the server target does not expose the C API).
+- C#/PInvoke targets the agent library name (`epp_agent`) by default. If you **must** point it at a differently named artifact, define `ECLIPTIX_SERVER` in your C# build to switch the DllImport library name to `epp_relay` (note: the relay target does not expose the C API).
 
-Both targets retain the same cryptographic guarantees (hybrid DH ratchet with mandatory Kyber, ratchet epochs on envelopes to detect stale state). Pick the target that matches your runtime: use the client build for native/mobile apps that need the C API or managed bindings; use the server build for stateless relays or headless services.
+Both targets retain the same cryptographic guarantees (hybrid DH ratchet with mandatory Kyber, ratchet epochs on envelopes to detect stale state). Pick the target that matches your runtime: use the agent build for native/mobile apps that need the C API or managed bindings; use the relay build for stateless relays or headless services.

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(Ecliptix_Protocol_System VERSION 1.0.0 LANGUAGES CXX)
+project(Ecliptix_Protected_Protocol VERSION 1.0.0 LANGUAGES CXX)
 
 # ============================================================================
 # Project Configuration
@@ -232,12 +232,12 @@ endfunction()
 # Library Target
 # ============================================================================
 if(ECLIPTIX_BUILD_CLIENT_TARGET)
-    configure_protocol_target(${PROJECT_NAME} "ecliptix_protocol" ${ECLIPTIX_CLIENT_SOURCES})
+    configure_protocol_target(${PROJECT_NAME} "epp_agent" ${ECLIPTIX_CLIENT_SOURCES})
     add_library(Ecliptix::Protocol ALIAS ${PROJECT_NAME})
 endif()
 
 if(ECLIPTIX_BUILD_SERVER_TARGET)
-    configure_protocol_target(Ecliptix_Protocol_Server "ecliptix_protocol_server" ${ECLIPTIX_SERVER_SOURCES})
+    configure_protocol_target(Ecliptix_Protocol_Server "epp_relay" ${ECLIPTIX_SERVER_SOURCES})
     add_library(Ecliptix::ProtocolServer ALIAS Ecliptix_Protocol_Server)
 endif()
 
@@ -320,7 +320,7 @@ install(FILES
 # Summary
 # ============================================================================
 message(STATUS "")
-message(STATUS "Ecliptix Protocol System Configuration:")
+message(STATUS "Ecliptix Protected Protocol Configuration:")
 message(STATUS "  Version: ${PROJECT_VERSION}")
 message(STATUS "  C++ Standard: C++${CMAKE_CXX_STANDARD}")
 message(STATUS "  Build Type: ${CMAKE_BUILD_TYPE}")

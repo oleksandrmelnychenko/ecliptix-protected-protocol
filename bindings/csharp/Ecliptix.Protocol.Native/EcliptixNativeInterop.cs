@@ -61,9 +61,9 @@ public static class EcliptixNativeInterop
     // Warning: the server target does not export the C API. Only enable this
     // if you are shipping a client build that happens to be named like the server
     // artifact. Default is the client library name.
-    private const string LibraryName = "ecliptix_protocol_server";
+    private const string LibraryName = "epp_relay";
 #else
-    private const string LibraryName = "ecliptix_protocol";
+    private const string LibraryName = "epp_agent";
 #endif
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]

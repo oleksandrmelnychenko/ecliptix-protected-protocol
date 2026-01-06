@@ -1,6 +1,6 @@
-# Ecliptix.Protocol.Server
+# EPP.Relay
 
-High-performance native Signal Protocol server implementation for .NET applications.
+High-performance native Ecliptix Protected Protocol relay (server) implementation for .NET applications.
 
 ## Features
 
@@ -14,13 +14,13 @@ High-performance native Signal Protocol server implementation for .NET applicati
 ## Installation
 
 ```bash
-dotnet add package Ecliptix.Protocol.Server
+dotnet add package EPP.Relay
 ```
 
 Or add to your project file:
 
 ```xml
-<PackageReference Include="Ecliptix.Protocol.Server" Version="1.0.0" />
+<PackageReference Include="EPP.Relay" Version="1.0.0" />
 ```
 
 ### GitHub Packages
@@ -38,10 +38,11 @@ Add the GitHub Packages source to your NuGet configuration:
 ## Quick Start
 
 ```csharp
-using Ecliptix.Protocol.Server;
+using EPP;
+using EPP.Relay;
 
 // Initialize the library (once per application)
-EcliptixNativeInterop.ecliptix_initialize();
+RelayNativeInterop.ecliptix_initialize();
 
 // Create identity keys
 var identityKeysResult = EcliptixIdentityKeysWrapper.Create();
@@ -57,8 +58,8 @@ using var identityKeys = identityKeysResult.Unwrap();
 var publicX25519 = identityKeys.GetPublicX25519().Unwrap();
 var publicEd25519 = identityKeys.GetPublicEd25519().Unwrap();
 
-// Create protocol system
-var systemResult = EcliptixProtocolSystemWrapper.Create(identityKeys);
+// Create protocol system for server
+var systemResult = EcliptixProtocolSystemServerWrapper.Create(identityKeys);
 using var protocolSystem = systemResult.Unwrap();
 
 // Send encrypted message
@@ -79,7 +80,7 @@ if (receiveResult.IsOk)
 }
 
 // Cleanup (once per application)
-EcliptixNativeInterop.ecliptix_shutdown();
+RelayNativeInterop.ecliptix_shutdown();
 ```
 
 ## Platform Support
