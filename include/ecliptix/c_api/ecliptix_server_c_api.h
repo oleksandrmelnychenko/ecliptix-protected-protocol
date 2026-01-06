@@ -123,6 +123,13 @@ EcliptixErrorCode ecliptix_identity_keys_get_public_ed25519(
     size_t out_key_length,
     EcliptixError* out_error);
 
+/** Get the Kyber (ML-KEM-768) public key (1184 bytes) */
+EcliptixErrorCode ecliptix_identity_keys_get_public_kyber(
+    const EcliptixIdentityKeysHandle* handle,
+    uint8_t* out_key,
+    size_t out_key_length,
+    EcliptixError* out_error);
+
 /** Destroy identity keys and securely wipe memory */
 void ecliptix_identity_keys_destroy(EcliptixIdentityKeysHandle* handle);
 
