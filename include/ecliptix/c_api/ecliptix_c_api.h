@@ -110,14 +110,7 @@ EcliptixErrorCode ecliptix_protocol_system_set_callbacks(
     const EcliptixCallbacks* callbacks,
     EcliptixError* out_error);
 
-EcliptixErrorCode ecliptix_protocol_system_begin_handshake(
-    EcliptixProtocolSystemHandle* handle,
-    uint32_t connection_id,
-    uint8_t exchange_type,
-    EcliptixBuffer* out_handshake_message,
-    EcliptixError* out_error);
-
-// Begin a handshake with encapsulation to peer's Kyber public key.
+// Begin a handshake with encapsulation to peer's Kyber public key (MANDATORY - Kyber is required).
 // Use this when you know the peer's Kyber key (e.g., after receiving their bundle).
 // The resulting bundle will include kyber_ciphertext for the peer to decapsulate.
 EcliptixErrorCode ecliptix_protocol_system_begin_handshake_with_peer_kyber(

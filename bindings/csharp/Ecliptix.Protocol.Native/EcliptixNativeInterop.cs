@@ -125,13 +125,9 @@ public static class EcliptixNativeInterop
         in EcliptixCallbacks callbacks,
         out EcliptixError outError);
 
-    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern EcliptixErrorCode ecliptix_protocol_system_begin_handshake(
-        IntPtr handle,
-        uint connectionId,
-        byte exchangeType,
-        out EcliptixBuffer outHandshakeMessage,
-        out EcliptixError outError);
+    // NOTE: ecliptix_protocol_system_begin_handshake (without Kyber) has been removed.
+    // Post-quantum Kyber cryptography is now MANDATORY for all handshakes.
+    // Use ecliptix_protocol_system_begin_handshake_with_peer_kyber instead.
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     public static extern EcliptixErrorCode ecliptix_protocol_system_begin_handshake_with_peer_kyber(

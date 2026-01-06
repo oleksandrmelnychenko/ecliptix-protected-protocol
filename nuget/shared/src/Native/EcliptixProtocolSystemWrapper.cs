@@ -227,48 +227,8 @@ public sealed class EcliptixProtocolSystemWrapper : IDisposable
 
     public EcliptixIdentityKeysWrapper GetIdentityKeys() => _identityKeys;
 
-    public Result<byte[], EcliptixProtocolFailure> BeginHandshake(uint connectionId, byte exchangeType)
-    {
-        ThrowIfDisposed();
-
-        IntPtr bufferPtr = EcliptixNativeInterop.ecliptix_buffer_allocate(0);
-        if (bufferPtr == IntPtr.Zero)
-        {
-            return Result<byte[], EcliptixProtocolFailure>.Err(
-                EcliptixProtocolFailure.Generic("Failed to allocate native buffer"));
-        }
-
-        EcliptixErrorCode result = EcliptixNativeInterop.ecliptix_protocol_system_begin_handshake(
-            _handle,
-            connectionId,
-            exchangeType,
-            bufferPtr,
-            out EcliptixError error);
-
-        if (result != EcliptixErrorCode.SUCCESS)
-        {
-            string errorMessage = error.GetMessage();
-            EcliptixNativeInterop.ecliptix_error_free(ref error);
-            EcliptixNativeInterop.ecliptix_buffer_free(bufferPtr);
-            return Result<byte[], EcliptixProtocolFailure>.Err(
-                ConvertError(result, errorMessage));
-        }
-
-        try
-        {
-            EcliptixBuffer buffer = Marshal.PtrToStructure<EcliptixBuffer>(bufferPtr);
-            byte[] handshake = new byte[buffer.Length];
-            Marshal.Copy(buffer.Data, handshake, 0, (int)buffer.Length);
-            return Result<byte[], EcliptixProtocolFailure>.Ok(handshake);
-        }
-        finally
-        {
-            EcliptixNativeInterop.ecliptix_buffer_free(bufferPtr);
-        }
-    }
-
     /// <summary>
-    /// Begins handshake with encapsulation to peer's Kyber public key.
+    /// Begins handshake with encapsulation to peer's Kyber public key (MANDATORY - Kyber is required).
     /// Use this when you have the peer's Kyber key (e.g., from their bundle).
     /// The resulting handshake message will include kyber_ciphertext for peer to decapsulate.
     /// </summary>
