@@ -49,7 +49,6 @@ jobs:
     runs-on: macos-14
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
-      IOS_DEPLOYMENT_TARGET: ${{ env.IOS_DEPLOYMENT_TARGET }}
       VCPKG_ROOT: ${{ github.workspace }}/.build/vcpkg
     steps:
       - uses: actions/checkout@v4
@@ -75,8 +74,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
-      ANDROID_API_LEVEL: ${{ env.ANDROID_API_LEVEL }}
-      ANDROID_NDK_VERSION: ${{ env.ANDROID_NDK_VERSION }}
       VCPKG_ROOT: ${{ github.workspace }}/.build/vcpkg
     steps:
       - uses: actions/checkout@v4
