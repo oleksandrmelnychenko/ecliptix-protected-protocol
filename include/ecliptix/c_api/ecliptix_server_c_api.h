@@ -230,6 +230,13 @@ EcliptixErrorCode ecliptix_protocol_server_system_get_connection_id(
     uint32_t* out_connection_id,
     EcliptixError* out_error);
 
+/** Get current chain indices */
+EcliptixErrorCode ecliptix_protocol_server_system_get_chain_indices(
+    const EcliptixProtocolSystemHandle* handle,
+    uint32_t* out_sending_index,
+    uint32_t* out_receiving_index,
+    EcliptixError* out_error);
+
 /** Get the selected OPK ID during X3DH handshake */
 EcliptixErrorCode ecliptix_protocol_server_system_get_selected_opk_id(
     const EcliptixProtocolSystemHandle* handle,

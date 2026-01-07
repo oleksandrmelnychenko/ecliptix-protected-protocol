@@ -1268,6 +1268,36 @@ EcliptixErrorCode ecliptix_protocol_server_system_get_connection_id(
     return ECLIPTIX_SUCCESS;
 }
 
+EcliptixErrorCode ecliptix_protocol_server_system_get_chain_indices(
+    const EcliptixProtocolSystemHandle *handle,
+    uint32_t *out_sending_index,
+    uint32_t *out_receiving_index,
+    EcliptixError *out_error) {
+    if (!handle || !handle->system) {
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_STATE, "Protocol system handle is null or uninitialized");
+        return ECLIPTIX_ERROR_INVALID_STATE;
+    }
+    if (!out_sending_index || !out_receiving_index) {
+        fill_error(out_error, ECLIPTIX_ERROR_NULL_POINTER, "Output parameters are null");
+        return ECLIPTIX_ERROR_NULL_POINTER;
+    }
+    if (!handle->system->HasConnection()) {
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_STATE, "Protocol connection not established");
+        return ECLIPTIX_ERROR_INVALID_STATE;
+    }
+
+    auto indices_result = handle->system->GetChainIndices();
+    if (indices_result.IsErr()) {
+        fill_error_from_failure(out_error, std::move(indices_result).UnwrapErr());
+        return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
+    }
+
+    auto [sending_index, receiving_index] = indices_result.Unwrap();
+    *out_sending_index = sending_index;
+    *out_receiving_index = receiving_index;
+    return ECLIPTIX_SUCCESS;
+}
+
 EcliptixErrorCode ecliptix_protocol_server_system_get_selected_opk_id(
     const EcliptixProtocolSystemHandle *handle,
     bool *out_has_opk_id,
