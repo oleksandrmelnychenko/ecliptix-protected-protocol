@@ -912,6 +912,14 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
         SodiumInterop::SecureWipe(std::span(dh_results));
         std::vector<uint8_t> classical_shared(Constants::X_25519_KEY_SIZE);
         auto hkdf_result = Hkdf::DeriveKey(ikm, classical_shared, {}, info);
+
+        // DEBUG: Log classical_shared and ikm details to trace root_key derivation
+        fprintf(stderr, "[X3DH] classical_shared: %02x%02x%02x%02x%02x%02x%02x%02x\n",
+            classical_shared[0], classical_shared[1], classical_shared[2], classical_shared[3],
+            classical_shared[4], classical_shared[5], classical_shared[6], classical_shared[7]);
+        fprintf(stderr, "[X3DH] dh_offset: %zu, ikm_size: %zu, is_initiator: %d\n",
+            dh_offset, ikm.size(), is_initiator ? 1 : 0);
+
         SodiumInterop::SecureWipe(std::span(ikm));
         if (hkdf_result.IsErr()) {
             SodiumInterop::SecureWipe(std::span(classical_shared));

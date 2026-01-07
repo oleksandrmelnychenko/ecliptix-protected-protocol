@@ -1080,6 +1080,11 @@ EcliptixErrorCode ecliptix_protocol_server_system_complete_handshake_auto(
         return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
     }
 
+    // DEBUG: Log root_key to match client-side logging
+    fprintf(stderr, "[COMPLETE-HANDSHAKE-AUTO] root_key: %02x%02x%02x%02x%02x%02x%02x%02x\n",
+        root_key[0], root_key[1], root_key[2], root_key[3],
+        root_key[4], root_key[5], root_key[6], root_key[7]);
+
     // Try to consume pending artifacts (from BeginHandshakeWithPeerKyber)
     auto kyber_artifacts_result = handle->system->GetIdentityKeysMutable().ConsumePendingKyberHandshake();
 
