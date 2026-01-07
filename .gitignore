@@ -3,6 +3,9 @@
 /build-*/
 cmake-build-*/
 out/
+.build/
+bindings/swift/artifacts/
+bindings/android/**/build/
 
 # CMake
 CMakeCache.txt
