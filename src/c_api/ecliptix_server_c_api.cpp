@@ -1086,11 +1086,16 @@ EcliptixErrorCode ecliptix_protocol_server_system_complete_handshake_auto(
     std::vector<uint8_t> kyber_ciphertext;
     std::vector<uint8_t> kyber_shared_secret;
 
-    if (kyber_artifacts_result.IsOk()) {
-        // Case 1: We called BeginHandshakeWithPeerKyber - use stored artifacts
+    // RESPONDER must decapsulate peer's ciphertext, not use own encapsulation
+    bool should_use_pending = kyber_artifacts_result.IsOk() &&
+                               (is_initiator || peer_bundle.kyber_ciphertext().empty());
+
+    if (should_use_pending) {
+        // Case 1: INITIATOR or no peer ciphertext - use stored artifacts
         auto kyber_artifacts = std::move(kyber_artifacts_result).Unwrap();
         kyber_ciphertext = std::move(kyber_artifacts.kyber_ciphertext);
         kyber_shared_secret = std::move(kyber_artifacts.kyber_shared_secret);
+        fprintf(stderr, "[COMPLETE-HANDSHAKE-AUTO] Using stored kyber_ss (is_initiator=%d)\n", is_initiator);
     } else if (!peer_bundle.kyber_ciphertext().empty()) {
         // Case 2: Peer sent ciphertext (we used BeginHandshake) - decapsulate
         if (peer_bundle.kyber_ciphertext().size() != KyberInterop::KYBER_768_CIPHERTEXT_SIZE) {
@@ -1112,6 +1117,7 @@ EcliptixErrorCode ecliptix_protocol_server_system_complete_handshake_auto(
         auto artifacts = std::move(decap_result).Unwrap();
         kyber_ciphertext = std::move(artifacts.kyber_ciphertext);
         kyber_shared_secret = std::move(artifacts.kyber_shared_secret);
+        fprintf(stderr, "[COMPLETE-HANDSHAKE-AUTO] RESPONDER: Decapsulated peer's ciphertext for matching kyber_ss\n");
     } else {
         // Case 3: Neither available - hybrid PQ mode required
         auto _wipe_root = SodiumInterop::SecureWipe(std::span(root_key));
