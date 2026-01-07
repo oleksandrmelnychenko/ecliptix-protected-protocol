@@ -23,18 +23,21 @@ using namespace ecliptix::protocol::test_helpers;
 
 static std::vector<uint8_t> MakeTestNonce(uint64_t idx) {
     // Nonce structure (12 bytes total):
-    // Bytes [0-7]: Monotonic counter (use idx for test simplicity)
+    // Bytes [0-3]: Random prefix (fixed here for test simplicity)
+    // Bytes [4-7]: Monotonic counter (use idx for test simplicity)
     // Bytes [8-11]: Message index in little-endian format
     std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE, 0);
 
-    // Set monotonic counter (bytes 0-7)
-    for (size_t i = 0; i < 8; ++i) {
-        nonce[i] = static_cast<uint8_t>((idx >> (i * 8)) & 0xFF);
+    // Set monotonic counter (bytes 4-7)
+    for (size_t i = 0; i < ProtocolConstants::NONCE_COUNTER_SIZE; ++i) {
+        nonce[ProtocolConstants::NONCE_PREFIX_SIZE + i] =
+            static_cast<uint8_t>((idx >> (i * 8)) & 0xFF);
     }
 
     // Set message index in little-endian (bytes 8-11)
-    for (size_t i = 0; i < 4; ++i) {
-        nonce[8 + i] = static_cast<uint8_t>((idx >> (i * 8)) & 0xFF);
+    for (size_t i = 0; i < ProtocolConstants::NONCE_INDEX_SIZE; ++i) {
+        nonce[ProtocolConstants::NONCE_PREFIX_SIZE + ProtocolConstants::NONCE_COUNTER_SIZE + i] =
+            static_cast<uint8_t>((idx >> (i * 8)) & 0xFF);
     }
 
     return nonce;
@@ -541,8 +544,9 @@ TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: Nonce Counter Never Resets 
         REQUIRE(nonce1.IsOk());
         auto nonce1_bytes = std::move(nonce1).Unwrap();
         uint32_t counter_before_ratchet = 0;
-        for (size_t i = 0; i < 4; ++i) {
-            counter_before_ratchet |= static_cast<uint32_t>(nonce1_bytes[8 + i]) << (i * 8);
+        for (size_t i = 0; i < ProtocolConstants::NONCE_COUNTER_SIZE; ++i) {
+            counter_before_ratchet |=
+                static_cast<uint32_t>(nonce1_bytes[ProtocolConstants::NONCE_PREFIX_SIZE + i]) << (i * 8);
         }
         REQUIRE(counter_before_ratchet >= 100);
         auto new_peer_keypair = SodiumInterop::GenerateX25519KeyPair("new-peer");
@@ -555,8 +559,9 @@ TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: Nonce Counter Never Resets 
         REQUIRE(nonce2.IsOk());
         auto nonce2_bytes = std::move(nonce2).Unwrap();
         uint32_t counter_after_ratchet = 0;
-        for (size_t i = 0; i < 4; ++i) {
-            counter_after_ratchet |= static_cast<uint32_t>(nonce2_bytes[8 + i]) << (i * 8);
+        for (size_t i = 0; i < ProtocolConstants::NONCE_COUNTER_SIZE; ++i) {
+            counter_after_ratchet |=
+                static_cast<uint32_t>(nonce2_bytes[ProtocolConstants::NONCE_PREFIX_SIZE + i]) << (i * 8);
         }
         // CVE FIX: Nonce counter MUST continue monotonically and NEVER reset
         // This prevents nonce reuse across ratchet epochs which could break AEAD security

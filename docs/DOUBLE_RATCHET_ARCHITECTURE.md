@@ -337,43 +337,53 @@ public:
 
 ```
 Nonce (12 bytes total):
-  ┌────────────────────┬──────────────┐
-  │   Random (8 bytes) │ Counter (4B) │
-  └────────────────────┴──────────────┘
-   Bytes 0-7            Bytes 8-11
+  ┌──────────────┬──────────────┬──────────────┐
+  │ Prefix (4B)  │ Counter (4B) │ Index (4B)   │
+  └──────────────┴──────────────┴──────────────┘
+   Bytes 0-3      Bytes 4-7      Bytes 8-11
 
-Counter encoding: Little-endian uint32
+Counter/index encoding: Little-endian uint32
 ```
 
 ### 4.2 Generation Algorithm
 
 ```cpp
-std::atomic<int64_t> nonce_counter_{0};
-constexpr int64_t MAX_NONCE_COUNTER = std::numeric_limits<int32_t>::max();
-constexpr size_t RANDOM_PREFIX_SIZE = 8;
+std::atomic<uint64_t> nonce_counter_{0};
+constexpr uint64_t MAX_NONCE_COUNTER = std::numeric_limits<uint32_t>::max();
+constexpr size_t PREFIX_SIZE = 4;
+constexpr size_t COUNTER_SIZE = 4;
+constexpr size_t INDEX_SIZE = 4;
+std::array<uint8_t, PREFIX_SIZE> nonce_prefix_ = GenerateNoncePrefix();
 
 Result<std::vector<uint8_t>, EcliptixProtocolFailure> GenerateNextNonce() {
-    // Check counter overflow
-    int64_t current = nonce_counter_.load();
-    if (current >= MAX_NONCE_COUNTER) {
+    // Check counter overflow (pre-increment guard)
+    uint64_t current = nonce_counter_.load();
+    if (current > MAX_NONCE_COUNTER) {
         return Error("Nonce counter overflow - session must be rekeyed");
     }
+    nonce_counter_.store(current + 1);
 
     // Generate 12-byte nonce
     std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE);
 
-    // First 8 bytes: cryptographically random
-    SodiumInterop::GetRandomBytes(RANDOM_PREFIX_SIZE, std::span<uint8_t>(nonce).subspan(0, 8));
+    // First 4 bytes: per-session random prefix
+    std::copy(nonce_prefix_.begin(), nonce_prefix_.end(), nonce.begin());
 
-    // Last 4 bytes: atomic counter (little-endian)
-    int64_t next_counter = nonce_counter_.fetch_add(1);
-    uint32_t counter_value = static_cast<uint32_t>(next_counter);
+    // Next 4 bytes: monotonic counter (little-endian)
+    uint32_t counter_value = static_cast<uint32_t>(current);
 
     // Write as little-endian
-    nonce[8]  = (counter_value >>  0) & 0xFF;
-    nonce[9]  = (counter_value >>  8) & 0xFF;
-    nonce[10] = (counter_value >> 16) & 0xFF;
-    nonce[11] = (counter_value >> 24) & 0xFF;
+    nonce[4] = (counter_value >>  0) & 0xFF;
+    nonce[5] = (counter_value >>  8) & 0xFF;
+    nonce[6] = (counter_value >> 16) & 0xFF;
+    nonce[7] = (counter_value >> 24) & 0xFF;
+
+    // Last 4 bytes: message index binding (little-endian)
+    const uint32_t index = ResolveMessageIndex();
+    nonce[8]  = (index >>  0) & 0xFF;
+    nonce[9]  = (index >>  8) & 0xFF;
+    nonce[10] = (index >> 16) & 0xFF;
+    nonce[11] = (index >> 24) & 0xFF;
 
     return Result::Ok(std::move(nonce));
 }
@@ -411,22 +421,22 @@ public:
 };
 ```
 
-### 5.2 Nonce Counter (Lock-Free)
+### 5.2 Nonce Counter (Atomic)
 
 ```cpp
-// Atomic counter for nonce generation (lock-free)
-std::atomic<int64_t> nonce_counter_{0};
+// Atomic counter for nonce generation
+std::atomic<uint64_t> nonce_counter_{0};
 
-// Can be called without holding connection lock
+// Nonce generation uses the connection lock to coordinate rate limiting
 Result<std::vector<uint8_t>, EcliptixProtocolFailure> GenerateNextNonce() {
-    // No lock needed - atomic operations
+    std::lock_guard<std::mutex> guard(lock_);
     // ...
 }
 ```
 
 **Critical Insights**:
 1. **Coarse-grained locking** for ratchet state (simplicity over performance)
-2. **Lock-free nonce generation** (high-frequency operation)
+2. **Atomic nonce counters** paired with serialized generation for rate limiting
 3. **No lock ordering issues** (only one lock per connection)
 
 ## 6. Memory Safety

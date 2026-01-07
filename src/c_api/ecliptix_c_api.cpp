@@ -694,8 +694,8 @@ EcliptixErrorCode ecliptix_protocol_system_begin_handshake_with_peer_kyber(
     handshake.set_payload(proto_bundle.SerializeAsString());
 
     
-    handle->system->SetPendingInitiator(false);
-    fprintf(stderr, "[BEGIN-HANDSHAKE-KYBER] SetPendingInitiator(false) - I am RESPONDER\n");
+    handle->system->SetPendingInitiator(true);
+    fprintf(stderr, "[BEGIN-HANDSHAKE-KYBER] SetPendingInitiator(true) - I am INITIATOR\n");
 
     const std::string serialized = handshake.SerializeAsString();
     if (!copy_to_buffer(

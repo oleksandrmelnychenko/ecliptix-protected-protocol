@@ -36,17 +36,19 @@ using protocol::EcliptixProtocolFailure;
  * primitive. Nonce uniqueness is enforced by the protocol layer
  * (EcliptixProtocolConnection) through:
  *
- * 1. ATOMIC COUNTER: 64-bit atomic counter (2^64 messages before wraparound)
- * 2. RANDOM PREFIX: 4 bytes of cryptographic randomness per nonce
+ * 1. ATOMIC COUNTER: 32-bit monotonic counter (2^32 messages per key)
+ * 2. RANDOM PREFIX: 4 bytes of cryptographic randomness per session
  * 3. OVERFLOW PROTECTION: Mandatory key rotation at 95% of counter max
- * 4. DOUBLE RATCHET: Periodic DH ratchet steps generate fresh keys,
- *    resetting nonce counters (configurable: every 50-500 messages)
+ * 4. DOUBLE RATCHET: Periodic DH ratchet steps generate fresh keys; the
+ *    implementation keeps nonce counters monotonic across ratchets
+ *    (configurable: every 50-500 messages)
  *
  * Structure of protocol-layer nonce (12 bytes):
- *   [0..7]   = RANDOM_PREFIX (8 bytes from libsodium CSPRNG, 64-bit entropy)
- *   [8..11]  = COUNTER (4 bytes, little-endian uint32_t)
+ *   [0..3]   = RANDOM_PREFIX (4 bytes from libsodium CSPRNG, 32-bit entropy)
+ *   [4..7]   = COUNTER (4 bytes, little-endian uint32_t)
+ *   [8..11]  = MESSAGE_INDEX (4 bytes, little-endian uint32_t)
  *
- * The combination of random prefix + monotonic counter + periodic key
+ * The combination of random prefix + monotonic counter + message index + periodic key
  * rotation provides defense-in-depth against nonce reuse across:
  * - Process restarts (random prefix)
  * - Clock resets (counter persistence not required)

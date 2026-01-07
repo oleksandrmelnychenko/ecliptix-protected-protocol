@@ -58,13 +58,11 @@ bool DhValidator::IsValidCurve25519Point(std::span<const uint8_t> public_key) {
                         (static_cast<uint32_t>(CURVE_25519_PRIME[byte_offset + 3]) << 24);
     }
     for (int i = Constants::FIELD_256_WORD_COUNT - 1; i >= 0; --i) {
-        uint32_t masked_key_word = key_words[i] & Constants::FIELD_ELEMENT_MASK;
-        uint32_t masked_prime_word = prime_words[i] & Constants::FIELD_ELEMENT_MASK;
-        if (masked_key_word < masked_prime_word) {
-            return true;  
+        if (key_words[i] < prime_words[i]) {
+            return true;
         }
-        if (masked_key_word > masked_prime_word) {
-            return false;  
+        if (key_words[i] > prime_words[i]) {
+            return false;
         }
     }
     return false;

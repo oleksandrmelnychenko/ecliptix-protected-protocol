@@ -139,6 +139,12 @@ TEST_CASE("DhValidator - Small-order points detection", "[dh_validator][security
     }
 }
 TEST_CASE("DhValidator - Invalid field elements", "[dh_validator][security]") {
+    SECTION("Non-canonical encoding with high bit set") {
+        std::array<uint8_t, 32> non_canonical = {};
+        non_canonical[31] = 0x80;
+        auto result = DhValidator::ValidateX25519PublicKey(non_canonical);
+        REQUIRE(result.IsErr());
+    }
     SECTION("Field prime (exactly p = 2^255 - 19)") {
         std::array<uint8_t, 32> prime = {
             0xED, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,

@@ -25,7 +25,7 @@ using namespace ecliptix::proto::common;
 using namespace ecliptix::protocol::test_helpers;
 
 // Helper to create unique nonces with proper chain index binding
-// nonce_counter: Unique monotonic counter for nonce uniqueness (bytes 0-7)
+// nonce_counter: Unique monotonic counter for nonce uniqueness (bytes 4-7)
 // message_index: Message index within current chain (bytes 8-11)
 //
 // IMPORTANT: For replay protection to work correctly across DH ratchets:
@@ -34,13 +34,15 @@ using namespace ecliptix::protocol::test_helpers;
 // - The combination (nonce_counter, message_index) must be unique
 static std::vector<uint8_t> MakeMetaNonce(uint64_t nonce_counter, uint32_t message_index) {
     std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE, 0);
-    // Bytes 0-7: nonce counter for global uniqueness (NEVER resets)
-    for (size_t i = 0; i < 8; ++i) {
-        nonce[i] = static_cast<uint8_t>((nonce_counter >> (i * 8)) & 0xFF);
+    // Bytes 4-7: nonce counter for global uniqueness (NEVER resets)
+    for (size_t i = 0; i < ProtocolConstants::NONCE_COUNTER_SIZE; ++i) {
+        nonce[ProtocolConstants::NONCE_PREFIX_SIZE + i] =
+            static_cast<uint8_t>((nonce_counter >> (i * 8)) & 0xFF);
     }
     // Bytes 8-11: message index within current chain (resets on DH ratchet)
-    for (size_t i = 0; i < 4; ++i) {
-        nonce[8 + i] = static_cast<uint8_t>((message_index >> (i * 8)) & 0xFF);
+    for (size_t i = 0; i < ProtocolConstants::NONCE_INDEX_SIZE; ++i) {
+        nonce[ProtocolConstants::NONCE_PREFIX_SIZE + ProtocolConstants::NONCE_COUNTER_SIZE + i] =
+            static_cast<uint8_t>((message_index >> (i * 8)) & 0xFF);
     }
     return nonce;
 }

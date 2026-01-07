@@ -14,18 +14,21 @@ using namespace ecliptix::protocol::test_helpers;
 
 static std::vector<uint8_t> MakeRateNonce(uint64_t idx) {
     // Nonce structure (12 bytes total):
-    // Bytes [0-7]: Monotonic counter (use idx for test simplicity)
+    // Bytes [0-3]: Random prefix (fixed here for test simplicity)
+    // Bytes [4-7]: Monotonic counter (use idx for test simplicity)
     // Bytes [8-11]: Message index in little-endian format
     std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE, 0);
 
-    // Set monotonic counter (bytes 0-7)
-    for (size_t i = 0; i < 8; ++i) {
-        nonce[i] = static_cast<uint8_t>((idx >> (i * 8)) & 0xFF);
+    // Set monotonic counter (bytes 4-7)
+    for (size_t i = 0; i < ProtocolConstants::NONCE_COUNTER_SIZE; ++i) {
+        nonce[ProtocolConstants::NONCE_PREFIX_SIZE + i] =
+            static_cast<uint8_t>((idx >> (i * 8)) & 0xFF);
     }
 
     // Set message index in little-endian (bytes 8-11)
-    for (size_t i = 0; i < 4; ++i) {
-        nonce[8 + i] = static_cast<uint8_t>((idx >> (i * 8)) & 0xFF);
+    for (size_t i = 0; i < ProtocolConstants::NONCE_INDEX_SIZE; ++i) {
+        nonce[ProtocolConstants::NONCE_PREFIX_SIZE + ProtocolConstants::NONCE_COUNTER_SIZE + i] =
+            static_cast<uint8_t>((idx >> (i * 8)) & 0xFF);
     }
 
     return nonce;

@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string_view>
 #include <chrono>
+#include <limits>
 namespace ecliptix::protocol {
 struct Constants {
     static constexpr size_t ED_25519_PUBLIC_KEY_SIZE = 32;
@@ -36,6 +37,7 @@ struct OpenSSLConstants {
     static constexpr std::string_view PARAM_KEY = "key";
     static constexpr std::string_view PARAM_SALT = "salt";
     static constexpr std::string_view PARAM_INFO = "info";
+    static constexpr std::string_view PARAM_MODE = "mode";
     static constexpr std::string_view UNKNOWN_ERROR_MESSAGE = "Unknown OpenSSL error";
 };
 struct SodiumConstants {
@@ -62,8 +64,11 @@ struct ProtocolConstants {
     static constexpr std::chrono::minutes WINDOW_ADJUSTMENT_INTERVAL{2};
     static constexpr std::chrono::hours DEFAULT_MAX_CHAIN_AGE{1};
     static constexpr int64_t INITIAL_NONCE_COUNTER = 0;
-    static constexpr uint64_t MAX_NONCE_COUNTER = 18'446'744'073'709'551'615ULL;
-    static constexpr int RANDOM_NONCE_PREFIX_SIZE = 8;
+    static constexpr uint64_t MAX_NONCE_COUNTER = std::numeric_limits<uint32_t>::max();
+    static constexpr int RANDOM_NONCE_PREFIX_SIZE = 4;
+    static constexpr size_t NONCE_PREFIX_SIZE = 4;
+    static constexpr size_t NONCE_COUNTER_SIZE = 4;
+    static constexpr size_t NONCE_INDEX_SIZE = 4;
     static constexpr uint32_t DEFAULT_CHAIN_INDEX = 0;
     static constexpr int HKDF_OUTPUT_BUFFER_MULTIPLIER = 2;
     static constexpr int EMPTY_ARRAY_LENGTH = 0;

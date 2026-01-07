@@ -36,6 +36,12 @@ TEST_CASE("HKDF RFC 5869 Test Vectors", "[security][hkdf][conformance]") {
             0x34, 0x00, 0x72, 0x08, 0xd5, 0xb8, 0x87, 0x18,
             0x58, 0x65
         };
+        const std::array<uint8_t, 32> expected_prk = {
+            0x07, 0x77, 0x09, 0x36, 0x2c, 0x2e, 0x32, 0xdf,
+            0x0d, 0xdc, 0x3f, 0x0d, 0xc4, 0x7b, 0xba, 0x63,
+            0x90, 0xb6, 0xc7, 0x3b, 0xb5, 0x0f, 0x9c, 0x31,
+            0x22, 0xec, 0x84, 0x4a, 0xd7, 0xc2, 0xb3, 0xe5
+        };
 
         auto result = Hkdf::DeriveKeyBytes(ikm, 42, salt, info);
         REQUIRE(result.IsOk());
@@ -43,6 +49,17 @@ TEST_CASE("HKDF RFC 5869 Test Vectors", "[security][hkdf][conformance]") {
         const auto okm = std::move(result).Unwrap();
         REQUIRE(okm.size() == 42);
         REQUIRE(std::equal(okm.begin(), okm.end(), expected_okm.begin()));
+
+        auto prk_result = Hkdf::Extract(ikm, salt);
+        REQUIRE(prk_result.IsOk());
+        const auto prk = std::move(prk_result).Unwrap();
+        REQUIRE(prk.size() == expected_prk.size());
+        REQUIRE(std::equal(prk.begin(), prk.end(), expected_prk.begin()));
+
+        std::vector<uint8_t> expanded_okm(expected_okm.size());
+        auto expand_result = Hkdf::Expand(prk, expanded_okm, info);
+        REQUIRE(expand_result.IsOk());
+        REQUIRE(std::equal(expanded_okm.begin(), expanded_okm.end(), expected_okm.begin()));
     }
 
     SECTION("RFC 5869 Test Case 2 - Longer inputs and outputs") {

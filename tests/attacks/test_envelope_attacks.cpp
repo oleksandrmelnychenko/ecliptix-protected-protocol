@@ -19,8 +19,10 @@ using namespace ecliptix::protocol::test_helpers;
 
 static std::vector<uint8_t> MakeBoundNonce(uint32_t index, uint8_t fill = 0x42) {
     std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE, fill);
-    for (size_t i = 0; i < 4; ++i) {
-        nonce[8 + i] = static_cast<uint8_t>((index >> (i * 8)) & 0xFF);
+    const size_t index_offset =
+        ProtocolConstants::NONCE_PREFIX_SIZE + ProtocolConstants::NONCE_COUNTER_SIZE;
+    for (size_t i = 0; i < ProtocolConstants::NONCE_INDEX_SIZE; ++i) {
+        nonce[index_offset + i] = static_cast<uint8_t>((index >> (i * 8)) & 0xFF);
     }
     return nonce;
 }

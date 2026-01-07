@@ -19,6 +19,7 @@
 #include <mutex>
 #include <atomic>
 #include <optional>
+#include <array>
 
 namespace ecliptix::proto::protocol {
     class RatchetState;
@@ -324,6 +325,7 @@ namespace ecliptix::protocol::connection {
         SecureMemoryHandle kyber_secret_key_handle_;
         std::vector<uint8_t> kyber_public_key_;
         security::ReplayProtection replay_protection_;
+        std::array<uint8_t, ProtocolConstants::NONCE_PREFIX_SIZE> nonce_prefix_;
         std::atomic<uint64_t> nonce_counter_;
         std::optional<uint32_t> pending_send_index_;
         std::atomic<int64_t> rate_limit_window_start_ns_;

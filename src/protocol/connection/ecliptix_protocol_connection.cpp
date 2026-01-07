@@ -211,6 +211,15 @@ namespace ecliptix::protocol::connection {
             ad.insert(ad.end(), kyber_ciphertext.begin(), kyber_ciphertext.end());
             return ad;
         }
+
+        std::array<uint8_t, ProtocolConstants::NONCE_PREFIX_SIZE> GenerateNoncePrefix() {
+            std::array<uint8_t, ProtocolConstants::NONCE_PREFIX_SIZE> prefix{};
+            const auto bytes = SodiumInterop::GetRandomBytes(prefix.size());
+            for (size_t i = 0; i < prefix.size(); ++i) {
+                prefix[i] = bytes[i];
+            }
+            return prefix;
+        }
     }
 
     EcliptixProtocolConnection::EcliptixProtocolConnection(
@@ -243,6 +252,7 @@ namespace ecliptix::protocol::connection {
           , peer_bundle_()
           , peer_dh_public_key_()
           , replay_protection_(connection_id)
+          , nonce_prefix_(GenerateNoncePrefix())
           , nonce_counter_(ProtocolConstants::INITIAL_NONCE_COUNTER)
           , pending_send_index_(std::nullopt)
           , rate_limit_window_start_ns_(0)
@@ -308,6 +318,7 @@ namespace ecliptix::protocol::connection {
           , kyber_secret_key_handle_(std::move(kyber_secret_key_handle))
           , kyber_public_key_(std::move(kyber_public_key))
           , replay_protection_(connection_id)
+          , nonce_prefix_(GenerateNoncePrefix())
           , nonce_counter_(nonce_counter)
           , pending_send_index_(std::nullopt)
           , rate_limit_window_start_ns_(0)
@@ -2012,22 +2023,26 @@ EcliptixProtocolConnection::GetCurrentKyberCiphertext() const {
                     std::to_string(NONCE_RATE_LIMIT) +
                     " nonces per second)"));
         }
-        constexpr size_t NONCE_SIZE = 12;
-        constexpr size_t COUNTER_SIZE = 8;
-        constexpr size_t INDEX_SIZE = 4;
+        constexpr size_t NONCE_SIZE = Constants::AES_GCM_NONCE_SIZE;
+        constexpr size_t PREFIX_SIZE = ProtocolConstants::NONCE_PREFIX_SIZE;
+        constexpr size_t COUNTER_SIZE = ProtocolConstants::NONCE_COUNTER_SIZE;
+        constexpr size_t INDEX_SIZE = ProtocolConstants::NONCE_INDEX_SIZE;
+        static_assert(PREFIX_SIZE + COUNTER_SIZE + INDEX_SIZE == NONCE_SIZE,
+                      "Nonce layout must match AES-GCM nonce size");
         std::vector<uint8_t> nonce(NONCE_SIZE);
-        const uint64_t counter = nonce_counter_.fetch_add(1, std::memory_order_seq_cst);
+        const uint64_t counter = nonce_counter_.load(std::memory_order_seq_cst);
         uint32_t index = message_index
                              ? *message_index
                              : (pending_send_index_.has_value()
                                 ? *pending_send_index_
                                 : static_cast<uint32_t>(counter));
         pending_send_index_.reset();
-        if (counter >= ProtocolConstants::MAX_NONCE_COUNTER) {
+        if (counter > ProtocolConstants::MAX_NONCE_COUNTER) {
             return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic(
                     "Nonce counter overflow - must rotate keys (ratchet) before continuing"));
         }
+        nonce_counter_.store(counter + 1, std::memory_order_seq_cst);
         constexpr auto RATCHET_THRESHOLD =
                 static_cast<uint64_t>(ProtocolConstants::MAX_NONCE_COUNTER * 0.95);
         if (counter >= RATCHET_THRESHOLD && !ratchet_warning_triggered_.load(std::memory_order_seq_cst)) {
@@ -2036,12 +2051,15 @@ EcliptixProtocolConnection::GetCurrentKyberCiphertext() const {
                 event_handler_->OnRatchetRequired(id_, "Nonce counter approaching maximum - ratchet required");
             }
         }
+        for (size_t i = ProtocolConstants::ZERO_VALUE; i < PREFIX_SIZE; ++i) {
+            nonce[i] = nonce_prefix_[i];
+        }
         for (size_t i = ProtocolConstants::ZERO_VALUE; i < COUNTER_SIZE; ++i) {
-            nonce[i] = static_cast<uint8_t>(
+            nonce[PREFIX_SIZE + i] = static_cast<uint8_t>(
                 (counter >> (i * ComparisonConstants::BIT_SHIFT_BYTE)) & ComparisonConstants::BYTE_MASK);
         }
         for (size_t i = ProtocolConstants::ZERO_VALUE; i < INDEX_SIZE; ++i) {
-            nonce[COUNTER_SIZE + i] = static_cast<uint8_t>(
+            nonce[PREFIX_SIZE + COUNTER_SIZE + i] = static_cast<uint8_t>(
                 (index >> (i * ComparisonConstants::BIT_SHIFT_BYTE)) & ComparisonConstants::BYTE_MASK);
         }
         return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Ok(nonce);
@@ -2458,8 +2476,9 @@ EcliptixProtocolConnection::GetCurrentKyberCiphertext() const {
         
         uint32_t nonce_index = 0;
         for (size_t i = 0; i < 4; ++i) {
-            constexpr size_t COUNTER_OFFSET = 8;
-            nonce_index |= static_cast<uint32_t>(nonce[COUNTER_OFFSET + i]) << (i * 8);
+            constexpr size_t INDEX_OFFSET =
+                ProtocolConstants::NONCE_PREFIX_SIZE + ProtocolConstants::NONCE_COUNTER_SIZE;
+            nonce_index |= static_cast<uint32_t>(nonce[INDEX_OFFSET + i]) << (i * 8);
         }
         if (nonce_index != received_index) {
             return Result<RatchetChainKey, EcliptixProtocolFailure>::Err(
@@ -2499,10 +2518,6 @@ EcliptixProtocolConnection::GetCurrentKyberCiphertext() const {
             return Result<Unit, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic("PQ persistence invariant violated: kyber ciphertext missing"));
         }
-        if (!kyber_shared_secret_ || kyber_shared_secret_->size() != KyberInterop::KYBER_768_SHARED_SECRET_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("PQ persistence invariant violated: kyber shared secret missing"));
-        }
         auto kyber_sk_bytes = kyber_secret_key_handle_.ReadBytes(KyberInterop::KYBER_768_SECRET_KEY_SIZE);
         if (kyber_sk_bytes.IsErr()) {
             return Result<Unit, EcliptixProtocolFailure>::Err(
@@ -2531,10 +2546,6 @@ EcliptixProtocolConnection::GetCurrentKyberCiphertext() const {
         if (proto.kyber_ciphertext().size() != KyberInterop::KYBER_768_CIPHERTEXT_SIZE) {
             return Result<Unit, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic("PQ persistence invariant violated: kyber ciphertext missing"));
-        }
-        if (proto.kyber_shared_secret().size() != KyberInterop::KYBER_768_SHARED_SECRET_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("PQ persistence invariant violated: kyber shared secret missing"));
         }
         constexpr size_t SEALED_KYBER_SK_SIZE =
             KyberInterop::KYBER_768_SECRET_KEY_SIZE + Constants::AES_GCM_TAG_SIZE;
@@ -2622,11 +2633,6 @@ EcliptixProtocolConnection::GetCurrentKyberCiphertext() const {
                     EcliptixProtocolFailure::Generic("Kyber ciphertext missing for state serialization"));
             }
             proto.set_kyber_ciphertext(kyber_ciphertext_->data(), kyber_ciphertext_->size());
-            if (!kyber_shared_secret_ || kyber_shared_secret_->size() != KyberInterop::KYBER_768_SHARED_SECRET_SIZE) {
-                return Result<proto::protocol::RatchetState, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic("Kyber shared secret missing for state serialization"));
-            }
-            proto.set_kyber_shared_secret(kyber_shared_secret_->data(), kyber_shared_secret_->size());
             std::vector<uint8_t> root_key_bytes;
             if (root_key_handle_) {
                 auto root_key_result = root_key_handle_->ReadBytes(Constants::X_25519_KEY_SIZE);
@@ -2771,21 +2777,11 @@ EcliptixProtocolConnection::GetCurrentKyberCiphertext() const {
                 return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
                     EcliptixProtocolFailure::Generic("Invalid Kyber ciphertext size in stored state"));
             }
-            if (!proto.kyber_shared_secret().empty() &&
-                proto.kyber_shared_secret().size() != Constants::X_25519_KEY_SIZE) {
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic("Invalid Kyber shared secret size in stored state"));
-            }
             if (proto.initial_sending_dh_public().empty() ||
                 proto.initial_sending_dh_public().size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
                 return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
                     EcliptixProtocolFailure::Generic(
                         "Invalid or missing initial sending DH public key in stored state"));
-            }
-            if (!proto.kyber_shared_secret().empty() &&
-                proto.kyber_shared_secret().size() != Constants::X_25519_KEY_SIZE) {
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic("Invalid Kyber shared secret size in stored state"));
             }
             std::vector<uint8_t> initial_sending_dh_public(
                 proto.initial_sending_dh_public().begin(),
@@ -2882,10 +2878,6 @@ EcliptixProtocolConnection::GetCurrentKyberCiphertext() const {
                 proto.kyber_ciphertext().begin(),
                 proto.kyber_ciphertext().end());
             kyber_ciphertext = kyber_ct;
-            std::vector<uint8_t> kyber_ss(
-                proto.kyber_shared_secret().begin(),
-                proto.kyber_shared_secret().end());
-            kyber_shared_secret = kyber_ss;
             SecureMemoryHandle initial_sending_dh_private_handle;
             SecureMemoryHandle current_sending_dh_private_handle;
             SecureMemoryHandle persistent_dh_private_handle;
@@ -3021,6 +3013,11 @@ EcliptixProtocolConnection::GetCurrentKyberCiphertext() const {
             if (proto.has_sending_ratchet_epoch()) {
                 connection->sending_ratchet_epoch_.store(
                     proto.sending_ratchet_epoch(), std::memory_order_release);
+            }
+            if (auto kyber_update = connection->UpdateKyberSecretFromCiphertext(kyber_ct);
+                kyber_update.IsErr()) {
+                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                    kyber_update.UnwrapErr());
             }
             auto metadata_result = connection->DeriveMetadataEncryptionKey();
             if (metadata_result.IsErr()) {
