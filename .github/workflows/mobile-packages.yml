@@ -55,7 +55,7 @@ jobs:
 
       - name: Install build tools
         run: |
-          brew install cmake ninja pkg-config
+          brew install cmake ninja pkg-config autoconf automake libtool
 
       - name: Build XCFramework
         run: |
