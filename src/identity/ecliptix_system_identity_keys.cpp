@@ -932,12 +932,16 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
         std::vector<uint8_t> kyber_ss_bytes;
         bool used_stored_artifacts = false;
 
-        if (pending_kyber_handshake_.has_value()) {
-            
+        const bool has_peer_ciphertext = remote_bundle.HasKyberCiphertext();
+        const bool use_pending = pending_kyber_handshake_.has_value() &&
+            (is_initiator || !has_peer_ciphertext);
+
+        if (use_pending) {
+            // Responder must prefer peer ciphertext to avoid mismatched kyber_ss.
             kyber_ciphertext = pending_kyber_handshake_->kyber_ciphertext;
             kyber_ss_bytes = pending_kyber_handshake_->kyber_shared_secret;
             used_stored_artifacts = true;
-        } else if (remote_bundle.HasKyberCiphertext()) {
+        } else if (has_peer_ciphertext) {
             
             const auto& peer_ciphertext = remote_bundle.GetKyberCiphertext().value();
             auto decap_result = DecapsulateKyberCiphertextLocked(
