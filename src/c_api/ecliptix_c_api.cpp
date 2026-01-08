@@ -4,6 +4,7 @@
 #include "ecliptix/identity/ecliptix_system_identity_keys.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/crypto/kyber_interop.hpp"
+#include "ecliptix/crypto/shamir_secret_sharing.hpp"
 #include "ecliptix/core/result.hpp"
 #include "ecliptix/core/constants.hpp"
 #include "common/secure_envelope.pb.h"
@@ -11,6 +12,7 @@
 #include "protocol/key_exchange.pb.h"
 #include <atomic>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <span>
@@ -58,17 +60,17 @@ namespace {
 
     class CApiEventHandler : public IProtocolEventHandler {
     public:
-        CApiEventHandler(EcliptixProtocolEventCallback callback, void *user_data)
+        CApiEventHandler(const EcliptixProtocolEventCallback callback, void *user_data)
             : callback_(callback), user_data_(user_data) {
         }
 
-        void OnProtocolStateChanged(uint32_t connection_id) override {
+        void OnProtocolStateChanged(const uint32_t connection_id) override {
             if (callback_) {
                 callback_(connection_id, user_data_);
             }
         }
 
-        void OnRatchetRequired(uint32_t connect_id, const std::string &reason) override {
+        void OnRatchetRequired(const uint32_t connect_id, const std::string &reason) override {
             (void)connect_id;
             (void)reason;
         }
@@ -78,7 +80,7 @@ namespace {
         void *user_data_;
     };
 
-    void fill_error(EcliptixError *out_error, EcliptixErrorCode code, const std::string &message) {
+    void fill_error(EcliptixError *out_error, const EcliptixErrorCode code, const std::string &message) {
         if (out_error) {
             out_error->code = code;
 #ifdef _WIN32
@@ -133,7 +135,7 @@ namespace {
         fill_error(out_error, code, failure.message);
     }
 
-    bool validate_buffer_param(const uint8_t *data, size_t length, EcliptixError *out_error) {
+    bool validate_buffer_param(const uint8_t *data, const size_t length, EcliptixError *out_error) {
         if (!data && length > 0) {
             fill_error(out_error, ECLIPTIX_ERROR_NULL_POINTER, "Buffer data is null but length is non-zero");
             return false;
@@ -149,7 +151,7 @@ namespace {
         return true;
     }
 
-    bool copy_to_buffer(std::span<const uint8_t> input, EcliptixBuffer *out_buffer, EcliptixError *out_error) {
+    bool copy_to_buffer(const std::span<const uint8_t> input, EcliptixBuffer *out_buffer, EcliptixError *out_error) {
         if (!out_buffer) {
             fill_error(out_error, ECLIPTIX_ERROR_NULL_POINTER, "Output buffer is null");
             return false;
@@ -282,7 +284,7 @@ EcliptixErrorCode ecliptix_identity_keys_create(
 
 EcliptixErrorCode ecliptix_identity_keys_create_from_seed(
     const uint8_t *seed,
-    size_t seed_length,
+    const size_t seed_length,
     EcliptixIdentityKeysHandle **out_handle,
     EcliptixError *out_error) {
     if (auto err = EnsureInitialized(); err != ECLIPTIX_SUCCESS) {
@@ -331,9 +333,9 @@ EcliptixErrorCode ecliptix_identity_keys_create_from_seed(
 
 EcliptixErrorCode ecliptix_identity_keys_create_from_seed_with_context(
     const uint8_t *seed,
-    size_t seed_length,
+    const size_t seed_length,
     const char *membership_id,
-    size_t membership_id_length,
+    const size_t membership_id_length,
     EcliptixIdentityKeysHandle **out_handle,
     EcliptixError *out_error) {
     if (auto err = EnsureInitialized(); err != ECLIPTIX_SUCCESS) {
@@ -387,7 +389,7 @@ EcliptixErrorCode ecliptix_identity_keys_create_from_seed_with_context(
 EcliptixErrorCode ecliptix_identity_keys_get_public_x25519(
     const EcliptixIdentityKeysHandle *handle,
     uint8_t *out_key,
-    size_t out_key_length,
+    const size_t out_key_length,
     EcliptixError *out_error) {
     if (!handle || !handle->identity_keys) {
         fill_error(out_error, ECLIPTIX_ERROR_NULL_POINTER, "Identity keys handle is null");
@@ -413,7 +415,7 @@ EcliptixErrorCode ecliptix_identity_keys_get_public_x25519(
 EcliptixErrorCode ecliptix_identity_keys_get_public_ed25519(
     const EcliptixIdentityKeysHandle *handle,
     uint8_t *out_key,
-    size_t out_key_length,
+    const size_t out_key_length,
     EcliptixError *out_error) {
     if (!handle || !handle->identity_keys) {
         fill_error(out_error, ECLIPTIX_ERROR_NULL_POINTER, "Identity keys handle is null");
@@ -439,7 +441,7 @@ EcliptixErrorCode ecliptix_identity_keys_get_public_ed25519(
 EcliptixErrorCode ecliptix_identity_keys_get_public_kyber(
     const EcliptixIdentityKeysHandle *handle,
     uint8_t *out_key,
-    size_t out_key_length,
+    const size_t out_key_length,
     EcliptixError *out_error) {
     if (!handle || !handle->identity_keys) {
         fill_error(out_error, ECLIPTIX_ERROR_NULL_POINTER, "Identity keys handle is null");
@@ -1056,7 +1058,7 @@ EcliptixErrorCode ecliptix_protocol_system_complete_handshake_auto(
 EcliptixErrorCode ecliptix_protocol_system_send_message(
     EcliptixProtocolSystemHandle *handle,
     const uint8_t *plaintext,
-    size_t plaintext_length,
+    const size_t plaintext_length,
     EcliptixBuffer *out_encrypted_envelope,
     EcliptixError *out_error) {
     if (!handle || !handle->system) {
@@ -1089,7 +1091,7 @@ EcliptixErrorCode ecliptix_protocol_system_send_message(
 EcliptixErrorCode ecliptix_protocol_system_receive_message(
     EcliptixProtocolSystemHandle *handle,
     const uint8_t *encrypted_envelope,
-    size_t encrypted_envelope_length,
+    const size_t encrypted_envelope_length,
     EcliptixBuffer *out_plaintext,
     EcliptixError *out_error) {
     if (!handle || !handle->system) {
@@ -1248,9 +1250,9 @@ EcliptixErrorCode ecliptix_connection_get_session_age_seconds(
 EcliptixErrorCode ecliptix_protocol_system_set_kyber_secrets(
     EcliptixProtocolSystemHandle *handle,
     const uint8_t *kyber_ciphertext,
-    size_t kyber_ciphertext_length,
+    const size_t kyber_ciphertext_length,
     const uint8_t *kyber_shared_secret,
-    size_t kyber_shared_secret_length,
+    const size_t kyber_shared_secret_length,
     EcliptixError *out_error) {
     if (!handle || !handle->system) {
         fill_error(out_error, ECLIPTIX_ERROR_INVALID_STATE, "Protocol system handle is null or uninitialized");
@@ -1407,7 +1409,7 @@ EcliptixErrorCode ecliptix_protocol_system_export_state(
 EcliptixErrorCode ecliptix_protocol_system_import_state(
     EcliptixIdentityKeysHandle *identity_keys,
     const uint8_t *state_bytes,
-    size_t state_bytes_length,
+    const size_t state_bytes_length,
     EcliptixProtocolSystemHandle **out_handle,
     EcliptixError *out_error) {
     if (auto err = EnsureInitialized(); err != ECLIPTIX_SUCCESS) {
@@ -1452,7 +1454,7 @@ EcliptixErrorCode ecliptix_protocol_system_import_state(
 
 EcliptixErrorCode ecliptix_envelope_validate_hybrid_requirements(
     const uint8_t *encrypted_envelope,
-    size_t encrypted_envelope_length,
+    const size_t encrypted_envelope_length,
     EcliptixError *out_error) {
     if (!validate_buffer_param(encrypted_envelope, encrypted_envelope_length, out_error)) {
         return out_error ? out_error->code : ECLIPTIX_ERROR_NULL_POINTER;
@@ -1486,11 +1488,11 @@ EcliptixErrorCode ecliptix_envelope_validate_hybrid_requirements(
 
 EcliptixErrorCode ecliptix_derive_root_from_opaque_session_key(
     const uint8_t *opaque_session_key,
-    size_t opaque_session_key_length,
+    const size_t opaque_session_key_length,
     const uint8_t *user_context,
-    size_t user_context_length,
+    const size_t user_context_length,
     uint8_t *out_root_key,
-    size_t out_root_key_length,
+    const size_t out_root_key_length,
     EcliptixError *out_error) {
     if (auto err = EnsureInitialized(); err != ECLIPTIX_SUCCESS) {
         fill_error(out_error, err, "Failed to initialize libsodium");
@@ -1531,7 +1533,138 @@ EcliptixErrorCode ecliptix_derive_root_from_opaque_session_key(
     return ECLIPTIX_SUCCESS;
 }
 
-EcliptixBuffer *ecliptix_buffer_allocate(size_t capacity) {
+EcliptixErrorCode ecliptix_secret_sharing_split(
+    const uint8_t* secret,
+    const size_t secret_length,
+    const uint8_t threshold,
+    const uint8_t share_count,
+    const uint8_t* auth_key,
+    const size_t auth_key_length,
+    EcliptixBuffer* out_shares,
+    size_t* out_share_length,
+    EcliptixError* out_error) {
+    if (auto err = EnsureInitialized(); err != ECLIPTIX_SUCCESS) {
+        fill_error(out_error, err, "Failed to initialize libsodium");
+        return err;
+    }
+    if (!validate_buffer_param(secret, secret_length, out_error) ||
+        !validate_buffer_param(auth_key, auth_key_length, out_error)) {
+        return out_error ? out_error->code : ECLIPTIX_ERROR_NULL_POINTER;
+    }
+    if (!out_shares || !out_share_length) {
+        fill_error(out_error, ECLIPTIX_ERROR_NULL_POINTER, "Output parameters are null");
+        return ECLIPTIX_ERROR_NULL_POINTER;
+    }
+    if (secret_length == 0) {
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_INPUT, "Secret must not be empty");
+        return ECLIPTIX_ERROR_INVALID_INPUT;
+    }
+
+    const std::span<const uint8_t> auth_span =
+        auth_key && auth_key_length > 0
+            ? std::span<const uint8_t>(auth_key, auth_key_length)
+            : std::span<const uint8_t>();
+
+    auto split_result = ShamirSecretSharing::Split(
+        std::span<const uint8_t>(secret, secret_length),
+        threshold,
+        share_count,
+        auth_span);
+    if (split_result.IsErr()) {
+        fill_error_from_failure(out_error, split_result.UnwrapErr());
+        return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
+    }
+
+    auto shares = std::move(split_result).Unwrap();
+    if (shares.empty()) {
+        fill_error(out_error, ECLIPTIX_ERROR_GENERIC, "No shares generated");
+        return ECLIPTIX_ERROR_GENERIC;
+    }
+
+    const size_t share_length = shares.front().size();
+    for (const auto& share : shares) {
+        if (share.size() != share_length) {
+            fill_error(out_error, ECLIPTIX_ERROR_GENERIC, "Share length mismatch");
+            return ECLIPTIX_ERROR_GENERIC;
+        }
+    }
+
+    if (share_length > 0 && shares.size() > std::numeric_limits<size_t>::max() / share_length) {
+        fill_error(out_error, ECLIPTIX_ERROR_OUT_OF_MEMORY, "Share buffer size overflow");
+        return ECLIPTIX_ERROR_OUT_OF_MEMORY;
+    }
+
+    const size_t total_length = share_length * shares.size();
+    auto* data = new(std::nothrow) uint8_t[total_length];
+    if (!data) {
+        fill_error(out_error, ECLIPTIX_ERROR_OUT_OF_MEMORY, "Failed to allocate share buffer");
+        return ECLIPTIX_ERROR_OUT_OF_MEMORY;
+    }
+
+    for (size_t i = 0; i < shares.size(); ++i) {
+        std::memcpy(data + (i * share_length), shares[i].data(), share_length);
+    }
+
+    out_shares->data = data;
+    out_shares->length = total_length;
+    *out_share_length = share_length;
+    return ECLIPTIX_SUCCESS;
+}
+
+EcliptixErrorCode ecliptix_secret_sharing_reconstruct(
+    const uint8_t* shares,
+    const size_t shares_length,
+    const size_t share_length,
+    const size_t share_count,
+    const uint8_t* auth_key,
+    const size_t auth_key_length,
+    EcliptixBuffer* out_secret,
+    EcliptixError* out_error) {
+    if (auto err = EnsureInitialized(); err != ECLIPTIX_SUCCESS) {
+        fill_error(out_error, err, "Failed to initialize libsodium");
+        return err;
+    }
+    if (!validate_buffer_param(shares, shares_length, out_error) ||
+        !validate_buffer_param(auth_key, auth_key_length, out_error)) {
+        return out_error ? out_error->code : ECLIPTIX_ERROR_NULL_POINTER;
+    }
+    if (!out_secret) {
+        fill_error(out_error, ECLIPTIX_ERROR_NULL_POINTER, "Output secret buffer is null");
+        return ECLIPTIX_ERROR_NULL_POINTER;
+    }
+    if (share_length == 0 || share_count == 0) {
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_INPUT, "Share length or count is invalid");
+        return ECLIPTIX_ERROR_INVALID_INPUT;
+    }
+    if (share_length * share_count != shares_length) {
+        fill_error(out_error, ECLIPTIX_ERROR_INVALID_INPUT, "Share buffer length mismatch");
+        return ECLIPTIX_ERROR_INVALID_INPUT;
+    }
+
+    const std::span<const uint8_t> auth_span =
+        auth_key && auth_key_length > 0
+            ? std::span<const uint8_t>(auth_key, auth_key_length)
+            : std::span<const uint8_t>();
+
+    auto reconstruct_result = ShamirSecretSharing::ReconstructSerialized(
+        std::span<const uint8_t>(shares, shares_length),
+        share_length,
+        share_count,
+        auth_span);
+    if (reconstruct_result.IsErr()) {
+        fill_error_from_failure(out_error, reconstruct_result.UnwrapErr());
+        return out_error ? out_error->code : ECLIPTIX_ERROR_GENERIC;
+    }
+
+    auto secret = std::move(reconstruct_result).Unwrap();
+    if (!copy_to_buffer(secret, out_secret, out_error)) {
+        return out_error ? out_error->code : ECLIPTIX_ERROR_OUT_OF_MEMORY;
+    }
+
+    return ECLIPTIX_SUCCESS;
+}
+
+EcliptixBuffer *ecliptix_buffer_allocate(const size_t capacity) {
     auto *buffer = new(std::nothrow) EcliptixBuffer{};
     if (!buffer) {
         return nullptr;
@@ -1568,7 +1701,7 @@ void ecliptix_error_free(EcliptixError *error) {
     }
 }
 
-const char *ecliptix_error_code_to_string(EcliptixErrorCode code) {
+const char *ecliptix_error_code_to_string(const EcliptixErrorCode code) {
     switch (code) {
         case ECLIPTIX_SUCCESS: return "Success";
         case ECLIPTIX_ERROR_GENERIC: return "Generic error";
@@ -1594,7 +1727,7 @@ const char *ecliptix_error_code_to_string(EcliptixErrorCode code) {
     }
 }
 
-EcliptixErrorCode ecliptix_secure_wipe(uint8_t *data, size_t length) {
+EcliptixErrorCode ecliptix_secure_wipe(uint8_t *data, const size_t length) {
     if (!data && length > 0) {
         return ECLIPTIX_ERROR_NULL_POINTER;
     }

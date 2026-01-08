@@ -5,7 +5,7 @@ enum class ChainStepType : uint8_t {
     SENDER = 0,
     RECEIVER = 1
 };
-constexpr const char* ToString(ChainStepType type) noexcept {
+constexpr const char* ToString(const ChainStepType type) noexcept {
     switch (type) {
         case ChainStepType::SENDER:
             return "SENDER";

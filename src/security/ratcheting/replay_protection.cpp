@@ -122,7 +122,7 @@ namespace ecliptix::protocol::security {
         return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
     }
 
-    bool ReplayProtection::ValidateInput(std::span<const uint8_t> nonce, uint64_t chain_index) const {
+    bool ReplayProtection::ValidateInput(const std::span<const uint8_t> nonce, const uint64_t chain_index) const {
         if (nonce.size() != Constants::AES_GCM_NONCE_SIZE) {
             return false;
         }

@@ -12,7 +12,7 @@ using protocol::EcliptixProtocolFailure;
 using interfaces::IKeyProvider;
 class RatchetChainKey {
 public:
-    RatchetChainKey(IKeyProvider* provider, uint32_t index) noexcept
+    RatchetChainKey(IKeyProvider* provider, const uint32_t index) noexcept
         : provider_(provider), index_(index) {}
     [[nodiscard]] uint32_t Index() const noexcept {
         return index_;

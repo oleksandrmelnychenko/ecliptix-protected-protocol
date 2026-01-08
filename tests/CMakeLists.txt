@@ -29,6 +29,7 @@ set(TEST_SOURCES
     unit/test_kyber_interop_comprehensive.cpp
     unit/test_protocol_config.cpp
     unit/test_metadata_key_agreement.cpp
+    unit/test_secret_sharing.cpp
 
     # Phase 1: Cryptographic Security Tests
     security/test_aes_gcm_attacks.cpp
@@ -62,6 +63,12 @@ set(TEST_SOURCES
     test_main.cpp
 )
 
+# Server-specific C API tests (separate binary to avoid symbol collisions)
+set(SERVER_TEST_SOURCES
+    c_api/test_server_c_api_secret_sharing.cpp
+    test_main.cpp
+)
+
 # Test executable
 add_executable(ecliptix_tests ${TEST_SOURCES})
 
@@ -86,8 +93,36 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_compile_options(ecliptix_tests PRIVATE -Wno-maybe-uninitialized)
 endif()
 
+# Server test executable
+if(TARGET Ecliptix::ProtocolServer)
+    add_executable(ecliptix_server_tests ${SERVER_TEST_SOURCES})
+
+    target_link_libraries(ecliptix_server_tests
+        PRIVATE
+            Ecliptix::ProtocolServer
+            Catch2::Catch2WithMain
+    )
+
+    target_include_directories(ecliptix_server_tests
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+
+    target_compile_definitions(ecliptix_server_tests
+        PRIVATE
+            ECLIPTIX_TEST_BUILD=1
+    )
+
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_compile_options(ecliptix_server_tests PRIVATE -Wno-maybe-uninitialized)
+    endif()
+endif()
+
 # Register tests with CTest for CLion test runner
 include(CTest)
 list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
 include(Catch)
 catch_discover_tests(ecliptix_tests)
+if(TARGET ecliptix_server_tests)
+    catch_discover_tests(ecliptix_server_tests)
+endif()

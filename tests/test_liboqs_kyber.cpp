@@ -6,7 +6,7 @@
 #include <cstring>
 #include <oqs/oqs.h>
 
-void print_hex(const char* label, const uint8_t* data, size_t len, size_t max_show = 16) {
+void print_hex(const char* label, const uint8_t* data, const size_t len, const size_t max_show = 16) {
     std::cout << label << " (" << len << " bytes): ";
     for (size_t i = 0; i < std::min(len, max_show); ++i) {
         printf("%02x", data[i]);

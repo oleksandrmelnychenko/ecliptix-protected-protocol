@@ -10,7 +10,7 @@ public:
 
     RatchetConfig() noexcept
         : message_count_before_ratchet_(ProtocolConstants::DEFAULT_MESSAGE_COUNT_BEFORE_RATCHET) {}
-    explicit RatchetConfig(uint32_t message_count_before_ratchet) noexcept
+    explicit RatchetConfig(const uint32_t message_count_before_ratchet) noexcept
         : message_count_before_ratchet_(
             std::clamp(message_count_before_ratchet, MIN_MESSAGE_COUNT, MAX_MESSAGE_COUNT)) {}
     [[nodiscard]] static RatchetConfig Default() noexcept {
@@ -22,7 +22,7 @@ public:
     [[nodiscard]] static RatchetConfig HighPerformance() noexcept {
         return RatchetConfig(ProtocolConstants::HIGH_PERFORMANCE_MESSAGE_COUNT_BEFORE_RATCHET);
     }
-    [[nodiscard]] bool ShouldRatchet(uint32_t next_message_index, bool received_new_dh_key) const noexcept {
+    [[nodiscard]] bool ShouldRatchet(const uint32_t next_message_index, const bool received_new_dh_key) const noexcept {
         const bool periodic_trigger = (next_message_index > ProtocolConstants::ZERO_VALUE) &&
                                (next_message_index % message_count_before_ratchet_ == ProtocolConstants::ZERO_VALUE);
         const bool reactive_trigger = received_new_dh_key;

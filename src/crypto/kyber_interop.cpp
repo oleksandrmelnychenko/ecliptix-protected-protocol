@@ -222,7 +222,7 @@ namespace ecliptix::protocol::crypto {
 
         
         OQS_STATUS status = OQS_ERROR;
-        auto access_result = secret_key_handle.WithReadAccess([&](std::span<const uint8_t> sk_span) -> Unit {
+        auto access_result = secret_key_handle.WithReadAccess([&](const std::span<const uint8_t> sk_span) -> Unit {
             auto write_result = ss_handle.WithWriteAccess([&](std::span<uint8_t> ss_span) -> Unit {
                 status = OQS_KEM_decaps(
                     kem,
@@ -381,7 +381,7 @@ namespace ecliptix::protocol::crypto {
         }
 
         
-        if (std::ranges::all_of(ciphertext, [](uint8_t b) { return b == 0; })) {
+        if (std::ranges::all_of(ciphertext, [](const uint8_t b) { return b == 0; })) {
             return Result<Unit, SodiumFailure>::Err(
                 SodiumFailure::InvalidOperation(
                     "Invalid Kyber-768 ciphertext (all zeros)"
@@ -408,7 +408,7 @@ namespace ecliptix::protocol::crypto {
             return Result<Unit, SodiumFailure>::Err(read_result.UnwrapErr());
         }
         auto sk_bytes = read_result.Unwrap();
-        if (std::ranges::all_of(sk_bytes, [](uint8_t b) { return b == 0; })) {
+        if (std::ranges::all_of(sk_bytes, [](const uint8_t b) { return b == 0; })) {
             SodiumInterop::SecureWipe(std::span(sk_bytes));
             return Result<Unit, SodiumFailure>::Err(
                 SodiumFailure::InvalidOperation("Invalid Kyber-768 secret key (all zeros)"));
@@ -466,7 +466,7 @@ namespace ecliptix::protocol::crypto {
                     throw sodium_init.UnwrapErr();
                 }
                 OQS_randombytes_custom_algorithm(
-                    [](uint8_t *buf, size_t len) { randombytes_buf(buf, len); });
+                    [](uint8_t *buf, const size_t len) { randombytes_buf(buf, len); });
                 initialized.store(true, std::memory_order_release);
             } catch (...) {
                 init_exception = std::current_exception();

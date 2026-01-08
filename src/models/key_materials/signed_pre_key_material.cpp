@@ -2,7 +2,7 @@
 
 namespace ecliptix::protocol::models {
     SignedPreKeyMaterial::SignedPreKeyMaterial(
-        uint32_t id,
+        const uint32_t id,
         crypto::SecureMemoryHandle secret_key_handle,
         std::vector<uint8_t> public_key,
         std::vector<uint8_t> signature)

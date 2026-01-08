@@ -20,7 +20,7 @@ class MockKeyProvider : public IKeyProvider {
 public:
     MockKeyProvider() = default;
 
-    void SetKey(const uint32_t index, std::span<const uint8_t> key_material) {
+    void SetKey(const uint32_t index, const std::span<const uint8_t> key_material) {
         auto handle_result = SecureMemoryHandle::Allocate(key_material.size());
         if (handle_result.IsErr()) {
             return;
@@ -34,7 +34,7 @@ public:
 
     [[nodiscard]] Result<Unit, EcliptixProtocolFailure> ExecuteWithKey(
         const uint32_t index,
-        std::function<Result<Unit, EcliptixProtocolFailure>(std::span<const uint8_t>)> operation) override {
+        const std::function<Result<Unit, EcliptixProtocolFailure>(std::span<const uint8_t>)> operation) override {
 
         if (!keys_.contains(index)) {
             return Result<Unit, EcliptixProtocolFailure>::Err(

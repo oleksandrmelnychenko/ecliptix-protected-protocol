@@ -247,6 +247,29 @@ public static class EcliptixNativeInterop
         out EcliptixError outError);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern EcliptixErrorCode ecliptix_secret_sharing_split(
+        [In] byte[] secret,
+        nuint secretLength,
+        byte threshold,
+        byte shareCount,
+        [In] byte[]? authKey,
+        nuint authKeyLength,
+        IntPtr outShares,
+        out nuint outShareLength,
+        out EcliptixError outError);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern EcliptixErrorCode ecliptix_secret_sharing_reconstruct(
+        [In] byte[] shares,
+        nuint sharesLength,
+        nuint shareLength,
+        nuint shareCount,
+        [In] byte[]? authKey,
+        nuint authKeyLength,
+        IntPtr outSecret,
+        out EcliptixError outError);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     public static extern void ecliptix_protocol_system_destroy(IntPtr handle);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]

@@ -540,7 +540,7 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
         return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
     }
 
-    const OneTimePreKeyLocal* EcliptixSystemIdentityKeys::FindOneTimePreKeyByIdLocked(uint32_t opk_id) const {
+    const OneTimePreKeyLocal* EcliptixSystemIdentityKeys::FindOneTimePreKeyByIdLocked(const uint32_t opk_id) const {
         for (const auto& opk : one_time_pre_keys_) {
             if (opk.GetPreKeyId() == opk_id) {
                 return &opk;
@@ -563,7 +563,7 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
         return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
     }
 
-    const OneTimePreKeyLocal* EcliptixSystemIdentityKeys::FindOneTimePreKeyById(uint32_t opk_id) const {
+    const OneTimePreKeyLocal* EcliptixSystemIdentityKeys::FindOneTimePreKeyById(const uint32_t opk_id) const {
         std::shared_lock lock(*lock_);
         return FindOneTimePreKeyByIdLocked(opk_id);
     }
@@ -572,7 +572,7 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
         const std::span<const uint8_t> ephemeral_secret,
         const std::span<const uint8_t> identity_secret,
         const LocalPublicKeyBundle &remote_bundle,
-        std::optional<uint32_t> opk_id,
+        const std::optional<uint32_t> opk_id,
         std::span<uint8_t> dh_results_output) {
         
         
@@ -1052,7 +1052,7 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
     }
 
     Result<EcliptixSystemIdentityKeys::HybridHandshakeArtifacts, EcliptixProtocolFailure>
-    EcliptixSystemIdentityKeys::DecapsulateKyberCiphertext(std::span<const uint8_t> ciphertext) const {
+    EcliptixSystemIdentityKeys::DecapsulateKyberCiphertext(const std::span<const uint8_t> ciphertext) const {
         std::shared_lock lock(*lock_);
         return DecapsulateKyberCiphertextLocked(ciphertext);
     }

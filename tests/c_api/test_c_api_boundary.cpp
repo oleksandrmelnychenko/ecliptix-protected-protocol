@@ -853,3 +853,396 @@ TEST_CASE("C API - Derive root from OPAQUE session key", "[c_api][boundary][opaq
 
     ecliptix_shutdown();
 }
+
+TEST_CASE("C API - Secret sharing", "[c_api][boundary][secret-sharing]") {
+    REQUIRE(ecliptix_initialize() == ECLIPTIX_SUCCESS);
+
+    SECTION("Split rejects null outputs") {
+        std::vector<uint8_t> secret(16, 0x11);
+        size_t share_length = 0;
+        EcliptixError error{};
+
+        auto result = ecliptix_secret_sharing_split(
+            secret.data(),
+            secret.size(),
+            2,
+            3,
+            nullptr,
+            0,
+            nullptr,
+            &share_length,
+            &error);
+        REQUIRE(result == ECLIPTIX_ERROR_NULL_POINTER);
+        if (error.message) {
+            ecliptix_error_free(&error);
+        }
+
+        EcliptixBuffer* shares = ecliptix_buffer_allocate(0);
+        result = ecliptix_secret_sharing_split(
+            secret.data(),
+            secret.size(),
+            2,
+            3,
+            nullptr,
+            0,
+            shares,
+            nullptr,
+            &error);
+        REQUIRE(result == ECLIPTIX_ERROR_NULL_POINTER);
+        if (error.message) {
+            ecliptix_error_free(&error);
+        }
+        ecliptix_buffer_free(shares);
+    }
+
+    SECTION("Split rejects null secret pointer") {
+        EcliptixBuffer* shares = ecliptix_buffer_allocate(0);
+        size_t share_length = 0;
+        EcliptixError error{};
+
+        const auto result = ecliptix_secret_sharing_split(
+            nullptr,
+            16,
+            2,
+            3,
+            nullptr,
+            0,
+            shares,
+            &share_length,
+            &error);
+        REQUIRE(result == ECLIPTIX_ERROR_NULL_POINTER);
+        if (error.message) {
+            ecliptix_error_free(&error);
+        }
+        ecliptix_buffer_free(shares);
+    }
+
+    SECTION("Split rejects empty secret") {
+        std::vector<uint8_t> secret(16, 0x11);
+        EcliptixBuffer* shares = ecliptix_buffer_allocate(0);
+        size_t share_length = 0;
+        EcliptixError error{};
+
+        const auto result = ecliptix_secret_sharing_split(
+            secret.data(),
+            0,
+            2,
+            3,
+            nullptr,
+            0,
+            shares,
+            &share_length,
+            &error);
+        REQUIRE(result == ECLIPTIX_ERROR_INVALID_INPUT);
+        if (error.message) {
+            ecliptix_error_free(&error);
+        }
+        ecliptix_buffer_free(shares);
+    }
+
+    SECTION("Split rejects invalid auth key length") {
+        std::vector<uint8_t> secret(16, 0x22);
+        std::vector<uint8_t> auth_key(31, 0xAB);
+        EcliptixBuffer* shares = ecliptix_buffer_allocate(0);
+        size_t share_length = 0;
+        EcliptixError error{};
+
+        const auto result = ecliptix_secret_sharing_split(
+            secret.data(),
+            secret.size(),
+            2,
+            3,
+            auth_key.data(),
+            auth_key.size(),
+            shares,
+            &share_length,
+            &error);
+        REQUIRE(result == ECLIPTIX_ERROR_INVALID_INPUT);
+        if (error.message) {
+            ecliptix_error_free(&error);
+        }
+        ecliptix_buffer_free(shares);
+    }
+
+    SECTION("Roundtrip without auth") {
+        std::vector<uint8_t> secret(32, 0x42);
+        EcliptixBuffer* shares = ecliptix_buffer_allocate(0);
+        size_t share_length = 0;
+        EcliptixError error{};
+
+        auto result = ecliptix_secret_sharing_split(
+            secret.data(),
+            secret.size(),
+            3,
+            5,
+            nullptr,
+            0,
+            shares,
+            &share_length,
+            &error);
+        REQUIRE(result == ECLIPTIX_SUCCESS);
+        REQUIRE(shares->data != nullptr);
+        REQUIRE(share_length > 0);
+        REQUIRE(shares->length == share_length * 5);
+
+        EcliptixBuffer* out_secret = ecliptix_buffer_allocate(0);
+        result = ecliptix_secret_sharing_reconstruct(
+            shares->data,
+            shares->length,
+            share_length,
+            5,
+            nullptr,
+            0,
+            out_secret,
+            &error);
+        REQUIRE(result == ECLIPTIX_SUCCESS);
+        REQUIRE(out_secret->length == secret.size());
+        REQUIRE(std::memcmp(out_secret->data, secret.data(), secret.size()) == 0);
+
+        ecliptix_buffer_free(out_secret);
+        ecliptix_buffer_free(shares);
+    }
+
+    SECTION("Roundtrip with auth") {
+        std::vector<uint8_t> secret(32, 0x7A);
+        std::vector<uint8_t> auth_key(32, 0xCC);
+        EcliptixBuffer* shares = ecliptix_buffer_allocate(0);
+        size_t share_length = 0;
+        EcliptixError error{};
+
+        auto result = ecliptix_secret_sharing_split(
+            secret.data(),
+            secret.size(),
+            3,
+            5,
+            auth_key.data(),
+            auth_key.size(),
+            shares,
+            &share_length,
+            &error);
+        REQUIRE(result == ECLIPTIX_SUCCESS);
+        REQUIRE(shares->length == share_length * 5);
+
+        EcliptixBuffer* out_secret = ecliptix_buffer_allocate(0);
+        result = ecliptix_secret_sharing_reconstruct(
+            shares->data,
+            shares->length,
+            share_length,
+            5,
+            auth_key.data(),
+            auth_key.size(),
+            out_secret,
+            &error);
+        REQUIRE(result == ECLIPTIX_SUCCESS);
+        REQUIRE(out_secret->length == secret.size());
+        REQUIRE(std::memcmp(out_secret->data, secret.data(), secret.size()) == 0);
+
+        ecliptix_buffer_free(out_secret);
+        ecliptix_buffer_free(shares);
+    }
+
+    SECTION("Reconstruct rejects missing auth key for auth shares") {
+        std::vector<uint8_t> secret(16, 0x55);
+        std::vector<uint8_t> auth_key(32, 0xDD);
+        EcliptixBuffer* shares = ecliptix_buffer_allocate(0);
+        size_t share_length = 0;
+        EcliptixError error{};
+
+        auto result = ecliptix_secret_sharing_split(
+            secret.data(),
+            secret.size(),
+            2,
+            3,
+            auth_key.data(),
+            auth_key.size(),
+            shares,
+            &share_length,
+            &error);
+        REQUIRE(result == ECLIPTIX_SUCCESS);
+
+        EcliptixBuffer* out_secret = ecliptix_buffer_allocate(0);
+        result = ecliptix_secret_sharing_reconstruct(
+            shares->data,
+            shares->length,
+            share_length,
+            3,
+            nullptr,
+            0,
+            out_secret,
+            &error);
+        REQUIRE(result == ECLIPTIX_ERROR_INVALID_INPUT);
+        if (error.message) {
+            ecliptix_error_free(&error);
+        }
+
+        ecliptix_buffer_free(out_secret);
+        ecliptix_buffer_free(shares);
+    }
+
+    SECTION("Reconstruct rejects wrong auth key") {
+        std::vector<uint8_t> secret(16, 0x66);
+        std::vector<uint8_t> auth_key(32, 0xEE);
+        std::vector<uint8_t> other_key(32, 0xFF);
+        EcliptixBuffer* shares = ecliptix_buffer_allocate(0);
+        size_t share_length = 0;
+        EcliptixError error{};
+
+        auto result = ecliptix_secret_sharing_split(
+            secret.data(),
+            secret.size(),
+            2,
+            3,
+            auth_key.data(),
+            auth_key.size(),
+            shares,
+            &share_length,
+            &error);
+        REQUIRE(result == ECLIPTIX_SUCCESS);
+
+        EcliptixBuffer* out_secret = ecliptix_buffer_allocate(0);
+        result = ecliptix_secret_sharing_reconstruct(
+            shares->data,
+            shares->length,
+            share_length,
+            3,
+            other_key.data(),
+            other_key.size(),
+            out_secret,
+            &error);
+        REQUIRE(result == ECLIPTIX_ERROR_INVALID_INPUT);
+        if (error.message) {
+            ecliptix_error_free(&error);
+        }
+
+        ecliptix_buffer_free(out_secret);
+        ecliptix_buffer_free(shares);
+    }
+
+    SECTION("Reconstruct rejects invalid auth key length") {
+        std::vector<uint8_t> secret(16, 0x77);
+        EcliptixBuffer* shares = ecliptix_buffer_allocate(0);
+        size_t share_length = 0;
+        std::vector<uint8_t> auth_key(31, 0x44);
+        EcliptixError error{};
+
+        auto result = ecliptix_secret_sharing_split(
+            secret.data(),
+            secret.size(),
+            2,
+            3,
+            nullptr,
+            0,
+            shares,
+            &share_length,
+            &error);
+        REQUIRE(result == ECLIPTIX_SUCCESS);
+
+        EcliptixBuffer* out_secret = ecliptix_buffer_allocate(0);
+        result = ecliptix_secret_sharing_reconstruct(
+            shares->data,
+            shares->length,
+            share_length,
+            3,
+            auth_key.data(),
+            auth_key.size(),
+            out_secret,
+            &error);
+        REQUIRE(result == ECLIPTIX_ERROR_INVALID_INPUT);
+        if (error.message) {
+            ecliptix_error_free(&error);
+        }
+
+        ecliptix_buffer_free(out_secret);
+        ecliptix_buffer_free(shares);
+    }
+
+    SECTION("Reconstruct rejects share length mismatch") {
+        std::vector<uint8_t> secret(16, 0x88);
+        EcliptixBuffer* shares = ecliptix_buffer_allocate(0);
+        size_t share_length = 0;
+        EcliptixError error{};
+
+        auto result = ecliptix_secret_sharing_split(
+            secret.data(),
+            secret.size(),
+            2,
+            3,
+            nullptr,
+            0,
+            shares,
+            &share_length,
+            &error);
+        REQUIRE(result == ECLIPTIX_SUCCESS);
+
+        EcliptixBuffer* out_secret = ecliptix_buffer_allocate(0);
+        result = ecliptix_secret_sharing_reconstruct(
+            shares->data,
+            shares->length,
+            share_length + 1,
+            3,
+            nullptr,
+            0,
+            out_secret,
+            &error);
+        REQUIRE(result == ECLIPTIX_ERROR_INVALID_INPUT);
+        if (error.message) {
+            ecliptix_error_free(&error);
+        }
+
+        ecliptix_buffer_free(out_secret);
+        ecliptix_buffer_free(shares);
+    }
+
+    SECTION("Reconstruct rejects zero share length or count") {
+        std::vector<uint8_t> secret(16, 0x99);
+        EcliptixBuffer* shares = ecliptix_buffer_allocate(0);
+        size_t share_length = 0;
+        EcliptixError error{};
+
+        auto result = ecliptix_secret_sharing_split(
+            secret.data(),
+            secret.size(),
+            2,
+            3,
+            nullptr,
+            0,
+            shares,
+            &share_length,
+            &error);
+        REQUIRE(result == ECLIPTIX_SUCCESS);
+
+        EcliptixBuffer* out_secret = ecliptix_buffer_allocate(0);
+        result = ecliptix_secret_sharing_reconstruct(
+            shares->data,
+            shares->length,
+            0,
+            3,
+            nullptr,
+            0,
+            out_secret,
+            &error);
+        REQUIRE(result == ECLIPTIX_ERROR_INVALID_INPUT);
+        if (error.message) {
+            ecliptix_error_free(&error);
+        }
+
+        result = ecliptix_secret_sharing_reconstruct(
+            shares->data,
+            shares->length,
+            share_length,
+            0,
+            nullptr,
+            0,
+            out_secret,
+            &error);
+        REQUIRE(result == ECLIPTIX_ERROR_INVALID_INPUT);
+        if (error.message) {
+            ecliptix_error_free(&error);
+        }
+
+        ecliptix_buffer_free(out_secret);
+        ecliptix_buffer_free(shares);
+    }
+
+    ecliptix_shutdown();
+}

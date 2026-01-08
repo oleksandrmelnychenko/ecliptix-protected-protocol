@@ -4,14 +4,14 @@ namespace ecliptix::protocol::models {
     LocalPublicKeyBundle::LocalPublicKeyBundle(
         std::vector<uint8_t> ed25519_public,
         std::vector<uint8_t> identity_x25519_public,
-        uint32_t signed_pre_key_id,
+        const uint32_t signed_pre_key_id,
         std::vector<uint8_t> signed_pre_key_public,
         std::vector<uint8_t> signed_pre_key_signature,
         std::vector<OneTimePreKeyRecord> one_time_pre_keys,
         std::optional<std::vector<uint8_t> > ephemeral_x25519_public,
         std::optional<std::vector<uint8_t> > kyber_public_key,
         std::optional<std::vector<uint8_t> > kyber_ciphertext,
-        std::optional<uint32_t> used_opk_id)
+        const std::optional<uint32_t> used_opk_id)
         : ed25519_public_(std::move(ed25519_public))
           , identity_x25519_(std::move(identity_x25519_public))
           , signed_pre_key_id_(signed_pre_key_id)

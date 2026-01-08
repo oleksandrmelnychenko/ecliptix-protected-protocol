@@ -2498,7 +2498,7 @@ EcliptixProtocolConnection::GetCurrentKyberCiphertext() const {
         return Result<RatchetChainKey, EcliptixProtocolFailure>::Ok(derived_key);
     }
 
-    void EcliptixProtocolConnection::PerformCleanupIfNeeded(uint32_t received_index) {
+    void EcliptixProtocolConnection::PerformCleanupIfNeeded(const uint32_t received_index) {
         (void)received_index;  // Reserved for future use
         if (receiving_step_) {
             receiving_step_->PruneOldKeys();

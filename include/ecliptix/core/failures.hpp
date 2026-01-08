@@ -34,7 +34,7 @@ class SodiumFailure {
 public:
     SodiumFailureType type;
     std::string message;
-    SodiumFailure(SodiumFailureType t, std::string msg)
+    SodiumFailure(const SodiumFailureType t, std::string msg)
         : type(t), message(std::move(msg)) {}
     static SodiumFailure LibraryNotFound(std::string msg) {
         return {SodiumFailureType::LibraryNotFound, std::move(msg)};
@@ -74,7 +74,7 @@ class EcliptixProtocolFailure {
 public:
     EcliptixProtocolFailureType type;
     std::string message;
-    EcliptixProtocolFailure(EcliptixProtocolFailureType t, std::string msg)
+    EcliptixProtocolFailure(const EcliptixProtocolFailureType t, std::string msg)
         : type(t), message(std::move(msg)) {}
     static EcliptixProtocolFailure Generic(std::string msg) {
         return {EcliptixProtocolFailureType::Generic, std::move(msg)};

@@ -278,7 +278,7 @@ public:
 
 private:
     /// Private constructor - use factory methods
-    explicit constexpr ProtocolConfig(SecurityLevel level) noexcept
+    explicit constexpr ProtocolConfig(const SecurityLevel level) noexcept
         : level_(level) {}
 
     SecurityLevel level_;

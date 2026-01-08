@@ -13,7 +13,7 @@ using protocol::EcliptixProtocolFailure;
 using interfaces::IKeyProvider;
 class MessageKey {
 public:
-    MessageKey(IKeyProvider* provider, uint32_t index) noexcept
+    MessageKey(IKeyProvider* provider, const uint32_t index) noexcept
         : provider_(provider), index_(index) {}
     [[nodiscard]] uint32_t Index() const noexcept {
         return index_;

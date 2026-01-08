@@ -58,7 +58,7 @@ private:
         std::chrono::steady_clock::time_point last_adjustment;
         std::chrono::steady_clock::time_point last_used;
         uint32_t messages_since_adjustment = 0;
-        explicit MessageWindow(uint32_t window_size)
+        explicit MessageWindow(const uint32_t window_size)
             : current_window_size(window_size)
             , last_adjustment(std::chrono::steady_clock::now())
             , last_used(std::chrono::steady_clock::now()) {}

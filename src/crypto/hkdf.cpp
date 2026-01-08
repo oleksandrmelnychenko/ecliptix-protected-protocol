@@ -14,7 +14,7 @@ namespace ecliptix::protocol::crypto {
             std::span<uint8_t> output,
             std::span<const uint8_t> salt,
             std::span<const uint8_t> info,
-            int mode) {
+            const int mode) {
             if (output.size() > Hkdf::MAX_OUTPUT_LEN) {
                 return Result<Unit, EcliptixProtocolFailure>::Err(
                     EcliptixProtocolFailure::InvalidInput(
@@ -93,10 +93,10 @@ namespace ecliptix::protocol::crypto {
     }
 
     Result<Unit, EcliptixProtocolFailure> Hkdf::DeriveKey(
-        std::span<const uint8_t> ikm,
-        std::span<uint8_t> output,
-        std::span<const uint8_t> salt,
-        std::span<const uint8_t> info) {
+        const std::span<const uint8_t> ikm,
+        const std::span<uint8_t> output,
+        const std::span<const uint8_t> salt,
+        const std::span<const uint8_t> info) {
         return DeriveKeyWithMode(
             ikm,
             output,

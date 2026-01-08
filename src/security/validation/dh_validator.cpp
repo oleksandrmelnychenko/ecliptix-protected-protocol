@@ -4,7 +4,7 @@
 #include <format>
 namespace ecliptix::protocol::security {
 Result<Unit, EcliptixProtocolFailure> DhValidator::ValidateX25519PublicKey(
-    std::span<const uint8_t> public_key) {
+    const std::span<const uint8_t> public_key) {
     if (public_key.size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
         return Result<Unit, EcliptixProtocolFailure>::Err(
             EcliptixProtocolFailure::InvalidInput(
@@ -28,7 +28,7 @@ Result<Unit, EcliptixProtocolFailure> DhValidator::ValidateX25519PublicKey(
     }
     return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
 }
-bool DhValidator::HasSmallOrder(std::span<const uint8_t> public_key) {
+bool DhValidator::HasSmallOrder(const std::span<const uint8_t> public_key) {
     for (const auto& small_order_point : SMALL_ORDER_POINTS) {
         std::span<const uint8_t> point_span{small_order_point.data(), small_order_point.size()};
         if (ConstantTimeEquals(public_key, point_span)) {
@@ -37,7 +37,7 @@ bool DhValidator::HasSmallOrder(std::span<const uint8_t> public_key) {
     }
     return false;
 }
-bool DhValidator::IsValidCurve25519Point(std::span<const uint8_t> public_key) {
+bool DhValidator::IsValidCurve25519Point(const std::span<const uint8_t> public_key) {
     if (public_key.size() != Constants::CURVE_25519_FIELD_ELEMENT_SIZE) {
         return false;
     }
@@ -68,8 +68,8 @@ bool DhValidator::IsValidCurve25519Point(std::span<const uint8_t> public_key) {
     return false;
 }
 bool DhValidator::ConstantTimeEquals(
-    std::span<const uint8_t> a,
-    std::span<const uint8_t> b) {
+    const std::span<const uint8_t> a,
+    const std::span<const uint8_t> b) {
     if (a.size() != b.size()) {
         return false;
     }

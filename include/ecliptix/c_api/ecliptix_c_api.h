@@ -270,6 +270,28 @@ EcliptixErrorCode ecliptix_protocol_connection_deserialize(
 
 void ecliptix_protocol_connection_destroy(EcliptixProtocolConnectionHandle* handle);
 
+// Secret sharing (Shamir, GF(256), v1 share format)
+EcliptixErrorCode ecliptix_secret_sharing_split(
+    const uint8_t* secret,
+    size_t secret_length,
+    uint8_t threshold,
+    uint8_t share_count,
+    const uint8_t* auth_key,
+    size_t auth_key_length,
+    EcliptixBuffer* out_shares,
+    size_t* out_share_length,
+    EcliptixError* out_error);
+
+EcliptixErrorCode ecliptix_secret_sharing_reconstruct(
+    const uint8_t* shares,
+    size_t shares_length,
+    size_t share_length,
+    size_t share_count,
+    const uint8_t* auth_key,
+    size_t auth_key_length,
+    EcliptixBuffer* out_secret,
+    EcliptixError* out_error);
+
 EcliptixBuffer* ecliptix_buffer_allocate(size_t capacity);
 
 void ecliptix_buffer_free(EcliptixBuffer* buffer);

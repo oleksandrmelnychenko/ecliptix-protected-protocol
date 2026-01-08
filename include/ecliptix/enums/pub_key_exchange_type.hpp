@@ -5,7 +5,7 @@ enum class PubKeyExchangeType : uint8_t {
     X3DH = 0,
     SERVER_STREAMING = 1
 };
-inline const char* ToString(PubKeyExchangeType type) {
+inline const char* ToString(const PubKeyExchangeType type) {
     switch (type) {
         case PubKeyExchangeType::X3DH:
             return "X3DH";
