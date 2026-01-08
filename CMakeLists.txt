@@ -207,14 +207,14 @@ function(configure_protocol_target target_name output_name)
         PUBLIC
             $<BUILD_INTERFACE:${ECLIPTIX_INCLUDE_DIR}>
             $<INSTALL_INTERFACE:include>
-            ${LIBSODIUM_INCLUDE_DIRS}
-            ${LIBOQS_INCLUDE_DIRS}
         PRIVATE
             ${ECLIPTIX_SOURCE_DIR}
+            ${LIBSODIUM_INCLUDE_DIRS}
+            ${LIBOQS_INCLUDE_DIRS}
     )
 
     target_link_directories(${target_name}
-        PUBLIC
+        PRIVATE
             ${LIBSODIUM_LIBRARY_DIRS}
             ${LIBOQS_LIBRARY_DIRS}
     )
