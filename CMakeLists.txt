@@ -150,6 +150,7 @@ set(ECLIPTIX_CORE_SOURCES
     ${ECLIPTIX_SOURCE_DIR}/crypto/master_key_derivation.cpp
     ${ECLIPTIX_SOURCE_DIR}/crypto/aes_gcm.cpp
     ${ECLIPTIX_SOURCE_DIR}/crypto/kyber_interop.cpp
+    ${ECLIPTIX_SOURCE_DIR}/crypto/shamir_secret_sharing.cpp
 
     # Models - Phase 3
     ${ECLIPTIX_SOURCE_DIR}/models/key_materials/ed25519_key_material.cpp
@@ -214,9 +215,9 @@ function(configure_protocol_target target_name output_name)
     )
 
     target_link_directories(${target_name}
-        PRIVATE
-            ${LIBSODIUM_LIBRARY_DIRS}
-            ${LIBOQS_LIBRARY_DIRS}
+        PUBLIC
+            $<BUILD_INTERFACE:${LIBSODIUM_LIBRARY_DIRS}>
+            $<BUILD_INTERFACE:${LIBOQS_LIBRARY_DIRS}>
     )
 
     target_link_libraries(${target_name}
