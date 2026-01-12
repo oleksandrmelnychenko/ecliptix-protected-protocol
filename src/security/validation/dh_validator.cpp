@@ -1,14 +1,14 @@
 #include "ecliptix/security/validation/dh_validator.hpp"
+#include "ecliptix/core/format.hpp"
 #include <algorithm>
 #include <cstring>
-#include <format>
 namespace ecliptix::protocol::security {
 Result<Unit, EcliptixProtocolFailure> DhValidator::ValidateX25519PublicKey(
     const std::span<const uint8_t> public_key) {
     if (public_key.size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
         return Result<Unit, EcliptixProtocolFailure>::Err(
             EcliptixProtocolFailure::InvalidInput(
-                std::format(
+                ecliptix::compat::format(
                     "Invalid X25519 public key size: expected {}, got {}",
                     Constants::X_25519_PUBLIC_KEY_SIZE,
                     public_key.size())

@@ -18,7 +18,7 @@ if [ ! -d "$VCPKG_ROOT" ]; then
     "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
 fi
 
-"$VCPKG_ROOT/vcpkg" install libsodium liboqs openssl protobuf --triplet "$TRIPLET"
+"$VCPKG_ROOT/vcpkg" install libsodium liboqs openssl protobuf fmt --triplet "$TRIPLET"
 
 export PKG_CONFIG_PATH="$VCPKG_ROOT/installed/$TRIPLET/lib/pkgconfig:$VCPKG_ROOT/installed/$TRIPLET/share/pkgconfig"
 export PKG_CONFIG_SYSROOT_DIR="$VCPKG_ROOT/installed/$TRIPLET"

@@ -9,7 +9,7 @@
 #include <cstdio>
 #include <sodium.h>
 #include <chrono>
-#include <format>
+#include "ecliptix/core/format.hpp"
 #include <string>
 #include <mutex>
 #include <optional>
@@ -429,7 +429,7 @@ namespace ecliptix::protocol::connection {
         } catch (const std::exception &ex) {
             return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic(
-                    std::format("Unexpected error creating connection {}: {}",
+                    ecliptix::compat::format("Unexpected error creating connection {}: {}",
                                 connection_id, ex.what())));
         }
     }
@@ -441,7 +441,7 @@ namespace ecliptix::protocol::connection {
         if (opaque_session_key.size() != Constants::X_25519_KEY_SIZE) {
             return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::InvalidInput(
-                    std::format("OPAQUE session key must be {} bytes, got {}",
+                    ecliptix::compat::format("OPAQUE session key must be {} bytes, got {}",
                                 Constants::X_25519_KEY_SIZE, opaque_session_key.size())));
         }
         if (user_context.empty()) {
@@ -469,7 +469,7 @@ namespace ecliptix::protocol::connection {
         if (root_key.size() != Constants::X_25519_KEY_SIZE) {
             return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::InvalidInput(
-                    std::format("Root key must be {} bytes, got {}",
+                    ecliptix::compat::format("Root key must be {} bytes, got {}",
                                 Constants::X_25519_KEY_SIZE, root_key.size())));
         }
 
@@ -518,7 +518,7 @@ namespace ecliptix::protocol::connection {
         if (root_key.size() != Constants::X_25519_KEY_SIZE) {
             return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::InvalidInput(
-                    std::format("Root key must be {} bytes, got {}",
+                    ecliptix::compat::format("Root key must be {} bytes, got {}",
                                 Constants::X_25519_KEY_SIZE, root_key.size())));
         }
 
@@ -576,21 +576,21 @@ namespace ecliptix::protocol::connection {
         if (root_key.size() != Constants::X_25519_KEY_SIZE) {
             return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::InvalidInput(
-                    std::format("Root key must be {} bytes, got {}",
+                    ecliptix::compat::format("Root key must be {} bytes, got {}",
                                 Constants::X_25519_KEY_SIZE, root_key.size())));
         }
 
         if (!initial_dh_public_key.empty() && initial_dh_public_key.size() != Constants::X_25519_KEY_SIZE) {
             return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::InvalidInput(
-                    std::format("Initial DH public key must be {} bytes, got {}",
+                    ecliptix::compat::format("Initial DH public key must be {} bytes, got {}",
                                 Constants::X_25519_KEY_SIZE, initial_dh_public_key.size())));
         }
 
         if (!initial_dh_private_key.empty() && initial_dh_private_key.size() != Constants::X_25519_PRIVATE_KEY_SIZE) {
             return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::InvalidInput(
-                    std::format("Initial DH private key must be {} bytes, got {}",
+                    ecliptix::compat::format("Initial DH private key must be {} bytes, got {}",
                                 Constants::X_25519_PRIVATE_KEY_SIZE, initial_dh_private_key.size())));
         }
 
@@ -697,13 +697,13 @@ namespace ecliptix::protocol::connection {
         if (initial_root_key.size() != Constants::X_25519_KEY_SIZE) {
             return Result<Unit, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::InvalidInput(
-                    std::format("Initial root key must be {} bytes, got {}",
+                    ecliptix::compat::format("Initial root key must be {} bytes, got {}",
                                 Constants::X_25519_KEY_SIZE, initial_root_key.size())));
         }
         if (initial_peer_dh_public_key.size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
             return Result<Unit, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::InvalidInput(
-                    std::format("Initial peer DH public key must be {} bytes, got {}",
+                    ecliptix::compat::format("Initial peer DH public key must be {} bytes, got {}",
                                 Constants::X_25519_PUBLIC_KEY_SIZE, initial_peer_dh_public_key.size())));
         }
         auto validation_result = DhValidator::ValidateX25519PublicKey(initial_peer_dh_public_key);
@@ -932,7 +932,7 @@ namespace ecliptix::protocol::connection {
             }
             return Result<Unit, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic(
-                    std::format("Unexpected error during finalization: {}", ex.what())));
+                    ecliptix::compat::format("Unexpected error during finalization: {}", ex.what())));
         }
     }
 
@@ -1632,13 +1632,13 @@ EcliptixProtocolConnection::GetCurrentKyberCiphertext() const {
         if (received_dh_public_key.size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
             return Result<ReceivingRatchetPreview, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::InvalidInput(
-                    std::format("Received DH public key must be {} bytes, got {}",
+                    ecliptix::compat::format("Received DH public key must be {} bytes, got {}",
                                 Constants::X_25519_PUBLIC_KEY_SIZE, received_dh_public_key.size())));
         }
         if (received_kyber_ciphertext.size() != KyberInterop::KYBER_768_CIPHERTEXT_SIZE) {
             return Result<ReceivingRatchetPreview, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::InvalidInput(
-                    std::format("Received Kyber ciphertext must be {} bytes, got {}",
+                    ecliptix::compat::format("Received Kyber ciphertext must be {} bytes, got {}",
                                 KyberInterop::KYBER_768_CIPHERTEXT_SIZE, received_kyber_ciphertext.size())));
         }
         if (auto validation_result = DhValidator::ValidateX25519PublicKey(received_dh_public_key); validation_result.
@@ -2146,7 +2146,7 @@ EcliptixProtocolConnection::GetCurrentKyberCiphertext() const {
 #ifndef ECLIPTIX_TEST_BUILD
         if (ratchets_in_window >= ProtocolConstants::MAX_DH_RATCHETS_PER_MINUTE) {
             return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(std::format(
+                EcliptixProtocolFailure::Generic(ecliptix::compat::format(
                     "DH ratchet rate limit exceeded: {} ratchets per minute maximum (DoS protection)",
                     ProtocolConstants::MAX_DH_RATCHETS_PER_MINUTE)));
         }
@@ -2471,7 +2471,7 @@ EcliptixProtocolConnection::GetCurrentKyberCiphertext() const {
         if (nonce.size() != Constants::AES_GCM_NONCE_SIZE) {
             return Result<RatchetChainKey, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::InvalidInput(
-                    std::format("Nonce must be {} bytes, got {}", Constants::AES_GCM_NONCE_SIZE, nonce.size())));
+                    ecliptix::compat::format("Nonce must be {} bytes, got {}", Constants::AES_GCM_NONCE_SIZE, nonce.size())));
         }
         
         uint32_t nonce_index = 0;
@@ -3043,7 +3043,7 @@ EcliptixProtocolConnection::GetCurrentKyberCiphertext() const {
         if (initial_root_key.size() != Constants::X_25519_KEY_SIZE) {
             return Result<Unit, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::InvalidInput(
-                    std::format("Initial root key must be {} bytes, got {}",
+                    ecliptix::compat::format("Initial root key must be {} bytes, got {}",
                                 Constants::X_25519_KEY_SIZE, initial_root_key.size())));
         }
 

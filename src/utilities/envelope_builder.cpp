@@ -2,6 +2,7 @@
 #include "ecliptix/crypto/aes_gcm.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/core/constants.hpp"
+#include "ecliptix/core/format.hpp"
 #include "common/secure_envelope.pb.h"
 #include <sodium.h>
 
@@ -59,7 +60,7 @@ namespace ecliptix::protocol::utilities {
             if (encrypt_result.IsErr()) {
                 return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
                     EcliptixProtocolFailure::Generic(
-                        std::format("Failed to encrypt metadata: {}",
+                        ecliptix::compat::format("Failed to encrypt metadata: {}",
                                     encrypt_result.UnwrapErr().message)));
             }
             return encrypt_result;
@@ -72,7 +73,7 @@ namespace ecliptix::protocol::utilities {
             }
             return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic(
-                    std::format("Exception during metadata encryption: {}", ex.what())));
+                    ecliptix::compat::format("Exception during metadata encryption: {}", ex.what())));
         }
     }
 
@@ -90,7 +91,7 @@ namespace ecliptix::protocol::utilities {
         if (decrypt_result.IsErr()) {
             return Result<proto::common::EnvelopeMetadata, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic(
-                    std::format("Failed to decrypt metadata: {}",
+                    ecliptix::compat::format("Failed to decrypt metadata: {}",
                                 decrypt_result.UnwrapErr().message)));
         }
         auto plaintext_metadata = decrypt_result.Unwrap();
@@ -117,7 +118,7 @@ namespace ecliptix::protocol::utilities {
             }
             return Result<proto::common::EnvelopeMetadata, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic(
-                    std::format("Exception during metadata parsing: {}", ex.what())));
+                    ecliptix::compat::format("Exception during metadata parsing: {}", ex.what())));
         }
     }
 

@@ -122,6 +122,9 @@ find_package(OpenSSL REQUIRED)
 # Protobuf - Message serialization
 find_package(Protobuf REQUIRED)
 
+# fmt - String formatting (required for Android NDK compatibility)
+find_package(fmt QUIET)
+
 # Optional: spdlog for logging
 find_package(spdlog QUIET)
 
@@ -228,6 +231,7 @@ function(configure_protocol_target target_name output_name)
             Ecliptix::Proto
         PRIVATE
             $<$<BOOL:${spdlog_FOUND}>:spdlog::spdlog>
+            $<$<BOOL:${fmt_FOUND}>:fmt::fmt>
     )
 
     target_compile_definitions(${target_name}

@@ -9,7 +9,7 @@
 #include "common/secure_envelope.pb.h"
 #include <sodium.h>
 #include <chrono>
-#include <format>
+#include "ecliptix/core/format.hpp"
 #include <optional>
 
 namespace ecliptix::protocol {
@@ -341,7 +341,7 @@ namespace ecliptix::protocol {
         if (payload.size() > static_cast<size_t>(ProtocolConstants::MAX_PAYLOAD_SIZE)) {
             return Result<proto::common::SecureEnvelope, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::InvalidInput(
-                    std::format("Payload size ({} bytes) exceeds maximum allowed ({} bytes)",
+                    ecliptix::compat::format("Payload size ({} bytes) exceeds maximum allowed ({} bytes)",
                                 payload.size(), ProtocolConstants::MAX_PAYLOAD_SIZE)));
         }
         auto connection = GetConnectionSafe();
@@ -485,7 +485,7 @@ namespace ecliptix::protocol {
         } catch (const std::exception &ex) {
             result = Result<proto::common::SecureEnvelope, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic(
-                    std::format("Exception during message send: {}", ex.what())));
+                    ecliptix::compat::format("Exception during message send: {}", ex.what())));
         }
         {
             auto _wipe1 = SodiumInterop::SecureWipe(std::span(nonce));
@@ -730,7 +730,7 @@ namespace ecliptix::protocol {
             }
             return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic(
-                    std::format("Exception during message receive: {}", ex.what())));
+                    ecliptix::compat::format("Exception during message receive: {}", ex.what())));
         } {
             auto __wipe1 = SodiumInterop::SecureWipe(std::span(dh_public_key));
             (void) __wipe1;
@@ -773,7 +773,7 @@ namespace ecliptix::protocol {
         if (local_identity.size() > static_cast<size_t>(ProtocolConstants::MAX_IDENTITY_KEY_LENGTH) ||
             peer_identity.size() > static_cast<size_t>(ProtocolConstants::MAX_IDENTITY_KEY_LENGTH)) {
             throw std::invalid_argument(
-                std::format("Identity key exceeds maximum length of {} bytes",
+                ecliptix::compat::format("Identity key exceeds maximum length of {} bytes",
                             ProtocolConstants::MAX_IDENTITY_KEY_LENGTH));
         }
         if (local_identity.size() + peer_identity.size() >

@@ -724,7 +724,7 @@ EcliptixErrorCode ecliptix_protocol_server_system_begin_handshake(
 
     const auto &bundle = bundle_result.Unwrap();
 
-    ecliptix::proto::protocol::PublicKeyBundle proto_bundle;
+    PublicKeyBundle proto_bundle;
     proto_bundle.set_identity_public_key(bundle.GetEd25519Public().data(), bundle.GetEd25519Public().size());
     proto_bundle.set_identity_x25519_public_key(bundle.GetIdentityX25519().data(), bundle.GetIdentityX25519().size());
     proto_bundle.set_signed_pre_key_id(bundle.GetSignedPreKeyId());
@@ -750,8 +750,8 @@ EcliptixErrorCode ecliptix_protocol_server_system_begin_handshake(
         proto_bundle.set_used_one_time_pre_key_id(selected_opk.value());
     }
 
-    ecliptix::proto::protocol::PubKeyExchange handshake;
-    handshake.set_state(ecliptix::proto::protocol::PubKeyExchangeState::INIT);
+    PubKeyExchange handshake;
+    handshake.set_state(INIT);
     handshake.set_of_type(static_cast<ecliptix::proto::protocol::PubKeyExchangeType>(exchange_type));
     handshake.set_payload(proto_bundle.SerializeAsString());
 
@@ -836,7 +836,7 @@ EcliptixErrorCode ecliptix_protocol_server_system_begin_handshake_with_peer_kybe
 
     const auto &bundle = bundle_result.Unwrap();
 
-    ecliptix::proto::protocol::PublicKeyBundle proto_bundle;
+    PublicKeyBundle proto_bundle;
     proto_bundle.set_identity_public_key(bundle.GetEd25519Public().data(), bundle.GetEd25519Public().size());
     proto_bundle.set_identity_x25519_public_key(bundle.GetIdentityX25519().data(), bundle.GetIdentityX25519().size());
     proto_bundle.set_signed_pre_key_id(bundle.GetSignedPreKeyId());
@@ -868,8 +868,8 @@ EcliptixErrorCode ecliptix_protocol_server_system_begin_handshake_with_peer_kybe
     }
     proto_bundle.set_kyber_ciphertext(stored_ciphertext.data(), stored_ciphertext.size());
 
-    ecliptix::proto::protocol::PubKeyExchange handshake;
-    handshake.set_state(ecliptix::proto::protocol::PubKeyExchangeState::INIT);
+    PubKeyExchange handshake;
+    handshake.set_state(INIT);
     handshake.set_of_type(static_cast<ecliptix::proto::protocol::PubKeyExchangeType>(exchange_type));
     handshake.set_payload(proto_bundle.SerializeAsString());
 
@@ -909,7 +909,7 @@ EcliptixErrorCode ecliptix_protocol_server_system_complete_handshake(
         return ECLIPTIX_ERROR_INVALID_INPUT;
     }
 
-    auto finalize_with_kyber = [&](const ecliptix::proto::protocol::PublicKeyBundle &bundle) -> EcliptixErrorCode {
+    auto finalize_with_kyber = [&](const PublicKeyBundle &bundle) -> EcliptixErrorCode {
         if (bundle.kyber_public_key().empty()) {
             fill_error(out_error, ECLIPTIX_ERROR_PQ_MISSING, "Peer bundle missing Kyber public key for hybrid PQ mode");
             return ECLIPTIX_ERROR_PQ_MISSING;
@@ -981,9 +981,9 @@ EcliptixErrorCode ecliptix_protocol_server_system_complete_handshake(
         return ECLIPTIX_SUCCESS;
     };
 
-    ecliptix::proto::protocol::PubKeyExchange peer_exchange;
+    PubKeyExchange peer_exchange;
     if (!peer_exchange.ParseFromArray(peer_handshake_message, static_cast<int>(peer_handshake_message_length))) {
-        ecliptix::proto::protocol::PublicKeyBundle direct_bundle;
+        PublicKeyBundle direct_bundle;
         if (!direct_bundle.ParseFromArray(peer_handshake_message, static_cast<int>(peer_handshake_message_length))) {
             fill_error(out_error, ECLIPTIX_ERROR_DECODE, "Failed to parse peer handshake");
             return ECLIPTIX_ERROR_DECODE;
@@ -991,7 +991,7 @@ EcliptixErrorCode ecliptix_protocol_server_system_complete_handshake(
         return finalize_with_kyber(direct_bundle);
     }
 
-    ecliptix::proto::protocol::PublicKeyBundle peer_bundle;
+    PublicKeyBundle peer_bundle;
     if (!peer_bundle.ParseFromString(peer_exchange.payload())) {
         fill_error(out_error, ECLIPTIX_ERROR_DECODE, "Failed to parse peer public bundle");
         return ECLIPTIX_ERROR_DECODE;
