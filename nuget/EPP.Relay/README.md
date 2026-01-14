@@ -1,6 +1,6 @@
 # EPP.Relay
 
-High-performance native Ecliptix Protected Protocol relay (server) implementation for .NET applications.
+High-performance native Ecliptix Protection Protocol relay (server) implementation for .NET applications.
 
 ## Features
 

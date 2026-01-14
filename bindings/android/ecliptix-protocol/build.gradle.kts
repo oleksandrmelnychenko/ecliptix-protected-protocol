@@ -43,7 +43,7 @@ publishing {
         maven {
             name = "GitHubPackages"
             val repo = System.getenv("GITHUB_REPOSITORY")
-                ?: "oleksandrmelnychenko/Ecliptix.Protected.Protocol"
+                ?: "oleksandrmelnychenko/Ecliptix.Protection.Protocol"
             url = uri("https://maven.pkg.github.com/$repo")
             credentials {
                 username = System.getenv("GITHUB_ACTOR")

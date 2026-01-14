@@ -13,12 +13,12 @@
     <Version>1.0.7</Version>
     <Authors>Ecliptix</Authors>
     <Company>Ecliptix</Company>
-    <Product>EPP Relay - Ecliptix Protected Protocol Server</Product>
-    <Description>High-performance native server library for Ecliptix Protected Protocol with X3DH key agreement and Double Ratchet encryption. Features post-quantum hybrid cryptography (Kyber), AES-256-GCM encryption, and secure memory management via libsodium.</Description>
+    <Product>EPP Relay - Ecliptix Protection Protocol Server</Product>
+    <Description>High-performance native server library for Ecliptix Protection Protocol with X3DH key agreement and Double Ratchet encryption. Features post-quantum hybrid cryptography (Kyber), AES-256-GCM encryption, and secure memory management via libsodium.</Description>
     <Copyright>Copyright (c) 2024-2026 Ecliptix. All rights reserved.</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/oleksandrmelnychenko/Ecliptix.Protected.Protocol</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/oleksandrmelnychenko/Ecliptix.Protected.Protocol.git</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/oleksandrmelnychenko/Ecliptix.Protection.Protocol</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/oleksandrmelnychenko/Ecliptix.Protection.Protocol.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageTags>epp;ecliptix;x3dh;double-ratchet;encryption;cryptography;e2ee;kyber;post-quantum;native;relay;server</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>

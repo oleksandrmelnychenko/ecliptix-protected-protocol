@@ -1,7 +1,7 @@
 import PackageDescription
 
 // Auto-updated to point at the latest release asset.
-let binaryUrl = "https://github.com/oleksandrmelnychenko/Ecliptix.Protected.Protocol/releases/download/v0.0.0/EcliptixProtocolC.xcframework.zip"
+let binaryUrl = "https://github.com/oleksandrmelnychenko/Ecliptix.Protection.Protocol/releases/download/v0.0.0/EcliptixProtocolC.xcframework.zip"
 let binaryChecksum = "0000000000000000000000000000000000000000000000000000000000000000"
 
 let package = Package(

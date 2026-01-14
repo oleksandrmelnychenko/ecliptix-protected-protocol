@@ -12,7 +12,7 @@ CHECKSUM="$2"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PACKAGE_FILE="$ROOT_DIR/Package.swift"
-REPO="${GITHUB_REPOSITORY:-oleksandrmelnychenko/Ecliptix.Protected.Protocol}"
+REPO="${GITHUB_REPOSITORY:-oleksandrmelnychenko/Ecliptix.Protection.Protocol}"
 URL="https://github.com/$REPO/releases/download/v${VERSION}/EcliptixProtocolC.xcframework.zip"
 
 python3 - "$PACKAGE_FILE" "$URL" "$CHECKSUM" <<'PY'

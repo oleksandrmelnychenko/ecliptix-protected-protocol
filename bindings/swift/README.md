@@ -10,7 +10,7 @@ This Swift Package wraps the C API in a prebuilt XCFramework for iOS devices.
 The Swift package is at the repository root. Add it by tracking the default branch:
 
 ```swift
-.package(url: "https://github.com/oleksandrmelnychenko/Ecliptix.Protected.Protocol", branch: "master")
+.package(url: "https://github.com/oleksandrmelnychenko/Ecliptix.Protection.Protocol", branch: "master")
 ```
 
 Then import:

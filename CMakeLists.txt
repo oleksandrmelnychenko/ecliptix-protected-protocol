@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(Ecliptix_Protected_Protocol VERSION 1.0.0 LANGUAGES CXX)
+project(Ecliptix_Protection_Protocol VERSION 1.0.0 LANGUAGES CXX)
 
 # ============================================================================
 # Project Configuration
@@ -340,7 +340,7 @@ install(FILES
 # Summary
 # ============================================================================
 message(STATUS "")
-message(STATUS "Ecliptix Protected Protocol Configuration:")
+message(STATUS "Ecliptix Protection Protocol Configuration:")
 message(STATUS "  Version: ${PROJECT_VERSION}")
 message(STATUS "  C++ Standard: C++${CMAKE_CXX_STANDARD}")
 message(STATUS "  Build Type: ${CMAKE_BUILD_TYPE}")

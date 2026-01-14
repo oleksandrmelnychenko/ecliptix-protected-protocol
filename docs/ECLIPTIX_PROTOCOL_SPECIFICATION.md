@@ -798,4 +798,4 @@ metadata_key = HKDF(root_key, salt, "ecliptix-metadata-v1", 32) = 0x...
 **Document Version**: 1.0
 **Last Updated**: January 2026
 **Authors**: Ecliptix Protocol Team
-**Implementation**: `github.com/ecliptix/Ecliptix.Protected.Protocol`
+**Implementation**: `github.com/ecliptix/Ecliptix.Protection.Protocol`
