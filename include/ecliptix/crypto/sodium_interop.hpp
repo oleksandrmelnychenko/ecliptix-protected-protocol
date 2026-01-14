@@ -28,7 +28,7 @@ public:
     static uint32_t GenerateRandomUInt32(bool ensure_non_zero = false);
     static void* AllocateSecure(size_t size) noexcept;
     static void FreeSecure(void* ptr) noexcept;
-    static constexpr size_t MAX_BUFFER_SIZE = 1'000'000'000;  
+    static constexpr size_t MAX_BUFFER_SIZE = 1'000'000'000;
 private:
     static inline std::atomic<bool> initialized_{false};
     static inline std::once_flag init_flag_;

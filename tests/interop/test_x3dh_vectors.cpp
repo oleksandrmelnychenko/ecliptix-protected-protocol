@@ -28,10 +28,10 @@ struct X3DHTestVector {
     std::vector<uint8_t> bob_one_time_pre_key_private;
     std::vector<uint8_t> bob_one_time_pre_key_public;
 
-    std::vector<uint8_t> expected_dh1;  // alice_identity * bob_signed_prekey
-    std::vector<uint8_t> expected_dh2;  // alice_ephemeral * bob_identity
-    std::vector<uint8_t> expected_dh3;  // alice_ephemeral * bob_signed_prekey
-    std::vector<uint8_t> expected_dh4;  // alice_ephemeral * bob_one_time_prekey
+    std::vector<uint8_t> expected_dh1;
+    std::vector<uint8_t> expected_dh2;
+    std::vector<uint8_t> expected_dh3;
+    std::vector<uint8_t> expected_dh4;
 
     std::vector<uint8_t> expected_shared_secret;
 
@@ -425,7 +425,6 @@ TEST_CASE("X3DH Explicit OPK Selection Consumes Key", "[x3dh][opk][consume]") {
     const uint32_t opk_id = bob_bundle.GetOneTimePreKeys().front().GetPreKeyId();
     const size_t initial_opk_count = bob_bundle.GetOneTimePreKeyCount();
 
-    // Alice explicitly selects an OPK ID and captures her bundle fields before X3DH clears the ephemeral key.
     alice.SetSelectedOpkId(opk_id);
     auto alice_bundle_result = alice.CreatePublicBundle();
     REQUIRE(alice_bundle_result.IsOk());
@@ -550,7 +549,6 @@ TEST_CASE("X3DH Test Vectors - Info String Validation", "[x3dh][interop][vectors
         std::string custom_info_str = "Custom-X3DH-v2";
         std::vector<uint8_t> custom_info(custom_info_str.begin(), custom_info_str.end());
 
-        // Alice is initiator (true)
         auto result = alice_keys.X3dhDeriveSharedSecret(bob_bundle, custom_info, true);
         REQUIRE(result.IsOk());
     }

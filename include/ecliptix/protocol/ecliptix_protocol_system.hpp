@@ -29,7 +29,6 @@ namespace ecliptix::protocol {
                                     const proto::protocol::PublicKeyBundle &peer_bundle,
                                     bool is_initiator);
 
-        // Create with Kyber artifacts for hybrid PQ mode
         [[nodiscard]] static Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>
         CreateFromRootAndPeerBundle(std::unique_ptr<EcliptixSystemIdentityKeys> identity_keys,
                                     std::span<const uint8_t> root_key,
@@ -42,13 +41,11 @@ namespace ecliptix::protocol {
         FromProtoState(std::unique_ptr<EcliptixSystemIdentityKeys> identity_keys,
                        const proto::protocol::RatchetState &state);
 
-        // Finalize an in-flight system using a pre-shared root and peer bundle (OPAQUE/bootstrap).
         [[nodiscard]] Result<Unit, EcliptixProtocolFailure> FinalizeWithRootAndPeerBundle(
             std::span<const uint8_t> root_key,
             const proto::protocol::PublicKeyBundle &peer_bundle,
             bool is_initiator);
 
-        // Finalize with Kyber artifacts for hybrid PQ mode
         [[nodiscard]] Result<Unit, EcliptixProtocolFailure> FinalizeWithRootAndPeerBundle(
             std::span<const uint8_t> root_key,
             const proto::protocol::PublicKeyBundle &peer_bundle,
@@ -56,10 +53,6 @@ namespace ecliptix::protocol {
             std::span<const uint8_t> kyber_ciphertext,
             std::span<const uint8_t> kyber_shared_secret);
 
-        // Finalize with Kyber artifacts AND initial DH key pair from X3DH.
-        // This ensures the Double Ratchet uses the correct initial sender DH key pair:
-        //   - Initiator: their ephemeral key (EK) and private key
-        //   - Responder: their Signed Pre-Key (SPK) and private key
         [[nodiscard]] Result<Unit, EcliptixProtocolFailure> FinalizeWithRootAndPeerBundle(
             std::span<const uint8_t> root_key,
             const proto::protocol::PublicKeyBundle &peer_bundle,
@@ -91,16 +84,19 @@ namespace ecliptix::protocol {
 
         [[nodiscard]] std::optional<bool> GetPendingInitiator() const;
 
+        [[nodiscard]] std::optional<bool> ConsumePendingInitiator();
+
+        void SetPendingConnectionId(uint32_t connection_id);
+
+        [[nodiscard]] std::optional<uint32_t> ConsumePendingConnectionId();
+
         [[nodiscard]] uint32_t GetConnectionId() const;
 
         [[nodiscard]] Result<std::pair<uint32_t, uint32_t>, EcliptixProtocolFailure>
         GetChainIndices() const;
 
-        /// Returns the session age in seconds since creation.
-        /// Application layer can use this to decide when to refresh/rehandshake.
         [[nodiscard]] uint64_t GetSessionAgeSeconds() const;
 
-        // Set Kyber handshake secrets on the active connection (for hybrid PQ mode)
         [[nodiscard]] Result<Unit, EcliptixProtocolFailure> SetConnectionKyberSecrets(
             std::span<const uint8_t> kyber_ciphertext,
             std::span<const uint8_t> kyber_shared_secret) const;
@@ -129,5 +125,6 @@ namespace ecliptix::protocol {
         std::shared_ptr<IProtocolEventHandler> event_handler_;
         mutable std::unique_ptr<std::shared_mutex> mutex_;
         std::optional<bool> pending_initiator_flag_;
+        std::optional<uint32_t> pending_connection_id_;
     };
 }

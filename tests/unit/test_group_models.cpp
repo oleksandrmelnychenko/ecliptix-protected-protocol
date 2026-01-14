@@ -19,7 +19,6 @@ TEST_CASE("GroupMember FromProto enforces sizes", "[group][security]") {
     auto result = GroupMember::FromProto(proto_msg);
     REQUIRE(result.IsErr());
 
-    // Now valid sizes should succeed.
     proto_msg.set_member_id(std::string(16, 'a'));
     auto valid = GroupMember::FromProto(proto_msg);
     REQUIRE(valid.IsOk());
@@ -39,13 +38,11 @@ TEST_CASE("GroupMetadata FromProto enforces bounds", "[group][security]") {
     auto bad = GroupMetadata::FromProto(proto_msg);
     REQUIRE(bad.IsErr());
 
-    // Oversized description should fail.
     proto_msg.set_group_id(std::string(16, 'g'));
     proto_msg.set_description(std::string(1025, 'd'));
     auto bad_desc = GroupMetadata::FromProto(proto_msg);
     REQUIRE(bad_desc.IsErr());
 
-    // Valid case succeeds.
     proto_msg.set_description("ok");
     auto good = GroupMetadata::FromProto(proto_msg);
     REQUIRE(good.IsOk());

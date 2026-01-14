@@ -28,7 +28,9 @@ enum class EcliptixProtocolFailureType {
     Decode,
     Encode,
     BufferTooSmall,
-    ObjectDisposed
+    ObjectDisposed,
+    InvalidState,
+    NullPointer
 };
 class SodiumFailure {
 public:
@@ -108,6 +110,12 @@ public:
     }
     static EcliptixProtocolFailure ObjectDisposed(std::string msg) {
         return {EcliptixProtocolFailureType::ObjectDisposed, std::move(msg)};
+    }
+    static EcliptixProtocolFailure InvalidState(std::string msg) {
+        return {EcliptixProtocolFailureType::InvalidState, std::move(msg)};
+    }
+    static EcliptixProtocolFailure NullPointer(std::string msg) {
+        return {EcliptixProtocolFailureType::NullPointer, std::move(msg)};
     }
     static EcliptixProtocolFailure FromSodiumFailure(const SodiumFailure& sf) {
         return Generic(sf.message);

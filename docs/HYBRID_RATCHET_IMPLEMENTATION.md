@@ -1,5 +1,7 @@
 # Hybrid Post-Quantum DH Ratchet Implementation
 
+> **Note**: For the complete formal protocol specification including security proofs and the hybrid OR assumption analysis, see [ECLIPTIX_PROTOCOL_SPECIFICATION.md](./ECLIPTIX_PROTOCOL_SPECIFICATION.md).
+
 ## Overview
 
 This document specifies the exact cryptographic construction for integrating Kyber-768 into the existing X25519-based DH ratchet to create a hybrid post-quantum ratchet.

@@ -441,7 +441,6 @@ TEST_CASE("Double Ratchet - Memory Management Under Load", "[interop][double-rat
             }
         }
 
-        // Final pruning to keep only the last PRUNE_THRESHOLD keys
         mock.PruneKeysBelow(TOTAL_KEYS - PRUNE_THRESHOLD);
 
         REQUIRE(processed_keys == TOTAL_KEYS);

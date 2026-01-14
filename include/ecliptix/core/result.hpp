@@ -171,7 +171,6 @@ private:
         : value_(idx, std::forward<Args>(args)...)
         , is_ok_(I == 0) {}
 };
-// TRY helpers are written without GNU statement expressions to stay MSVC-friendly.
 #define TRY(result_expr) \
     do { \
         auto&& __ecliptix_result = (result_expr); \

@@ -133,9 +133,6 @@ TEST_CASE("ShamirSecretSharing - Split rejects invalid inputs", "[secret-sharing
         REQUIRE(result.IsErr());
     }
 
-    // Note: Cannot test "share count too large" since MAX_SHARES=255 equals uint8_t max.
-    // The type constraint prevents passing values > 255.
-
     SECTION("Auth key wrong size") {
         auto secret = SodiumInterop::GetRandomBytes(16);
         auto auth_key = SodiumInterop::GetRandomBytes(31);

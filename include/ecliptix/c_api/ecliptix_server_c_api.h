@@ -170,7 +170,7 @@ EcliptixErrorCode ecliptix_protocol_server_system_set_callbacks(
 
 /** Begin a handshake with the specified exchange type */
 EcliptixErrorCode ecliptix_protocol_server_system_begin_handshake(
-    EcliptixProtocolSystemHandle* handle,
+    const EcliptixProtocolSystemHandle* handle,
     uint32_t connection_id,
     uint8_t exchange_type,
     EcliptixBuffer* out_handshake_message,
@@ -204,7 +204,7 @@ EcliptixErrorCode ecliptix_protocol_server_system_complete_handshake_auto(
 
 /** Encrypt a message using the Double Ratchet */
 EcliptixErrorCode ecliptix_protocol_server_system_send_message(
-    EcliptixProtocolSystemHandle* handle,
+    const EcliptixProtocolSystemHandle* handle,
     const uint8_t* plaintext,
     size_t plaintext_length,
     EcliptixBuffer* out_encrypted_envelope,
@@ -212,7 +212,7 @@ EcliptixErrorCode ecliptix_protocol_server_system_send_message(
 
 /** Decrypt a message using the Double Ratchet */
 EcliptixErrorCode ecliptix_protocol_server_system_receive_message(
-    EcliptixProtocolSystemHandle* handle,
+    const EcliptixProtocolSystemHandle* handle,
     const uint8_t* encrypted_envelope,
     size_t encrypted_envelope_length,
     EcliptixBuffer* out_plaintext,
@@ -246,13 +246,13 @@ EcliptixErrorCode ecliptix_protocol_server_system_get_selected_opk_id(
 
 /** Export the full protocol state for persistence */
 EcliptixErrorCode ecliptix_protocol_server_system_export_state(
-    EcliptixProtocolSystemHandle* handle,
+    const EcliptixProtocolSystemHandle* handle,
     EcliptixBuffer* out_state,
     EcliptixError* out_error);
 
 /** Set Kyber hybrid handshake secrets for manual PQ setup */
 EcliptixErrorCode ecliptix_protocol_server_system_set_kyber_secrets(
-    EcliptixProtocolSystemHandle* handle,
+    const EcliptixProtocolSystemHandle* handle,
     const uint8_t* kyber_ciphertext,
     size_t kyber_ciphertext_length,
     const uint8_t* kyber_shared_secret,
@@ -260,7 +260,7 @@ EcliptixErrorCode ecliptix_protocol_server_system_set_kyber_secrets(
     EcliptixError* out_error);
 
 /** Destroy the protocol server system */
-void ecliptix_protocol_server_system_destroy(EcliptixProtocolSystemHandle* handle);
+void ecliptix_protocol_server_system_destroy(const EcliptixProtocolSystemHandle* handle);
 
 // ============================================================================
 // Utilities

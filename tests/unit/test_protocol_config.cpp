@@ -110,17 +110,14 @@ TEST_CASE("ProtocolConfig - Performance Estimates", "[config][performance]") {
         auto puncturable = ProtocolConfig::PuncturableOnly();
         auto zk = ProtocolConfig::MaximumSecurity();
 
-        // Handshake overhead
         REQUIRE(classical.EstimateHandshakeOverheadUs() < pq.EstimateHandshakeOverheadUs());
         REQUIRE(pq.EstimateHandshakeOverheadUs() <= puncturable.EstimateHandshakeOverheadUs());
         REQUIRE(puncturable.EstimateHandshakeOverheadUs() <= zk.EstimateHandshakeOverheadUs());
 
-        // Message overhead
         REQUIRE(classical.EstimateMessageOverheadUs() < pq.EstimateMessageOverheadUs());
         REQUIRE(pq.EstimateMessageOverheadUs() < puncturable.EstimateMessageOverheadUs());
         REQUIRE(puncturable.EstimateMessageOverheadUs() < zk.EstimateMessageOverheadUs());
 
-        // Memory overhead
         REQUIRE(classical.EstimateMemoryOverheadBytes() < pq.EstimateMemoryOverheadBytes());
         REQUIRE(pq.EstimateMemoryOverheadBytes() < puncturable.EstimateMemoryOverheadBytes());
         REQUIRE(puncturable.EstimateMemoryOverheadBytes() < zk.EstimateMemoryOverheadBytes());
@@ -200,33 +197,27 @@ TEST_CASE("ProtocolConfig - Use Cases", "[config][integration]") {
     SECTION("Desktop app with maximum security") {
         auto config = ProtocolConfig::MaximumSecurity();
 
-        // All features enabled
         REQUIRE(config.IsPqEnabled());
         REQUIRE(config.IsPuncturableEnabled());
         REQUIRE(config.IsZkEnabled());
 
-        // Accept higher overhead for security
         REQUIRE(config.EstimateMessageOverheadUs() > 100'000); // >100ms
     }
 
     SECTION("Mobile app with PQ only (no ZK)") {
         auto config = ProtocolConfig::PostQuantumOnly();
 
-        // Quantum resistance enabled
         REQUIRE(config.IsPqEnabled());
 
-        // Skip expensive features
         REQUIRE_FALSE(config.IsPuncturableEnabled());
         REQUIRE_FALSE(config.IsZkEnabled());
 
-        // Low message overhead (<100μs)
         REQUIRE(config.EstimateMessageOverheadUs() < 100);
     }
 
     SECTION("Legacy system with Classical only") {
         auto config = ProtocolConfig::ClassicalOnly();
 
-        // Identical to pre-PQ implementation
         REQUIRE_FALSE(config.IsPqEnabled());
         REQUIRE(config.EstimateHandshakeOverheadUs() == 0);
         REQUIRE(config.EstimateMessageOverheadUs() == 0);
@@ -236,12 +227,10 @@ TEST_CASE("ProtocolConfig - Use Cases", "[config][integration]") {
     SECTION("Server with Puncturable FS") {
         auto config = ProtocolConfig::PuncturableOnly();
 
-        // PQ + Puncturable, no ZK
         REQUIRE(config.IsPqEnabled());
         REQUIRE(config.IsPuncturableEnabled());
         REQUIRE_FALSE(config.IsZkEnabled());
 
-        // Moderate message overhead (~70μs)
         REQUIRE(config.EstimateMessageOverheadUs() == 70);
     }
 }

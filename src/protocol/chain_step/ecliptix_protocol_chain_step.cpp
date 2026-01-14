@@ -201,8 +201,6 @@ namespace ecliptix::protocol::chain_step {
             return result;
         }
         
-        
-        
         if (index + 1 == current_index_ || index == current_index_) {
             auto chain_key_result = ConvertSodiumResult(chain_key_handle_.ReadBytes(Constants::X_25519_KEY_SIZE));
             if (chain_key_result.IsErr()) {
@@ -229,8 +227,7 @@ namespace ecliptix::protocol::chain_step {
                 return Result<Unit, EcliptixProtocolFailure>::Err(
                     EcliptixProtocolFailure::Generic("Failed to update chain key"));
             }
-            
-            
+
             if (index == current_index_) {
                 current_index_++;
             }

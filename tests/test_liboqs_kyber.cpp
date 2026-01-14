@@ -1,6 +1,3 @@
-// Test program to verify liboqs Kyber-768 functionality
-// This is a temporary test file to validate the installation
-
 #include <iostream>
 #include <vector>
 #include <cstring>
@@ -21,7 +18,6 @@ int main() {
     std::cout << "=== liboqs Kyber-768 Test ===" << std::endl;
     std::cout << "liboqs version: 0.15.0" << std::endl << std::endl;
 
-    // Create Kyber-768 KEM instance
     OQS_KEM* kem = OQS_KEM_new(OQS_KEM_alg_kyber_768);
     if (kem == nullptr) {
         std::cerr << "ERROR: Failed to create Kyber-768 KEM instance" << std::endl;
@@ -35,14 +31,12 @@ int main() {
     std::cout << "Shared Secret Size: " << kem->length_shared_secret << " bytes" << std::endl;
     std::cout << std::endl;
 
-    // Allocate buffers
     std::vector<uint8_t> public_key(kem->length_public_key);
     std::vector<uint8_t> secret_key(kem->length_secret_key);
     std::vector<uint8_t> ciphertext(kem->length_ciphertext);
     std::vector<uint8_t> shared_secret_sender(kem->length_shared_secret);
     std::vector<uint8_t> shared_secret_receiver(kem->length_shared_secret);
 
-    // Test 1: Key Generation
     std::cout << "[TEST 1] Key Generation" << std::endl;
     OQS_STATUS status = OQS_KEM_keypair(kem, public_key.data(), secret_key.data());
     if (status != OQS_SUCCESS) {
@@ -55,7 +49,6 @@ int main() {
     print_hex("  Secret Key", secret_key.data(), secret_key.size());
     std::cout << std::endl;
 
-    // Test 2: Encapsulation
     std::cout << "[TEST 2] Encapsulation" << std::endl;
     status = OQS_KEM_encaps(kem, ciphertext.data(), shared_secret_sender.data(), public_key.data());
     if (status != OQS_SUCCESS) {
@@ -68,7 +61,6 @@ int main() {
     print_hex("  Shared Secret (Sender)", shared_secret_sender.data(), shared_secret_sender.size());
     std::cout << std::endl;
 
-    // Test 3: Decapsulation
     std::cout << "[TEST 3] Decapsulation" << std::endl;
     status = OQS_KEM_decaps(kem, shared_secret_receiver.data(), ciphertext.data(), secret_key.data());
     if (status != OQS_SUCCESS) {
@@ -80,7 +72,6 @@ int main() {
     print_hex("  Shared Secret (Receiver)", shared_secret_receiver.data(), shared_secret_receiver.size());
     std::cout << std::endl;
 
-    // Test 4: Verify Shared Secrets Match
     std::cout << "[TEST 4] Shared Secret Agreement" << std::endl;
     if (std::memcmp(shared_secret_sender.data(), shared_secret_receiver.data(),
                     shared_secret_sender.size()) == 0) {
@@ -92,7 +83,6 @@ int main() {
     }
     std::cout << std::endl;
 
-    // Verify expected sizes match spec
     std::cout << "[TEST 5] Size Verification (FIPS 203 Kyber-768)" << std::endl;
     bool sizes_correct = true;
     if (kem->length_public_key != 1184) {
@@ -123,7 +113,6 @@ int main() {
         return 1;
     }
 
-    // Cleanup
     OQS_KEM_free(kem);
 
     std::cout << "\n=== ALL TESTS PASSED ===" << std::endl;

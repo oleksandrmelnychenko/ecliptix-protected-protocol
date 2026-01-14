@@ -54,6 +54,7 @@ set(TEST_SOURCES
 
     # Sprint 1.5B: Aggressive Testing Suite
     integration/test_end_to_end_workflow.cpp
+    integration/test_protocol_system_workflow.cpp
     attacks/test_envelope_attacks.cpp
     concurrency/test_concurrent_envelopes.cpp
     performance/test_envelope_performance.cpp
@@ -66,6 +67,17 @@ set(TEST_SOURCES
 # Server-specific C API tests (separate binary to avoid symbol collisions)
 set(SERVER_TEST_SOURCES
     c_api/test_server_c_api_secret_sharing.cpp
+
+    # C API Protocol Correctness Tests (client + server interaction)
+    c_api/test_c_api_handshake_e2e.cpp
+    c_api/test_c_api_hybrid_pq.cpp
+    c_api/test_c_api_forward_secrecy.cpp
+    c_api/test_c_api_break_in_recovery.cpp
+    c_api/test_c_api_state_persistence.cpp
+    c_api/test_c_api_role_validation.cpp
+    c_api/test_c_api_pre_handshake.cpp
+    c_api/test_c_api_integration.cpp
+
     test_main.cpp
 )
 
@@ -97,11 +109,26 @@ endif()
 if(TARGET Ecliptix::ProtocolServer)
     add_executable(ecliptix_server_tests ${SERVER_TEST_SOURCES})
 
-    target_link_libraries(ecliptix_server_tests
-        PRIVATE
-            Ecliptix::ProtocolServer
-            Catch2::Catch2WithMain
-    )
+    # Link both client and server libraries
+    # Note: Both libraries have some duplicate shared functions (identity_keys, etc.)
+    # We use -force_load for the client library to ensure all its symbols take precedence
+    if(APPLE)
+        target_link_libraries(ecliptix_server_tests
+            PRIVATE
+                "-Wl,-force_load,$<TARGET_FILE:Ecliptix::Protocol>"
+                Ecliptix::ProtocolServer
+                Catch2::Catch2WithMain
+        )
+    else()
+        target_link_libraries(ecliptix_server_tests
+            PRIVATE
+                -Wl,--whole-archive
+                Ecliptix::Protocol
+                -Wl,--no-whole-archive
+                Ecliptix::ProtocolServer
+                Catch2::Catch2WithMain
+        )
+    endif()
 
     target_include_directories(ecliptix_server_tests
         PRIVATE

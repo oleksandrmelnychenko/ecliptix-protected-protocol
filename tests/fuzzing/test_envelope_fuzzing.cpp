@@ -163,7 +163,6 @@ TEST_CASE("Fuzzing - Random Payload Sizes", "[fuzzing][envelope][payload]") {
             if (alice_prepare.IsErr()) continue;
             auto [alice_key, include_dh] = std::move(alice_prepare).Unwrap();
 
-            // Handle DH ratchet if needed (unlikely with MESSAGE_COUNT=100, but for correctness)
             if (include_dh) {
                 auto alice_dh_pub = alice->GetCurrentSenderDhPublicKey();
                 if (alice_dh_pub.IsErr() || !alice_dh_pub.Unwrap().has_value()) continue;
@@ -176,7 +175,6 @@ TEST_CASE("Fuzzing - Random Payload Sizes", "[fuzzing][envelope][payload]") {
             if (nonce_result.IsErr()) continue;
             auto nonce = std::move(nonce_result).Unwrap();
 
-            // Embed chain index in nonce bytes 8-11 for nonce/index binding validation
             for (size_t b = 0; b < 4 && b + 8 < nonce.size(); ++b) {
                 nonce[8 + b] = static_cast<uint8_t>((alice_key.Index() >> (b * 8)) & 0xFF);
             }
@@ -376,7 +374,6 @@ TEST_CASE("Fuzzing - Random Bit Flips in Ciphertext", "[fuzzing][envelope][bitfl
             if (alice_prepare.IsErr()) continue;
             auto [alice_key, include_dh] = std::move(alice_prepare).Unwrap();
 
-            // Handle DH ratchet if needed
             if (include_dh) {
                 auto alice_dh_pub = alice->GetCurrentSenderDhPublicKey();
                 if (alice_dh_pub.IsErr() || !alice_dh_pub.Unwrap().has_value()) continue;
@@ -389,7 +386,6 @@ TEST_CASE("Fuzzing - Random Bit Flips in Ciphertext", "[fuzzing][envelope][bitfl
             if (nonce_result.IsErr()) continue;
             auto nonce = std::move(nonce_result).Unwrap();
 
-            // Embed chain index in nonce bytes 8-11 for nonce/index binding validation
             for (size_t b = 0; b < 4 && b + 8 < nonce.size(); ++b) {
                 nonce[8 + b] = static_cast<uint8_t>((alice_key.Index() >> (b * 8)) & 0xFF);
             }
@@ -471,7 +467,6 @@ TEST_CASE("Fuzzing - Empty and Null Inputs", "[fuzzing][envelope][empty]") {
                           << " idx=" << alice_key.Index() << std::endl;
             }
 
-            // Handle DH ratchet if needed
             if (include_dh) {
                 auto alice_dh_pub = alice->GetCurrentSenderDhPublicKey();
                 if (alice_dh_pub.IsErr() || !alice_dh_pub.Unwrap().has_value()) break;
@@ -549,7 +544,6 @@ TEST_CASE("Fuzzing - Empty and Null Inputs", "[fuzzing][envelope][empty]") {
             if (nonce_result.IsErr()) break;
             auto nonce = std::move(nonce_result).Unwrap();
 
-            // Embed chain index in nonce bytes 8-11 for nonce/index binding validation
             for (size_t b = 0; b < 4 && b + 8 < nonce.size(); ++b) {
                 nonce[8 + b] = static_cast<uint8_t>((alice_key.Index() >> (b * 8)) & 0xFF);
             }
@@ -565,7 +559,6 @@ TEST_CASE("Fuzzing - Empty and Null Inputs", "[fuzzing][envelope][empty]") {
             const std::vector<uint8_t> empty_payload{};
             const std::vector<uint8_t> empty_aad{};
 
-            // Capture Alice's encryption key
             std::vector<uint8_t> alice_key_bytes;
             auto encrypted_result = alice_key.WithKeyMaterial<std::vector<uint8_t>>(
                 [&](std::span<const uint8_t> key) {
@@ -601,7 +594,6 @@ TEST_CASE("Fuzzing - Empty and Null Inputs", "[fuzzing][envelope][empty]") {
             }
             auto bob_key = std::move(bob_key_result).Unwrap();
 
-            // Capture Bob's decryption key
             auto decrypted_result = bob_key.WithKeyMaterial<std::vector<uint8_t>>(
                 [&](std::span<const uint8_t> key) {
                     if (i >= 99 && i <= 102) {
@@ -611,7 +603,6 @@ TEST_CASE("Fuzzing - Empty and Null Inputs", "[fuzzing][envelope][empty]") {
                         }
                         std::cerr << std::dec << std::endl;
 
-                        // Compare keys
                         bool keys_match = (key.size() == alice_key_bytes.size() &&
                                          std::equal(key.begin(), key.end(), alice_key_bytes.begin()));
                         std::cerr << "Keys match: " << (keys_match ? "YES" : "NO") << std::endl;

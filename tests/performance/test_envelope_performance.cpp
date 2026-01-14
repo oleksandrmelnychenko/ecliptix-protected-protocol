@@ -313,9 +313,6 @@ TEST_CASE("Performance - Large Payload Throughput", "[performance][envelope][pay
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Encrypt 1,000 × 1MB payloads") {
-        // Note: This test is excluded from regular test runs due to [.benchmark] tag
-        // because it takes >5 seconds and would exceed the test build session timeout.
-        // Run explicitly with: ctest -R "Large Payload Throughput"
         RatchetConfig perf_config(1'000'000);
         auto alice = CreatePreparedConnection(1, true, perf_config);
 
@@ -331,7 +328,6 @@ TEST_CASE("Performance - Large Payload Throughput", "[performance][envelope][pay
 
         constexpr size_t PAYLOAD_SIZE = 1024 * 1024;
 #ifdef ECLIPTIX_TEST_BUILD
-        // Reduced count for test build to complete within 5-second session timeout
         constexpr uint32_t MESSAGE_COUNT = 100;
 #else
         constexpr uint32_t MESSAGE_COUNT = 1'000;
@@ -428,7 +424,6 @@ TEST_CASE("Performance - Large Payload Throughput", "[performance][envelope][pay
         if (duration > 0) {
             const double mb_per_second = (successful_transfers * PAYLOAD_SIZE) / (duration * 1024.0 * 1024.0);
 #ifdef ECLIPTIX_TEST_BUILD
-            // Relaxed performance requirement for test build with reduced message count
             REQUIRE(mb_per_second > 5.0);
 #else
             REQUIRE(mb_per_second > 10.0);

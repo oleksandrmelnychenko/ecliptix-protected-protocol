@@ -75,13 +75,13 @@ private:
     [[nodiscard]] Result<Unit, EcliptixProtocolFailure> CheckDisposed() const;
     [[nodiscard]] static Result<Unit, EcliptixProtocolFailure> ValidateChainKey(
         std::span<const uint8_t> chain_key);
-    mutable std::unique_ptr<std::mutex> lock_;         
-    ChainStepType step_type_;                          
-    SecureMemoryHandle chain_key_handle_;              
-    uint32_t current_index_;                           
-    std::optional<SecureMemoryHandle> dh_private_key_handle_;  
-    std::optional<std::vector<uint8_t>> dh_public_key_;        
-    std::map<uint32_t, SecureMemoryHandle> cached_message_keys_;  
-    bool disposed_;                                    
+    mutable std::unique_ptr<std::mutex> lock_;
+    ChainStepType step_type_;
+    SecureMemoryHandle chain_key_handle_;
+    uint32_t current_index_;
+    std::optional<SecureMemoryHandle> dh_private_key_handle_;
+    std::optional<std::vector<uint8_t>> dh_public_key_;
+    std::map<uint32_t, SecureMemoryHandle> cached_message_keys_;
+    bool disposed_;
 };
 } 

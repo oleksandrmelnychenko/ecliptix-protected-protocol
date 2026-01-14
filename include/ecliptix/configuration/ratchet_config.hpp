@@ -38,6 +38,6 @@ public:
         return !(*this == other);
     }
 private:
-    uint32_t message_count_before_ratchet_;  
+    uint32_t message_count_before_ratchet_;
 };
 } 

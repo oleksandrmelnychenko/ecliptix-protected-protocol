@@ -42,7 +42,7 @@ public:
     MessageKey& operator=(MessageKey&&) noexcept = default;
     ~MessageKey() = default;
 private:
-    IKeyProvider* provider_;  
-    uint32_t index_;           
+    IKeyProvider* provider_;
+    uint32_t index_;
 };
 } 

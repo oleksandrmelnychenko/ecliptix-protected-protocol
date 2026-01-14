@@ -50,7 +50,7 @@ public:
 private:
     SecureMemoryHandle(void* ptr, const size_t size) noexcept
         : ptr_(ptr), size_(size) {}
-    void* ptr_;      
-    size_t size_;    
+    void* ptr_;
+    size_t size_;
 };
 } 

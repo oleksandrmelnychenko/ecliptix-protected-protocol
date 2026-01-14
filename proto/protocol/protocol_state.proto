@@ -52,6 +52,7 @@ message RatchetState {
   bytes peer_dh_public_key = 5;
   bool is_first_receiving_ratchet = 6;
   bytes session_id = 7;
+  uint32 connection_id = 8;
 
   bytes root_key = 10;
   ChainStepState sending_step = 11;
@@ -69,6 +70,8 @@ message RatchetState {
   bytes kyber_secret_key_nonce = 21;
   optional uint64 receiving_ratchet_epoch = 22;
   optional uint64 sending_ratchet_epoch = 23;
+  // Initial peer DH public key captured during handshake - never changes after ratchets
+  bytes initial_peer_dh_public = 24;
 }
 
 message ChainStepState {

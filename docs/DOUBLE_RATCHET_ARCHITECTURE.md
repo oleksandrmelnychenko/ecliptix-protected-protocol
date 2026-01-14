@@ -1,5 +1,7 @@
 # Double Ratchet Protocol Architecture
 
+> **Note**: For the complete formal protocol specification including security proofs and test vectors, see [ECLIPTIX_PROTOCOL_SPECIFICATION.md](./ECLIPTIX_PROTOCOL_SPECIFICATION.md).
+
 ## Overview
 
 This document captures the critical architectural patterns and algorithmic details from the C# reference implementation, serving as the blueprint for the C++ port.

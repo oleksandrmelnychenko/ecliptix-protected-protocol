@@ -41,7 +41,7 @@ public:
     RatchetChainKey& operator=(RatchetChainKey&&) noexcept = default;
     ~RatchetChainKey() = default;
 private:
-    IKeyProvider* provider_;  
-    uint32_t index_;           
+    IKeyProvider* provider_;
+    uint32_t index_;
 };
 } 

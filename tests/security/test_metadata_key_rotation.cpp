@@ -12,7 +12,6 @@
 
 using namespace ecliptix::protocol;
 
-// Custom comparator to avoid GCC 13 false positive with spaceship operator on vector<uint8_t>
 struct ByteVectorLess {
     bool operator()(const std::vector<uint8_t>& a, const std::vector<uint8_t>& b) const {
         return std::lexicographical_compare(a.begin(), a.end(), b.begin(), b.end());
@@ -24,22 +23,12 @@ using namespace ecliptix::protocol::utilities;
 using namespace ecliptix::proto::common;
 using namespace ecliptix::protocol::test_helpers;
 
-// Helper to create unique nonces with proper chain index binding
-// nonce_counter: Unique monotonic counter for nonce uniqueness (bytes 4-7)
-// message_index: Message index within current chain (bytes 8-11)
-//
-// IMPORTANT: For replay protection to work correctly across DH ratchets:
-// - nonce_counter MUST be globally unique (never reset)
-// - message_index resets to 0 after each DH ratchet
-// - The combination (nonce_counter, message_index) must be unique
 static std::vector<uint8_t> MakeMetaNonce(uint64_t nonce_counter, uint32_t message_index) {
     std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE, 0);
-    // Bytes 4-7: nonce counter for global uniqueness (NEVER resets)
     for (size_t i = 0; i < ProtocolConstants::NONCE_COUNTER_SIZE; ++i) {
         nonce[ProtocolConstants::NONCE_PREFIX_SIZE + i] =
             static_cast<uint8_t>((nonce_counter >> (i * 8)) & 0xFF);
     }
-    // Bytes 8-11: message index within current chain (resets on DH ratchet)
     for (size_t i = 0; i < ProtocolConstants::NONCE_INDEX_SIZE; ++i) {
         nonce[ProtocolConstants::NONCE_PREFIX_SIZE + ProtocolConstants::NONCE_COUNTER_SIZE + i] =
             static_cast<uint8_t>((message_index >> (i * 8)) & 0xFF);
@@ -78,7 +67,6 @@ TEST_CASE("Metadata Key Rotation - Basic Rotation on DH Ratchet", "[security][me
         bool ratchet_occurred = false;
         uint32_t iteration_count = 0;
         uint32_t last_index = 0;
-        // Loop to 101 to trigger DH ratchet at message index 100
         for (uint32_t i = 0; i <= 100; ++i) {
             iteration_count++;
             auto prepare = alice->PrepareNextSendMessage();
@@ -137,7 +125,6 @@ TEST_CASE("Metadata Key Rotation - Forward Secrecy", "[security][metadata_rotati
 
         uint64_t nonce_counter = 0;
         for (uint32_t ratchet = 0; ratchet < 5; ++ratchet) {
-            // Loop to 101 to trigger DH ratchet at message index 100
             for (uint32_t i = 0; i <= 100; ++i) {
                 auto prepare = alice->PrepareNextSendMessage();
                 REQUIRE(prepare.IsOk());
@@ -202,7 +189,6 @@ TEST_CASE("Metadata Key Rotation - Uniqueness Across Ratchets", "[security][meta
 
         uint64_t nonce_counter = 0;
         for (uint32_t ratchet = 0; ratchet < 50; ++ratchet) {
-            // Loop to 101 to trigger DH ratchet at message index 100
             for (uint32_t i = 0; i <= 100; ++i) {
                 auto prepare = alice->PrepareNextSendMessage();
                 REQUIRE(prepare.IsOk());
@@ -264,7 +250,6 @@ TEST_CASE("Metadata Key Rotation - Decryption Window", "[security][metadata_rota
 
             messages.push_back({encrypted, header_nonce, aad, current_key});
 
-            // Loop to 101 to trigger DH ratchet at message index 100
             for (uint32_t i = 0; i <= 100; ++i) {
                 auto prepare = alice->PrepareNextSendMessage();
                 REQUIRE(prepare.IsOk());
@@ -323,7 +308,6 @@ TEST_CASE("Metadata Key Rotation - High-Frequency Ratchets", "[security][metadat
 
         uint64_t nonce_counter = 0;
         for (uint32_t ratchet = 0; ratchet < 100; ++ratchet) {
-            // Loop to 101 to trigger DH ratchet at message index 100
             for (uint32_t i = 0; i <= 100; ++i) {
                 auto prepare = alice->PrepareNextSendMessage();
                 REQUIRE(prepare.IsOk());
@@ -369,7 +353,6 @@ TEST_CASE("Metadata Key Rotation - Bidirectional Ratchets", "[security][metadata
         uint64_t bob_nonce_counter = 0;
 
         for (uint32_t round = 0; round < 20; ++round) {
-            // Loop to 101 to trigger DH ratchet at message index 100
             for (uint32_t i = 0; i <= 100; ++i) {
                 auto prepare = alice->PrepareNextSendMessage();
                 REQUIRE(prepare.IsOk());
@@ -383,7 +366,6 @@ TEST_CASE("Metadata Key Rotation - Bidirectional Ratchets", "[security][metadata
             }
             alice_keys.push_back(alice->GetMetadataEncryptionKey().Unwrap());
 
-            // Loop to 101 to trigger DH ratchet at message index 100
             for (uint32_t i = 0; i <= 100; ++i) {
                 auto prepare = bob->PrepareNextSendMessage();
                 REQUIRE(prepare.IsOk());

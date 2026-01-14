@@ -60,26 +60,25 @@ namespace ecliptix::protocol::connection {
             std::span<const uint8_t> opaque_session_key,
             std::span<const uint8_t> user_context);
 
-        // Bootstrap from pre-shared root + peer bundle (OPAQUE or other authenticated channel).
         [[nodiscard]] static Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>
         FromRootAndPeerBundle(
+            uint32_t connection_id,
             std::span<const uint8_t> root_key,
             const proto::protocol::PublicKeyBundle &peer_bundle,
             bool is_initiator);
 
-        // Overload with Kyber artifacts for hybrid PQ mode
         [[nodiscard]] static Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>
         FromRootAndPeerBundle(
+            uint32_t connection_id,
             std::span<const uint8_t> root_key,
             const proto::protocol::PublicKeyBundle &peer_bundle,
             bool is_initiator,
             std::span<const uint8_t> kyber_ciphertext,
             std::span<const uint8_t> kyber_shared_secret);
 
-        // Overload with Kyber artifacts AND initial DH key pair from X3DH
-        // This ensures the Double Ratchet uses the correct initial sender DH key pair.
         [[nodiscard]] static Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>
         FromRootAndPeerBundle(
+            uint32_t connection_id,
             std::span<const uint8_t> root_key,
             const proto::protocol::PublicKeyBundle &peer_bundle,
             bool is_initiator,
@@ -95,7 +94,6 @@ namespace ecliptix::protocol::connection {
             std::span<const uint8_t> initial_root_key,
             std::span<const uint8_t> initial_peer_dh_public_key);
 
-        // Finalize using a pre-shared root key (OPAQUE/bootstrap path) without an initial DH public key.
         [[nodiscard]] Result<Unit, EcliptixProtocolFailure> FinalizeChainAndDhKeysWithRoot(
             std::span<const uint8_t> initial_root_key);
 
@@ -148,8 +146,6 @@ namespace ecliptix::protocol::connection {
 
         [[nodiscard]] PubKeyExchangeType ExchangeType() const noexcept;
 
-        /// Returns the session age in seconds since creation.
-        /// Application layer can use this to decide when to refresh/rehandshake.
         [[nodiscard]] uint64_t GetSessionAgeSeconds() const noexcept;
 
         [[nodiscard]] Result<LocalPublicKeyBundle, EcliptixProtocolFailure> GetPeerBundle() const;
@@ -216,7 +212,7 @@ namespace ecliptix::protocol::connection {
             RatchetConfig ratchet_config,
             PubKeyExchangeType exchange_type,
             SecureMemoryHandle initial_sending_dh_private_handle,
-            std::vector<uint8_t> initial_sending_dh_public,
+            const std::vector<uint8_t> &initial_sending_dh_public,
             SecureMemoryHandle persistent_dh_private_handle,
             std::vector<uint8_t> persistent_dh_public,
             EcliptixProtocolChainStep sending_step);
@@ -258,7 +254,7 @@ namespace ecliptix::protocol::connection {
         [[nodiscard]] Result<Unit, EcliptixProtocolFailure>
         DeriveMetadataEncryptionKey();
 
-        [[nodiscard]] Result<std::vector<uint8_t>, EcliptixProtocolFailure>
+        [[nodiscard]] static Result<std::vector<uint8_t>, EcliptixProtocolFailure>
         DeriveMetadataEncryptionKeyBytes(
             std::span<const uint8_t> root_bytes,
             std::span<const uint8_t> sender_dh_public,
@@ -297,6 +293,7 @@ namespace ecliptix::protocol::connection {
             const proto::protocol::RatchetState &proto);
 
         Result<Unit, EcliptixProtocolFailure> UpdateKyberSecretFromCiphertext(std::span<const uint8_t> kyber_ct);
+
         [[nodiscard]] Result<std::vector<uint8_t>, EcliptixProtocolFailure> DecapsulateKyberCiphertext(
             std::span<const uint8_t> kyber_ct) const;
 
@@ -311,8 +308,9 @@ namespace ecliptix::protocol::connection {
         std::optional<SecureMemoryHandle> metadata_encryption_key_handle_;
         SecureMemoryHandle initial_sending_dh_private_handle_;
         std::vector<uint8_t> initial_sending_dh_public_;
+        std::vector<uint8_t> initial_peer_dh_public_;
         std::optional<SecureMemoryHandle> current_sending_dh_private_handle_;
-        std::vector<uint8_t> current_sending_dh_public_; // Updated after each sender DH ratchet
+        std::vector<uint8_t> current_sending_dh_public_;
         SecureMemoryHandle persistent_dh_private_handle_;
         std::vector<uint8_t> persistent_dh_public_;
         EcliptixProtocolChainStep sending_step_;
@@ -336,8 +334,8 @@ namespace ecliptix::protocol::connection {
         std::atomic<bool> is_first_receiving_ratchet_;
         std::atomic<bool> received_new_dh_key_;
         std::atomic<bool> ratchet_warning_triggered_;
-        std::atomic<uint64_t> receiving_ratchet_epoch_; // Increments with each receiving DH ratchet
-        std::atomic<uint64_t> sending_ratchet_epoch_;   // Increments with each sending DH ratchet
+        std::atomic<uint64_t> receiving_ratchet_epoch_;
+        std::atomic<uint64_t> sending_ratchet_epoch_;
         std::shared_ptr<IProtocolEventHandler> event_handler_;
     };
 }

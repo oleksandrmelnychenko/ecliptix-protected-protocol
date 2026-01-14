@@ -13,19 +13,13 @@ using namespace ecliptix::protocol::crypto;
 using namespace ecliptix::protocol::test_helpers;
 
 static std::vector<uint8_t> MakeNonce(uint64_t idx) {
-    // Nonce structure (12 bytes total):
-    // Bytes [0-3]: Random prefix (fixed here for test simplicity)
-    // Bytes [4-7]: Monotonic counter (use idx for test simplicity)
-    // Bytes [8-11]: Message index in little-endian format
     std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE, 0);
 
-    // Set monotonic counter (bytes 4-7)
     for (size_t i = 0; i < ProtocolConstants::NONCE_COUNTER_SIZE; ++i) {
         nonce[ProtocolConstants::NONCE_PREFIX_SIZE + i] =
             static_cast<uint8_t>((idx >> (i * 8)) & 0xFF);
     }
 
-    // Set message index in little-endian (bytes 8-11)
     for (size_t i = 0; i < ProtocolConstants::NONCE_INDEX_SIZE; ++i) {
         nonce[ProtocolConstants::NONCE_PREFIX_SIZE + ProtocolConstants::NONCE_COUNTER_SIZE + i] =
             static_cast<uint8_t>((idx >> (i * 8)) & 0xFF);
@@ -33,11 +27,6 @@ static std::vector<uint8_t> MakeNonce(uint64_t idx) {
 
     return nonce;
 }
-
-// ============================================================================
-// Session Age Tracking Tests
-// These tests verify GetSessionAgeSeconds() for application-layer timeout management
-// ============================================================================
 
 TEST_CASE("Session Lifecycle - GetSessionAgeSeconds Returns Correct Age", "[security][session][age]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
@@ -81,12 +70,6 @@ TEST_CASE("Session Lifecycle - GetSessionAgeSeconds for New Connection", "[secur
     }
 }
 
-// ============================================================================
-// No Timeout Enforcement Tests
-// These tests verify that the library no longer enforces session timeout
-// Session lifecycle is now the application's responsibility
-// ============================================================================
-
 TEST_CASE("Session Lifecycle - Operations Succeed Without Timeout Enforcement", "[security][session][no-timeout]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
@@ -103,14 +86,12 @@ TEST_CASE("Session Lifecycle - Operations Succeed Without Timeout Enforcement", 
         auto prepare_before = conn->PrepareNextSendMessage();
         REQUIRE(prepare_before.IsOk());
 
-        // Sleep past the old test timeout (was 60 seconds for test builds)
-        // With timeout removed, this should still succeed
 #ifdef ECLIPTIX_TEST_BUILD
         std::this_thread::sleep_for(std::chrono::seconds(2));
 #endif
 
         auto prepare_after = conn->PrepareNextSendMessage();
-        REQUIRE(prepare_after.IsOk());  // Should succeed now - no timeout enforcement
+        REQUIRE(prepare_after.IsOk());
     }
 }
 
@@ -135,7 +116,7 @@ TEST_CASE("Session Lifecycle - GenerateNextNonce Without Timeout", "[security][s
 #endif
 
         auto nonce_after = conn->GenerateNextNonce();
-        REQUIRE(nonce_after.IsOk());  // Should succeed now - no timeout enforcement
+        REQUIRE(nonce_after.IsOk());
     }
 }
 
@@ -161,7 +142,7 @@ TEST_CASE("Session Lifecycle - ProcessReceivedMessage Without Timeout", "[securi
 #endif
 
         auto process_after = bob->ProcessReceivedMessage(1, MakeNonce(0x01));
-        REQUIRE(process_after.IsOk());  // Should succeed now - no timeout enforcement
+        REQUIRE(process_after.IsOk());
     }
 }
 
@@ -190,7 +171,6 @@ TEST_CASE("Session Lifecycle - Multiple Operations Over Time", "[security][sessi
             REQUIRE(process.IsOk());
         }
 
-        // Session age should have accumulated but operations still work
         auto age = alice->GetSessionAgeSeconds();
         INFO("Session age after 100 operations: " << age << " seconds");
     }
@@ -214,7 +194,6 @@ TEST_CASE("Session Lifecycle - All Operations Work After Extended Time", "[secur
         std::this_thread::sleep_for(std::chrono::seconds(2));
 #endif
 
-        // All operations should still work - timeout enforcement removed
         auto nonce = alice->GenerateNextNonce();
         REQUIRE(nonce.IsOk());
 
@@ -224,7 +203,6 @@ TEST_CASE("Session Lifecycle - All Operations Work After Extended Time", "[secur
         auto process = bob->ProcessReceivedMessage(0, MakeNonce(0x00));
         REQUIRE(process.IsOk());
 
-        // Verify age is being tracked (app can check this)
         auto alice_age = alice->GetSessionAgeSeconds();
         auto bob_age = bob->GetSessionAgeSeconds();
         INFO("Alice session age: " << alice_age << " seconds");
@@ -249,7 +227,6 @@ TEST_CASE("Session Lifecycle - Independent Connection Ages", "[security][session
 
         std::this_thread::sleep_for(std::chrono::seconds(2));
 
-        // Create second connection after delay
         auto conn2 = CreatePreparedConnection(2, false);
 
         auto peer2 = SodiumInterop::GenerateX25519KeyPair("peer2");
@@ -258,20 +235,18 @@ TEST_CASE("Session Lifecycle - Independent Connection Ages", "[security][session
 
         REQUIRE(conn2->FinalizeChainAndDhKeys(root_key, peer2_pk).IsOk());
 
-        // Both connections work (no timeout enforcement)
         auto conn1_nonce = conn1->GenerateNextNonce();
         REQUIRE(conn1_nonce.IsOk());
 
         auto conn2_nonce = conn2->GenerateNextNonce();
         REQUIRE(conn2_nonce.IsOk());
 
-        // But they have different ages
         auto age1 = conn1->GetSessionAgeSeconds();
         auto age2 = conn2->GetSessionAgeSeconds();
 
         REQUIRE(age1 >= 2);
         REQUIRE(age2 < 2);
-        REQUIRE(age1 > age2);  // conn1 is older
+        REQUIRE(age1 > age2);
     }
 }
 
@@ -292,7 +267,6 @@ TEST_CASE("Session Lifecycle - Concurrent Operations Without Timeout", "[securit
         std::this_thread::sleep_for(std::chrono::seconds(2));
 #endif
 
-        // Run multiple threads - all should succeed
         std::atomic<int> success_count{0};
         std::atomic<int> failure_count{0};
         std::vector<std::thread> threads;

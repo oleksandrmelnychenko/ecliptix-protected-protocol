@@ -48,9 +48,6 @@ TEST_CASE("KyberInterop - SelfTestKeyPair succeeds on generated pair", "[kyber][
     REQUIRE(selftest_result.IsOk());
 }
 
-// =============================================================================
-// Initialization and Thread Safety Tests
-// =============================================================================
 
 TEST_CASE("KyberInterop - Initialize is idempotent", "[kyber][init]") {
     auto init1 = KyberInterop::Initialize();
@@ -87,9 +84,6 @@ TEST_CASE("KyberInterop - Concurrent initialization is thread-safe", "[kyber][in
     REQUIRE(error_count == 0);
 }
 
-// =============================================================================
-// Key Generation Tests
-// =============================================================================
 
 TEST_CASE("KyberInterop - GenerateKyber768KeyPair produces valid sizes", "[kyber][keygen]") {
     auto result = KyberInterop::GenerateKyber768KeyPair("test");
@@ -150,9 +144,6 @@ TEST_CASE("KyberInterop - Concurrent key generation is thread-safe", "[kyber][ke
     REQUIRE(success_count == NUM_THREADS);
 }
 
-// =============================================================================
-// Validation Tests
-// =============================================================================
 
 TEST_CASE("KyberInterop - ValidatePublicKey accepts valid key", "[kyber][validation]") {
     auto kp = KyberInterop::GenerateKyber768KeyPair("test").Unwrap();
@@ -220,9 +211,6 @@ TEST_CASE("KyberInterop - ValidateCiphertext rejects all zeros", "[kyber][valida
     REQUIRE(result.IsErr());
 }
 
-// =============================================================================
-// Encapsulation/Decapsulation Tests
-// =============================================================================
 
 TEST_CASE("KyberInterop - Encapsulate produces valid ciphertext and shared secret", "[kyber][encaps]") {
     auto kp = KyberInterop::GenerateKyber768KeyPair("test").Unwrap();
@@ -298,9 +286,6 @@ TEST_CASE("KyberInterop - Decapsulate with wrong secret key produces different s
     REQUIRE(cmp_result.Unwrap() == false);
 }
 
-// =============================================================================
-// Hybrid Key Derivation Tests
-// =============================================================================
 
 TEST_CASE("KyberInterop - CombineHybridSecrets produces valid output", "[kyber][hybrid][hkdf]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
@@ -365,9 +350,6 @@ TEST_CASE("KyberInterop - CombineHybridSecrets is deterministic", "[kyber][hybri
     REQUIRE(b2 == b3);
 }
 
-// =============================================================================
-// End-to-End Workflow Tests
-// =============================================================================
 
 TEST_CASE("KyberInterop - Complete KEM workflow succeeds", "[kyber][e2e]") {
     auto alice_kp = KyberInterop::GenerateKyber768KeyPair("alice").Unwrap();

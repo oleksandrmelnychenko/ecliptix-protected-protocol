@@ -74,14 +74,12 @@ namespace ecliptix::protocol::security {
                 EcliptixProtocolFailure::Generic(
                     "Replay attack detected: nonce already processed"));
         }
-        if (message_windows_.find(chain_index) == message_windows_.end() &&
+
+        if (!message_windows_.contains(chain_index) &&
             message_windows_.size() >= max_tracked_chains_) {
             EvictOldestChainWindow();
         }
-        
-        
-        
-        
+
         if (auto window_result = CheckMessageWindow(chain_index, message_index); window_result.IsErr()) {
             return window_result;
         }
@@ -113,8 +111,8 @@ namespace ecliptix::protocol::security {
                 EcliptixProtocolFailure::Generic(
                     "Message index already processed in this chain"));
         }
-        const uint64_t max_valid_index = window.highest_index_seen + window.current_window_size;
-        if (message_index > max_valid_index) {
+        if (const uint64_t max_valid_index = window.highest_index_seen + window.current_window_size;
+            message_index > max_valid_index) {
             return Result<Unit, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::Generic(
                     "Message index too far ahead of current window"));
@@ -173,8 +171,7 @@ namespace ecliptix::protocol::security {
         if (time_since_last < ProtocolConstants::WINDOW_ADJUSTMENT_INTERVAL) {
             return;
         }
-        const size_t total_tracked = window.processed_indices.size();
-        if (total_tracked > ProtocolConstants::ZERO_VALUE) {
+        if (const size_t total_tracked = window.processed_indices.size(); total_tracked > ProtocolConstants::ZERO_VALUE) {
             const double fill_ratio = static_cast<double>(total_tracked) /
                                       static_cast<double>(window.current_window_size);
             if (fill_ratio > ComparisonConstants::WINDOW_FILL_RATIO_HIGH) {
@@ -222,8 +219,7 @@ namespace ecliptix::protocol::security {
 
     uint32_t ReplayProtection::GetWindowSize(const uint64_t chain_index) const {
         std::lock_guard guard(lock_);
-        const auto it = message_windows_.find(chain_index);
-        if (it != message_windows_.end()) {
+        if (const auto it = message_windows_.find(chain_index); it != message_windows_.end()) {
             return it->second.current_window_size;
         }
         return initial_window_size_;

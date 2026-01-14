@@ -411,7 +411,6 @@ TEST_CASE("State Transitions - Operations After Successful Finalization", "[boun
             nonces.push_back(std::move(nonce));
         }
 
-        // Use explicit comparator to avoid GCC 13 false positive with spaceship operator
         std::sort(nonces.begin(), nonces.end(), [](const auto& a, const auto& b) {
             return std::lexicographical_compare(a.begin(), a.end(), b.begin(), b.end());
         });

@@ -98,7 +98,7 @@ EcliptixErrorCode ecliptix_identity_keys_get_public_kyber(
     size_t out_key_length,
     EcliptixError* out_error);
 
-void ecliptix_identity_keys_destroy(EcliptixIdentityKeysHandle* handle);
+void ecliptix_identity_keys_destroy(const EcliptixIdentityKeysHandle* handle);
 
 EcliptixErrorCode ecliptix_protocol_system_create(
     EcliptixIdentityKeysHandle* identity_keys,
@@ -139,14 +139,14 @@ EcliptixErrorCode ecliptix_protocol_system_complete_handshake_auto(
     EcliptixError* out_error);
 
 EcliptixErrorCode ecliptix_protocol_system_send_message(
-    EcliptixProtocolSystemHandle* handle,
+    const EcliptixProtocolSystemHandle* handle,
     const uint8_t* plaintext,
     size_t plaintext_length,
     EcliptixBuffer* out_encrypted_envelope,
     EcliptixError* out_error);
 
 EcliptixErrorCode ecliptix_protocol_system_receive_message(
-    EcliptixProtocolSystemHandle* handle,
+    const EcliptixProtocolSystemHandle* handle,
     const uint8_t* encrypted_envelope,
     size_t encrypted_envelope_length,
     EcliptixBuffer* out_plaintext,
@@ -165,7 +165,7 @@ EcliptixErrorCode ecliptix_protocol_system_create_from_root(
 
 // Export/import full protocol state (serialized ProtocolState protobuf).
 EcliptixErrorCode ecliptix_protocol_system_export_state(
-    EcliptixProtocolSystemHandle* handle,
+    const EcliptixProtocolSystemHandle* handle,
     EcliptixBuffer* out_state,
     EcliptixError* out_error);
 
@@ -227,14 +227,14 @@ EcliptixErrorCode ecliptix_connection_get_session_age_seconds(
 // Call this BEFORE finalizing the connection when using manual Kyber secret setup.
 // This is useful when the Kyber shared secret is derived externally (e.g., from OPAQUE).
 EcliptixErrorCode ecliptix_protocol_system_set_kyber_secrets(
-    EcliptixProtocolSystemHandle* handle,
+    const EcliptixProtocolSystemHandle* handle,
     const uint8_t* kyber_ciphertext,
     size_t kyber_ciphertext_length,
     const uint8_t* kyber_shared_secret,
     size_t kyber_shared_secret_length,
     EcliptixError* out_error);
 
-void ecliptix_protocol_system_destroy(EcliptixProtocolSystemHandle* handle);
+void ecliptix_protocol_system_destroy(const EcliptixProtocolSystemHandle* handle);
 
 EcliptixErrorCode ecliptix_protocol_connection_create(
     uint32_t connection_id,
@@ -294,7 +294,7 @@ EcliptixErrorCode ecliptix_secret_sharing_reconstruct(
 
 EcliptixBuffer* ecliptix_buffer_allocate(size_t capacity);
 
-void ecliptix_buffer_free(EcliptixBuffer* buffer);
+void ecliptix_buffer_free(const EcliptixBuffer* buffer);
 
 void ecliptix_error_free(EcliptixError* error);
 

@@ -8,9 +8,6 @@
 
 using namespace ecliptix::protocol::crypto;
 
-// =============================================================================
-// Initialization and Thread Safety Tests
-// =============================================================================
 
 TEST_CASE("KyberInterop - Initialize is idempotent", "[kyber][init]") {
     auto init1 = KyberInterop::Initialize();
@@ -48,15 +45,10 @@ TEST_CASE("KyberInterop - Concurrent initialization is thread-safe", "[kyber][in
 }
 
 TEST_CASE("KyberInterop - Operations fail gracefully without initialization", "[kyber][init]") {
-    // This test assumes a fresh process, but Initialize() is called by other tests
-    // We test that operations work correctly (they call Initialize internally)
     auto kp_result = KyberInterop::GenerateKyber768KeyPair("test");
-    REQUIRE(kp_result.IsOk()); // Should succeed (auto-initializes)
+    REQUIRE(kp_result.IsOk());
 }
 
-// =============================================================================
-// Key Generation Tests
-// =============================================================================
 
 TEST_CASE("KyberInterop - GenerateKyber768KeyPair produces valid sizes", "[kyber][keygen]") {
     auto result = KyberInterop::GenerateKyber768KeyPair("test");
@@ -78,10 +70,8 @@ TEST_CASE("KyberInterop - Generated keys are not all zeros", "[kyber][keygen][qu
     auto& sk_handle = kp.first;
     auto& pk = kp.second;
 
-    // Check public key is not all zeros
     REQUIRE_FALSE(std::all_of(pk.begin(), pk.end(), [](uint8_t b) { return b == 0; }));
 
-    // Check secret key is not all zeros
     auto sk_bytes_result = sk_handle.ReadBytes(KyberInterop::KYBER_768_SECRET_KEY_SIZE);
     REQUIRE(sk_bytes_result.IsOk());
     auto sk_bytes = sk_bytes_result.Unwrap();
@@ -95,7 +85,6 @@ TEST_CASE("KyberInterop - Generated keys are not all 0xFF", "[kyber][keygen][qua
     auto kp = std::move(result).Unwrap();
     auto& pk = kp.second;
 
-    // Check public key has variation
     REQUIRE_FALSE(std::all_of(pk.begin(), pk.end(), [](uint8_t b) { return b == 0xFF; }));
 }
 
@@ -104,12 +93,10 @@ TEST_CASE("KyberInterop - Multiple key generations produce different keys", "[ky
     auto kp2 = KyberInterop::GenerateKyber768KeyPair("test2").Unwrap();
     auto kp3 = KyberInterop::GenerateKyber768KeyPair("test3").Unwrap();
 
-    // Public keys should be different
     REQUIRE(kp1.second != kp2.second);
     REQUIRE(kp2.second != kp3.second);
     REQUIRE(kp1.second != kp3.second);
 
-    // Secret keys should be different (read and compare)
     auto sk1_bytes = kp1.first.ReadBytes(KyberInterop::KYBER_768_SECRET_KEY_SIZE).Unwrap();
     auto sk2_bytes = kp2.first.ReadBytes(KyberInterop::KYBER_768_SECRET_KEY_SIZE).Unwrap();
     auto sk3_bytes = kp3.first.ReadBytes(KyberInterop::KYBER_768_SECRET_KEY_SIZE).Unwrap();
@@ -140,9 +127,6 @@ TEST_CASE("KyberInterop - Concurrent key generation is thread-safe", "[kyber][ke
     REQUIRE(success_count == NUM_THREADS);
 }
 
-// =============================================================================
-// Validation Tests
-// =============================================================================
 
 TEST_CASE("KyberInterop - ValidatePublicKey accepts valid key", "[kyber][validation]") {
     auto kp = KyberInterop::GenerateKyber768KeyPair("test").Unwrap();
@@ -218,9 +202,6 @@ TEST_CASE("KyberInterop - ValidateCiphertext rejects all zeros", "[kyber][valida
     REQUIRE(result.IsErr());
 }
 
-// =============================================================================
-// Encapsulation/Decapsulation Tests
-// =============================================================================
 
 TEST_CASE("KyberInterop - Encapsulate produces valid ciphertext and shared secret", "[kyber][encaps]") {
     auto kp = KyberInterop::GenerateKyber768KeyPair("test").Unwrap();
@@ -242,7 +223,6 @@ TEST_CASE("KyberInterop - Encapsulate produces different ciphertexts each time",
     auto enc2 = KyberInterop::Encapsulate(kp.second).Unwrap();
     auto enc3 = KyberInterop::Encapsulate(kp.second).Unwrap();
 
-    // Ciphertexts should be different (IND-CCA2 requires randomness)
     REQUIRE(enc1.first != enc2.first);
     REQUIRE(enc2.first != enc3.first);
     REQUIRE(enc1.first != enc3.first);
@@ -264,7 +244,6 @@ TEST_CASE("KyberInterop - Decapsulate recovers shared secret", "[kyber][decaps]"
     auto ss_receiver = std::move(dec_result).Unwrap();
     REQUIRE(ss_receiver.Size() == KyberInterop::KYBER_768_SHARED_SECRET_SIZE);
 
-    // Verify shared secrets match
     auto ss_sender_bytes = enc.second.ReadBytes(32).Unwrap();
     auto ss_receiver_bytes = ss_receiver.ReadBytes(32).Unwrap();
 
@@ -287,11 +266,9 @@ TEST_CASE("KyberInterop - Decapsulate fails on wrong secret key", "[kyber][decap
 
     auto enc = KyberInterop::Encapsulate(kp1.second).Unwrap();
 
-    // Try to decapsulate with wrong key
     auto dec_result = KyberInterop::Decapsulate(enc.first, kp2.first);
-    REQUIRE(dec_result.IsOk()); // Kyber returns a pseudo-random ss on failure (implicit rejection)
+    REQUIRE(dec_result.IsOk());
 
-    // But shared secrets should NOT match
     auto ss_sender_bytes = enc.second.ReadBytes(32).Unwrap();
     auto ss_receiver_bytes = dec_result.Unwrap().ReadBytes(32).Unwrap();
 
@@ -304,16 +281,14 @@ TEST_CASE("KyberInterop - Decapsulate fails on tampered ciphertext", "[kyber][de
     auto kp = KyberInterop::GenerateKyber768KeyPair("test").Unwrap();
     auto enc = KyberInterop::Encapsulate(kp.second).Unwrap();
 
-    // Tamper with ciphertext
     auto tampered_ct = enc.first;
     tampered_ct[0] ^= 0xFF;
     tampered_ct[100] ^= 0xAA;
     tampered_ct[500] ^= 0x55;
 
     auto dec_result = KyberInterop::Decapsulate(tampered_ct, kp.first);
-    REQUIRE(dec_result.IsOk()); // Returns pseudo-random ss (implicit rejection)
+    REQUIRE(dec_result.IsOk());
 
-    // Shared secrets should NOT match
     auto ss_sender_bytes = enc.second.ReadBytes(32).Unwrap();
     auto ss_receiver_bytes = dec_result.Unwrap().ReadBytes(32).Unwrap();
 
@@ -322,9 +297,6 @@ TEST_CASE("KyberInterop - Decapsulate fails on tampered ciphertext", "[kyber][de
     REQUIRE(cmp_result.Unwrap() == false);
 }
 
-// =============================================================================
-// Self-Test Tests (Testing the Self-Test!)
-// =============================================================================
 
 TEST_CASE("KyberInterop - SelfTestKeyPair succeeds on valid pair", "[kyber][selftest]") {
     auto kp = KyberInterop::GenerateKyber768KeyPair("test").Unwrap();
@@ -336,7 +308,6 @@ TEST_CASE("KyberInterop - SelfTestKeyPair fails on mismatched pair", "[kyber][se
     auto kp1 = KyberInterop::GenerateKyber768KeyPair("test1").Unwrap();
     auto kp2 = KyberInterop::GenerateKyber768KeyPair("test2").Unwrap();
 
-    // Try self-test with mismatched keys
     auto result = KyberInterop::SelfTestKeyPair(kp1.second, kp2.first);
     REQUIRE(result.IsErr());
 }
@@ -359,9 +330,6 @@ TEST_CASE("KyberInterop - SelfTestKeyPair fails on invalid secret key", "[kyber]
     REQUIRE(result.IsErr());
 }
 
-// =============================================================================
-// Hybrid Key Derivation Tests
-// =============================================================================
 
 TEST_CASE("KyberInterop - CombineHybridSecrets produces valid output", "[kyber][hybrid][hkdf]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
@@ -449,25 +417,17 @@ TEST_CASE("KyberInterop - CombineHybridSecrets is deterministic", "[kyber][hybri
     REQUIRE(b2 == b3);
 }
 
-// =============================================================================
-// End-to-End Workflow Tests
-// =============================================================================
-
 TEST_CASE("KyberInterop - Complete KEM workflow succeeds", "[kyber][e2e]") {
-    // Alice generates key pair
     auto alice_kp = KyberInterop::GenerateKyber768KeyPair("alice").Unwrap();
 
-    // Bob encapsulates to Alice's public key
     auto bob_encaps = KyberInterop::Encapsulate(alice_kp.second).Unwrap();
     auto& ct = bob_encaps.first;
     auto& bob_ss = bob_encaps.second;
 
-    // Alice decapsulates Bob's ciphertext
     auto alice_dec_result = KyberInterop::Decapsulate(ct, alice_kp.first);
     REQUIRE(alice_dec_result.IsOk());
     auto alice_ss = std::move(alice_dec_result).Unwrap();
 
-    // Verify shared secrets match
     auto bob_ss_bytes = bob_ss.ReadBytes(32).Unwrap();
     auto alice_ss_bytes = alice_ss.ReadBytes(32).Unwrap();
 
@@ -477,26 +437,21 @@ TEST_CASE("KyberInterop - Complete KEM workflow succeeds", "[kyber][e2e]") {
 }
 
 TEST_CASE("KyberInterop - Complete hybrid workflow succeeds", "[kyber][e2e][hybrid]") {
-    // Simulate X25519 DH (mock)
     std::vector<uint8_t> x25519_shared_secret(32);
     randombytes_buf(x25519_shared_secret.data(), 32);
 
-    // Perform Kyber KEM
     auto alice_kp = KyberInterop::GenerateKyber768KeyPair("alice").Unwrap();
     auto bob_encaps = KyberInterop::Encapsulate(alice_kp.second).Unwrap();
     auto alice_ss = KyberInterop::Decapsulate(bob_encaps.first, alice_kp.first).Unwrap();
 
-    // Both sides read Kyber shared secret
     auto bob_kyber_bytes = bob_encaps.second.ReadBytes(32).Unwrap();
     auto alice_kyber_bytes = alice_ss.ReadBytes(32).Unwrap();
 
-    // Combine via hybrid KDF
     auto bob_hybrid = KyberInterop::CombineHybridSecrets(
         x25519_shared_secret, bob_kyber_bytes, "X3DH-Handshake").Unwrap();
     auto alice_hybrid = KyberInterop::CombineHybridSecrets(
         x25519_shared_secret, alice_kyber_bytes, "X3DH-Handshake").Unwrap();
 
-    // Verify final hybrid secrets match
     auto bob_final = bob_hybrid.ReadBytes(32).Unwrap();
     auto alice_final = alice_hybrid.ReadBytes(32).Unwrap();
 
@@ -504,10 +459,6 @@ TEST_CASE("KyberInterop - Complete hybrid workflow succeeds", "[kyber][e2e][hybr
     REQUIRE(cmp_result.IsOk());
     REQUIRE(cmp_result.Unwrap() == true);
 }
-
-// =============================================================================
-// Concurrency and Stress Tests
-// =============================================================================
 
 TEST_CASE("KyberInterop - Concurrent encapsulations are thread-safe", "[kyber][thread-safety][stress]") {
     auto kp = KyberInterop::GenerateKyber768KeyPair("test").Unwrap();
@@ -544,17 +495,12 @@ TEST_CASE("KyberInterop - High-volume key generation stress test", "[kyber][stre
         public_keys.push_back(std::move(kp.second));
     }
 
-    // Verify all keys are unique
     for (size_t i = 0; i < NUM_KEYS; ++i) {
         for (size_t j = i + 1; j < NUM_KEYS; ++j) {
             REQUIRE(public_keys[i] != public_keys[j]);
         }
     }
 }
-
-// =============================================================================
-// Constants Verification
-// =============================================================================
 
 TEST_CASE("KyberInterop - Constants match FIPS 203 specification", "[kyber][constants]") {
     REQUIRE(KyberInterop::KYBER_768_PUBLIC_KEY_SIZE == 1184);

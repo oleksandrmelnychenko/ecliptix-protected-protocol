@@ -38,12 +38,8 @@ public:
     [[nodiscard]] std::vector<uint8_t> GetIdentityEd25519PublicKeyCopy() const;
     [[nodiscard]] std::vector<uint8_t> GetKyberPublicKeyCopy() const;
     [[nodiscard]] Result<SecureMemoryHandle, EcliptixProtocolFailure> CloneKyberSecretKey() const;
-
-    // Getters for X3DH keys used in Double Ratchet initialization
     [[nodiscard]] std::optional<std::vector<uint8_t>> GetEphemeralX25519PublicKeyCopy() const;
     [[nodiscard]] std::vector<uint8_t> GetSignedPreKeyPublicCopy() const;
-
-    // Private key getters for Double Ratchet chain initialization
     [[nodiscard]] Result<std::vector<uint8_t>, EcliptixProtocolFailure> GetEphemeralX25519PrivateKeyCopy() const;
     [[nodiscard]] Result<std::vector<uint8_t>, EcliptixProtocolFailure> GetSignedPreKeyPrivateCopy() const;
     [[nodiscard]] Result<LocalPublicKeyBundle, EcliptixProtocolFailure> CreatePublicBundle() const;
@@ -63,7 +59,6 @@ public:
         std::span<const uint8_t> remote_identity_ed25519,
         std::span<const uint8_t> remote_spk_public,
         std::span<const uint8_t> remote_spk_signature);
-    // OPK ID selection for proper X3DH handshake
     [[nodiscard]] const OneTimePreKeyLocal* FindOneTimePreKeyById(uint32_t opk_id) const;
     [[nodiscard]] std::optional<uint32_t> GetSelectedOpkId() const;
     void SetSelectedOpkId(uint32_t opk_id);

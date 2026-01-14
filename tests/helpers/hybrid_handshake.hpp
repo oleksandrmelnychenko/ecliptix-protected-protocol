@@ -78,4 +78,4 @@ namespace ecliptix::protocol::test_helpers {
         auto [ct, _ss] = std::move(encap).Unwrap();
         return ct;
     }
-}  // namespace ecliptix::protocol::test_helpers
+}

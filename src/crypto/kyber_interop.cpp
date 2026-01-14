@@ -7,16 +7,54 @@
 #include <cstring>
 #include <algorithm>
 #include <mutex>
+#include <atomic>
 
 namespace ecliptix::protocol::crypto {
-    
-    
-    
+
+    namespace {
+        thread_local std::vector<uint8_t> g_kyber_seed;
+        thread_local uint64_t g_kyber_stream_counter = 0;
+        thread_local bool g_kyber_seeded_mode = false;
+
+        void seeded_randombytes(uint8_t* buf, const size_t len) {
+            if (!g_kyber_seeded_mode || g_kyber_seed.size() < 32) {
+                randombytes_buf(buf, len);
+                return;
+            }
+
+            const uint8_t* key = g_kyber_seed.data();
+            uint8_t nonce[8] = {};
+            if (g_kyber_seed.size() >= 40) {
+                std::memcpy(nonce, g_kyber_seed.data() + 32, 8);
+            }
+
+            size_t offset = 0;
+            while (offset < len) {
+                uint8_t nonce_with_counter[8];
+                uint64_t effective_nonce = 0;
+                std::memcpy(&effective_nonce, nonce, 8);
+                effective_nonce ^= g_kyber_stream_counter;
+                std::memcpy(nonce_with_counter, &effective_nonce, 8);
+
+                const size_t block_len = std::min(len - offset, static_cast<size_t>(64));
+
+                std::vector<uint8_t> zeros(block_len, 0);
+                crypto_stream_chacha20_xor(
+                    buf + offset,
+                    zeros.data(),
+                    block_len,
+                    nonce_with_counter,
+                    key
+                );
+
+                offset += block_len;
+                g_kyber_stream_counter++;
+            }
+        }
+    }
 
     Result<void *, SodiumFailure> KyberInterop::CreateKyber768Instance() {
-        
-        auto init_result = Initialize();
-        if (init_result.IsErr()) {
+        if (auto init_result = Initialize(); init_result.IsErr()) {
             return Result<void *, SodiumFailure>::Err(init_result.UnwrapErr());
         }
 
@@ -27,7 +65,6 @@ namespace ecliptix::protocol::crypto {
             );
         }
 
-        
         if (kem->length_public_key != KYBER_768_PUBLIC_KEY_SIZE ||
             kem->length_secret_key != KYBER_768_SECRET_KEY_SIZE ||
             kem->length_ciphertext != KYBER_768_CIPHERTEXT_SIZE ||
@@ -47,16 +84,11 @@ namespace ecliptix::protocol::crypto {
         }
     }
 
-    
-    
-    
-
     Result<std::pair<SecureMemoryHandle, std::vector<uint8_t> >, SodiumFailure>
     KyberInterop::GenerateKyber768KeyPair(std::string_view purpose) {
         (void) purpose;
 
-        auto init_result = Initialize();
-        if (init_result.IsErr()) {
+        if (auto init_result = Initialize(); init_result.IsErr()) {
             return Result<std::pair<SecureMemoryHandle, std::vector<uint8_t> >, SodiumFailure>::Err(
                 init_result.UnwrapErr());
         }
@@ -67,15 +99,17 @@ namespace ecliptix::protocol::crypto {
                 kem_result.UnwrapErr()
             );
         }
-        auto *kem = static_cast<OQS_KEM *>(kem_result.Unwrap());
 
+        auto *kem = static_cast<OQS_KEM *>(kem_result.Unwrap());
         auto sk_handle_result = SecureMemoryHandle::Allocate(KYBER_768_SECRET_KEY_SIZE);
+
         if (sk_handle_result.IsErr()) {
             FreeKyber768Instance(kem);
             return Result<std::pair<SecureMemoryHandle, std::vector<uint8_t> >, SodiumFailure>::Err(
                 sk_handle_result.UnwrapErr()
             );
         }
+
         auto sk_handle = std::move(sk_handle_result).Unwrap();
 
         std::vector<uint8_t> pk(KYBER_768_PUBLIC_KEY_SIZE);
@@ -117,33 +151,103 @@ namespace ecliptix::protocol::crypto {
         );
     }
 
-    
-    
-    
+    Result<std::pair<SecureMemoryHandle, std::vector<uint8_t>>, SodiumFailure>
+    KyberInterop::GenerateKyber768KeyPairFromSeed(std::span<const uint8_t> seed, std::string_view purpose) {
+        (void) purpose;
+
+        if (seed.size() < 64) {
+            return Result<std::pair<SecureMemoryHandle, std::vector<uint8_t>>, SodiumFailure>::Err(
+                SodiumFailure::BufferTooSmall("Kyber seed must be at least 64 bytes"));
+        }
+
+        if (auto init_result = Initialize(); init_result.IsErr()) {
+            return Result<std::pair<SecureMemoryHandle, std::vector<uint8_t>>, SodiumFailure>::Err(
+                init_result.UnwrapErr());
+        }
+
+        g_kyber_seed.assign(seed.begin(), seed.end());
+        g_kyber_stream_counter = 0;
+        g_kyber_seeded_mode = true;
+
+        OQS_randombytes_custom_algorithm(seeded_randombytes);
+
+        auto kem_result = CreateKyber768Instance();
+        if (kem_result.IsErr()) {
+            OQS_randombytes_custom_algorithm(
+                [](uint8_t* buf, size_t len) { randombytes_buf(buf, len); });
+            g_kyber_seeded_mode = false;
+            SodiumInterop::SecureWipe(std::span(g_kyber_seed));
+            g_kyber_seed.clear();
+            return Result<std::pair<SecureMemoryHandle, std::vector<uint8_t>>, SodiumFailure>::Err(
+                kem_result.UnwrapErr());
+        }
+        auto* kem = static_cast<OQS_KEM*>(kem_result.Unwrap());
+
+        auto sk_handle_result = SecureMemoryHandle::Allocate(KYBER_768_SECRET_KEY_SIZE);
+        if (sk_handle_result.IsErr()) {
+            FreeKyber768Instance(kem);
+            OQS_randombytes_custom_algorithm(
+                [](uint8_t* buf, size_t len) { randombytes_buf(buf, len); });
+            g_kyber_seeded_mode = false;
+            SodiumInterop::SecureWipe(std::span(g_kyber_seed));
+            g_kyber_seed.clear();
+            return Result<std::pair<SecureMemoryHandle, std::vector<uint8_t>>, SodiumFailure>::Err(
+                sk_handle_result.UnwrapErr());
+        }
+        auto sk_handle = std::move(sk_handle_result).Unwrap();
+
+        std::vector<uint8_t> pk(KYBER_768_PUBLIC_KEY_SIZE);
+
+        OQS_STATUS status = OQS_ERROR;
+        auto write_result = sk_handle.WithWriteAccess([&](std::span<uint8_t> sk_span) -> Unit {
+            status = OQS_KEM_keypair(kem, pk.data(), sk_span.data());
+            return Unit{};
+        });
+
+        FreeKyber768Instance(kem);
+
+        OQS_randombytes_custom_algorithm(
+            [](uint8_t* buf, size_t len) { randombytes_buf(buf, len); });
+        g_kyber_seeded_mode = false;
+        SodiumInterop::SecureWipe(std::span(g_kyber_seed));
+        g_kyber_seed.clear();
+
+        if (write_result.IsErr()) {
+            return Result<std::pair<SecureMemoryHandle, std::vector<uint8_t>>, SodiumFailure>::Err(
+                write_result.UnwrapErr());
+        }
+
+        if (status != OQS_SUCCESS) {
+            return Result<std::pair<SecureMemoryHandle, std::vector<uint8_t>>, SodiumFailure>::Err(
+                SodiumFailure::InitializationFailed("Kyber-768 seeded key generation failed"));
+        }
+
+        if (auto self_test = SelfTestKeyPair(pk, sk_handle); self_test.IsErr()) {
+            return Result<std::pair<SecureMemoryHandle, std::vector<uint8_t>>, SodiumFailure>::Err(
+                self_test.UnwrapErr());
+        }
+
+        return Result<std::pair<SecureMemoryHandle, std::vector<uint8_t>>, SodiumFailure>::Ok(
+            std::make_pair(std::move(sk_handle), std::move(pk)));
+    }
 
     Result<std::pair<std::vector<uint8_t>, SecureMemoryHandle>, SodiumFailure>
     KyberInterop::Encapsulate(std::span<const uint8_t> public_key) {
-        
-        auto validation_result = ValidatePublicKey(public_key);
-        if (validation_result.IsErr()) {
+        if (auto validation_result = ValidatePublicKey(public_key); validation_result.IsErr()) {
             return Result<std::pair<std::vector<uint8_t>, SecureMemoryHandle>, SodiumFailure>::Err(
                 validation_result.UnwrapErr()
             );
         }
-
-        
         auto kem_result = CreateKyber768Instance();
         if (kem_result.IsErr()) {
             return Result<std::pair<std::vector<uint8_t>, SecureMemoryHandle>, SodiumFailure>::Err(
                 kem_result.UnwrapErr()
             );
         }
-        auto *kem = static_cast<OQS_KEM *>(kem_result.Unwrap());
 
-        
+        auto *kem = static_cast<OQS_KEM *>(kem_result.Unwrap());
         std::vector<uint8_t> ciphertext(KYBER_768_CIPHERTEXT_SIZE);
 
-        
         auto ss_handle_result = SecureMemoryHandle::Allocate(KYBER_768_SHARED_SECRET_SIZE);
         if (ss_handle_result.IsErr()) {
             FreeKyber768Instance(kem);
@@ -153,7 +257,6 @@ namespace ecliptix::protocol::crypto {
         }
         auto ss_handle = std::move(ss_handle_result).Unwrap();
 
-        
         OQS_STATUS status = OQS_ERROR;
         auto write_result = ss_handle.WithWriteAccess([&](std::span<uint8_t> ss_span) -> Unit {
             status = OQS_KEM_encaps(
@@ -165,7 +268,6 @@ namespace ecliptix::protocol::crypto {
             return Unit{};
         });
 
-        
         FreeKyber768Instance(kem);
 
         if (write_result.IsErr()) {
@@ -185,45 +287,36 @@ namespace ecliptix::protocol::crypto {
         );
     }
 
-    
-    
-    
-
     Result<SecureMemoryHandle, SodiumFailure>
     KyberInterop::Decapsulate(
         std::span<const uint8_t> ciphertext,
         const SecureMemoryHandle &secret_key_handle
     ) {
-        
-        auto ct_validation = ValidateCiphertext(ciphertext);
-        if (ct_validation.IsErr()) {
+        if (auto ct_validation = ValidateCiphertext(ciphertext); ct_validation.IsErr()) {
             return Result<SecureMemoryHandle, SodiumFailure>::Err(ct_validation.UnwrapErr());
         }
 
-        auto sk_validation = ValidateSecretKey(secret_key_handle);
-        if (sk_validation.IsErr()) {
+        if (auto sk_validation = ValidateSecretKey(secret_key_handle); sk_validation.IsErr()) {
             return Result<SecureMemoryHandle, SodiumFailure>::Err(sk_validation.UnwrapErr());
         }
 
-        
         auto kem_result = CreateKyber768Instance();
         if (kem_result.IsErr()) {
             return Result<SecureMemoryHandle, SodiumFailure>::Err(kem_result.UnwrapErr());
         }
-        auto *kem = static_cast<OQS_KEM *>(kem_result.Unwrap());
 
-        
+        auto *kem = static_cast<OQS_KEM *>(kem_result.Unwrap());
         auto ss_handle_result = SecureMemoryHandle::Allocate(KYBER_768_SHARED_SECRET_SIZE);
+
         if (ss_handle_result.IsErr()) {
             FreeKyber768Instance(kem);
             return Result<SecureMemoryHandle, SodiumFailure>::Err(ss_handle_result.UnwrapErr());
         }
-        auto ss_handle = std::move(ss_handle_result).Unwrap();
 
-        
+        auto ss_handle = std::move(ss_handle_result).Unwrap();
         OQS_STATUS status = OQS_ERROR;
         auto access_result = secret_key_handle.WithReadAccess([&](const std::span<const uint8_t> sk_span) -> Unit {
-            auto write_result = ss_handle.WithWriteAccess([&](std::span<uint8_t> ss_span) -> Unit {
+            const auto write_result = ss_handle.WithWriteAccess([&](std::span<uint8_t> ss_span) -> Unit {
                 status = OQS_KEM_decaps(
                     kem,
                     ss_span.data(),
@@ -255,17 +348,12 @@ namespace ecliptix::protocol::crypto {
         return Result<SecureMemoryHandle, SodiumFailure>::Ok(std::move(ss_handle));
     }
 
-    
-    
-    
-
     Result<SecureMemoryHandle, EcliptixProtocolFailure>
     KyberInterop::CombineHybridSecrets(
         std::span<const uint8_t> x25519_shared_secret,
         std::span<const uint8_t> kyber_shared_secret,
         std::string_view context
     ) {
-        
         if (x25519_shared_secret.size() != 32) {
             return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
                 EcliptixProtocolFailure::InvalidInput(
@@ -282,20 +370,16 @@ namespace ecliptix::protocol::crypto {
             );
         }
 
-        
         std::vector<uint8_t> ikm(64);
         std::copy_n(x25519_shared_secret.begin(), 32, ikm.begin());
         std::copy_n(kyber_shared_secret.begin(), 32, ikm.begin() + 32);
 
-        
         std::string salt_str = "Ecliptix-PQ-Hybrid-v1::";
         salt_str += context;
         std::vector<uint8_t> salt(salt_str.begin(), salt_str.end());
 
-        
         auto prk_result = Hkdf::Extract(ikm, salt);
 
-        
         auto wipe_result = SodiumInterop::SecureWipe(std::span(ikm));
         (void) wipe_result;
 
@@ -307,10 +391,8 @@ namespace ecliptix::protocol::crypto {
             );
         }
 
-        
         auto prk = std::move(prk_result).Unwrap();
 
-        
         std::vector<uint8_t> hybrid_vec(32);
         std::vector<uint8_t> context_info(context.begin(), context.end());
         auto expand_result = Hkdf::Expand(
@@ -344,10 +426,6 @@ namespace ecliptix::protocol::crypto {
         return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Ok(std::move(handle));
     }
 
-    
-    
-    
-
     Result<Unit, SodiumFailure>
     KyberInterop::ValidatePublicKey(std::span<const uint8_t> public_key) {
         if (public_key.size() != KYBER_768_PUBLIC_KEY_SIZE) {
@@ -358,7 +436,6 @@ namespace ecliptix::protocol::crypto {
             );
         }
 
-        
         if (std::ranges::all_of(public_key, [](const uint8_t b) { return b == 0; })) {
             return Result<Unit, SodiumFailure>::Err(
                 SodiumFailure::InvalidOperation(
@@ -380,7 +457,6 @@ namespace ecliptix::protocol::crypto {
             );
         }
 
-        
         if (std::ranges::all_of(ciphertext, [](const uint8_t b) { return b == 0; })) {
             return Result<Unit, SodiumFailure>::Err(
                 SodiumFailure::InvalidOperation(
@@ -402,7 +478,6 @@ namespace ecliptix::protocol::crypto {
             );
         }
 
-        
         auto read_result = secret_key_handle.ReadBytes(KYBER_768_SECRET_KEY_SIZE);
         if (read_result.IsErr()) {
             return Result<Unit, SodiumFailure>::Err(read_result.UnwrapErr());
@@ -420,12 +495,10 @@ namespace ecliptix::protocol::crypto {
 
     Result<Unit, SodiumFailure>
     KyberInterop::SelfTestKeyPair(std::span<const uint8_t> public_key, const SecureMemoryHandle &secret_key_handle) {
-        auto pk_validate = ValidatePublicKey(public_key);
-        if (pk_validate.IsErr()) {
+        if (auto pk_validate = ValidatePublicKey(public_key); pk_validate.IsErr()) {
             return pk_validate;
         }
-        auto sk_validate = ValidateSecretKey(secret_key_handle);
-        if (sk_validate.IsErr()) {
+        if (auto sk_validate = ValidateSecretKey(secret_key_handle); sk_validate.IsErr()) {
             return sk_validate;
         }
 
@@ -461,8 +534,7 @@ namespace ecliptix::protocol::crypto {
         std::exception_ptr init_exception = nullptr;
         std::call_once(rng_init_flag, [&]() {
             try {
-                auto sodium_init = SodiumInterop::Initialize();
-                if (sodium_init.IsErr()) {
+                if (auto sodium_init = SodiumInterop::Initialize(); sodium_init.IsErr()) {
                     throw sodium_init.UnwrapErr();
                 }
                 OQS_randombytes_custom_algorithm(

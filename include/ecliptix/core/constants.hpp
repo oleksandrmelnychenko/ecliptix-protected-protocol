@@ -93,7 +93,7 @@ struct ProtocolConstants {
     static constexpr std::string_view MSG_INFO = "Ecliptix-Msg";
     static constexpr std::string_view CHAIN_INFO = "Ecliptix-Chain";
     static constexpr std::string_view DH_RATCHET_INFO = "Ecliptix-DH-Ratchet";
-    static constexpr std::string_view HYBRID_DH_RATCHET_INFO = "Ecliptix-Hybrid-DH-Ratchet";  // Post-quantum hybrid ratchet (X25519 + Kyber-768)
+    static constexpr std::string_view HYBRID_DH_RATCHET_INFO = "Ecliptix-Hybrid-DH-Ratchet";
     static constexpr std::string_view HYBRID_PQ_FALLBACK_INFO = "Ecliptix-Hybrid-PQ-Fallback";
     static constexpr std::string_view INITIAL_SENDER_CHAIN_INFO = "Ecliptix-Initial-Sender";
     static constexpr std::string_view INITIAL_RECEIVER_CHAIN_INFO = "Ecliptix-Initial-Receiver";

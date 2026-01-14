@@ -22,19 +22,13 @@ using namespace ecliptix::protocol::test_helpers;
 
 
 static std::vector<uint8_t> MakeTestNonce(uint64_t idx) {
-    // Nonce structure (12 bytes total):
-    // Bytes [0-3]: Random prefix (fixed here for test simplicity)
-    // Bytes [4-7]: Monotonic counter (use idx for test simplicity)
-    // Bytes [8-11]: Message index in little-endian format
     std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE, 0);
 
-    // Set monotonic counter (bytes 4-7)
     for (size_t i = 0; i < ProtocolConstants::NONCE_COUNTER_SIZE; ++i) {
         nonce[ProtocolConstants::NONCE_PREFIX_SIZE + i] =
             static_cast<uint8_t>((idx >> (i * 8)) & 0xFF);
     }
 
-    // Set message index in little-endian (bytes 8-11)
     for (size_t i = 0; i < ProtocolConstants::NONCE_INDEX_SIZE; ++i) {
         nonce[ProtocolConstants::NONCE_PREFIX_SIZE + ProtocolConstants::NONCE_COUNTER_SIZE + i] =
             static_cast<uint8_t>((idx >> (i * 8)) & 0xFF);
@@ -245,7 +239,7 @@ TEST_CASE("EcliptixProtocolConnection - Message preparation", "[connection]") {
         auto prepare_result = conn->PrepareNextSendMessage();
         REQUIRE(prepare_result.IsOk());
         auto [ratchet_key, include_dh] = prepare_result.Unwrap();
-        REQUIRE(ratchet_key.Index() == 0);  // First message has index 0  
+        REQUIRE(ratchet_key.Index() == 0);
     }
     SECTION("Multiple message preparation increments index") {
         auto conn = CreatePreparedConnection(1, true);
@@ -261,7 +255,7 @@ TEST_CASE("EcliptixProtocolConnection - Message preparation", "[connection]") {
         REQUIRE(msg1.IsOk());
         REQUIRE(msg2.IsOk());
         REQUIRE(msg3.IsOk());
-        REQUIRE(msg1.Unwrap().first.Index() == 0);  // Message indices start at 0
+        REQUIRE(msg1.Unwrap().first.Index() == 0);
         REQUIRE(msg2.Unwrap().first.Index() == 1);
         REQUIRE(msg3.Unwrap().first.Index() == 2);
     }
@@ -398,12 +392,12 @@ TEST_CASE("EcliptixProtocolConnection - SyncWithRemoteState", "[connection]") {
         REQUIRE(finalize_result.IsOk());
         auto msg1 = conn->PrepareNextSendMessage();
         REQUIRE(msg1.IsOk());
-        REQUIRE(msg1.Unwrap().first.Index() == 0);  // First message has index 0
+        REQUIRE(msg1.Unwrap().first.Index() == 0);
         auto sync_result = conn->SyncWithRemoteState(0, 6);
         REQUIRE(sync_result.IsOk());
         auto msg_next = conn->PrepareNextSendMessage();
         REQUIRE(msg_next.IsOk());
-        REQUIRE(msg_next.Unwrap().first.Index() == 6);  // Synced to index 6
+        REQUIRE(msg_next.Unwrap().first.Index() == 6);
     }
     SECTION("Reject sync with gap too large") {
         auto conn = CreatePreparedConnection(1, true);
@@ -563,8 +557,6 @@ TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: Nonce Counter Never Resets 
             counter_after_ratchet |=
                 static_cast<uint32_t>(nonce2_bytes[ProtocolConstants::NONCE_PREFIX_SIZE + i]) << (i * 8);
         }
-        // CVE FIX: Nonce counter MUST continue monotonically and NEVER reset
-        // This prevents nonce reuse across ratchet epochs which could break AEAD security
         REQUIRE(counter_after_ratchet > counter_before_ratchet);
         REQUIRE(counter_after_ratchet >= 101);
     }

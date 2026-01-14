@@ -67,7 +67,6 @@ struct EndToEndTestContext {
             Constants::X3DH_INFO.begin(),
             Constants::X3DH_INFO.end());
 
-        // Alice is the initiator (true)
         auto shared_secret_result = ctx.alice_identity->X3dhDeriveSharedSecret(bob_bundle, info, true);
         if (shared_secret_result.IsErr()) {
             return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
@@ -98,7 +97,6 @@ struct EndToEndTestContext {
                 EcliptixProtocolFailure::Generic("Kyber shared secret mismatch between initiator/responder"));
         }
 
-        // Use a large ratchet window so integration flows stay on a single DH chain
         RatchetConfig no_dh_ratchet_config(100000);
 
         ctx.alice_connection = CreatePreparedConnection(1, true, no_dh_ratchet_config);

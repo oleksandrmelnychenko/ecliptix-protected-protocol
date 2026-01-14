@@ -24,6 +24,22 @@ namespace ecliptix::protocol::crypto {
         return HashWithGenericHash(master_key, context_data, KEY_SIZE);
     }
 
+    std::vector<uint8_t> MasterKeyDerivation::DeriveKyberSeed(
+        const std::span<const uint8_t> master_key,
+        const std::string_view membership_id) {
+        auto context_data_1 = BuildContextData(KYBER_CONTEXT, membership_id);
+        auto part1 = HashWithGenericHash(master_key, context_data_1, KEY_SIZE);
+
+        std::string extended_context = std::string(KYBER_CONTEXT) + "-part2";
+        auto context_data_2 = BuildContextData(extended_context, membership_id);
+        auto part2 = HashWithGenericHash(master_key, context_data_2, KEY_SIZE);
+
+        std::vector<uint8_t> result(64);
+        std::memcpy(result.data(), part1.data(), KEY_SIZE);
+        std::memcpy(result.data() + KEY_SIZE, part2.data(), KEY_SIZE);
+        return result;
+    }
+
     std::vector<uint8_t> MasterKeyDerivation::HashWithGenericHash(
         const std::span<const uint8_t> key,
         const std::span<const uint8_t> data,

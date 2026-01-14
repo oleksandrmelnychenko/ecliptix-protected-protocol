@@ -235,7 +235,6 @@ TEST_CASE("ReplayProtection - Edge cases", "[replay_protection][security]") {
         auto n3 = CreateNonce(3);
         auto res3 = small_limits.CheckAndRecordMessage(n3, 2, 0);
         REQUIRE(res3.IsOk());
-        // Oldest nonce should have been evicted to keep cache bounded
         REQUIRE(small_limits.GetTrackedNonceCount() <= 2);
     }
 }

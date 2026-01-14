@@ -18,9 +18,13 @@ public:
     static std::vector<uint8_t> DeriveSignedPreKeySeed(
         std::span<const uint8_t> master_key,
         std::string_view membership_id);
+    static std::vector<uint8_t> DeriveKyberSeed(
+        std::span<const uint8_t> master_key,
+        std::string_view membership_id);
     static constexpr std::string_view ED_25519_CONTEXT = "ecliptix-ed25519-v1";
     static constexpr std::string_view X_25519_CONTEXT = "ecliptix-x25519-v1";
     static constexpr std::string_view SIGNED_PRE_KEY_CONTEXT = "ecliptix-spk-v1";
+    static constexpr std::string_view KYBER_CONTEXT = "ecliptix-kyber768-v1";
 private:
     static constexpr int KEY_SIZE = 32;
     static constexpr int CURRENT_VERSION = 1;
@@ -31,6 +35,6 @@ private:
     static std::vector<uint8_t> BuildContextData(
         std::string_view context,
         std::string_view membership_id);
-    MasterKeyDerivation() = delete;  
+    MasterKeyDerivation() = delete;
 };
 } 

@@ -9,7 +9,6 @@
 using namespace ecliptix::protocol::crypto;
 
 TEST_CASE("Crypto Performance Benchmarks", "[benchmark][crypto][performance]") {
-    // Initialize libsodium
     auto init_result = SodiumInterop::Initialize();
     REQUIRE(init_result.IsOk());
 
@@ -95,7 +94,6 @@ TEST_CASE("Key Generation Throughput", "[benchmark][crypto][throughput]") {
         INFO("  Throughput: " << ops_per_sec << " ops/sec");
         INFO("  Total time: " << duration.count() / 1000.0 << " ms");
 
-        // Performance target: < 100 µs per key pair
         REQUIRE(avg_time_us < 100.0);
     }
 }
