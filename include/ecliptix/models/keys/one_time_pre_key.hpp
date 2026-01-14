@@ -8,18 +8,18 @@
 #include <cstdint>
 #include <span>
 namespace ecliptix::protocol::models {
-class OneTimePreKeyLocal {
+class OneTimePreKey {
 public:
-    static Result<OneTimePreKeyLocal, EcliptixProtocolFailure> Generate(uint32_t pre_key_id);
-    static OneTimePreKeyLocal CreateFromParts(
+    static Result<OneTimePreKey, ProtocolFailure> Generate(uint32_t pre_key_id);
+    static OneTimePreKey CreateFromParts(
         uint32_t pre_key_id,
         crypto::SecureMemoryHandle private_key_handle,
         std::vector<uint8_t> public_key);
-    OneTimePreKeyLocal(OneTimePreKeyLocal&&) noexcept = default;
-    OneTimePreKeyLocal& operator=(OneTimePreKeyLocal&&) noexcept = default;
-    OneTimePreKeyLocal(const OneTimePreKeyLocal&) = delete;
-    OneTimePreKeyLocal& operator=(const OneTimePreKeyLocal&) = delete;
-    ~OneTimePreKeyLocal() = default;
+    OneTimePreKey(OneTimePreKey&&) noexcept = default;
+    OneTimePreKey& operator=(OneTimePreKey&&) noexcept = default;
+    OneTimePreKey(const OneTimePreKey&) = delete;
+    OneTimePreKey& operator=(const OneTimePreKey&) = delete;
+    ~OneTimePreKey() = default;
     [[nodiscard]] uint32_t GetPreKeyId() const noexcept {
         return pre_key_id_;
     }
@@ -39,7 +39,7 @@ public:
         return std::span<const uint8_t>(public_key_);
     }
 private:
-    OneTimePreKeyLocal(
+    OneTimePreKey(
         uint32_t pre_key_id,
         crypto::SecureMemoryHandle private_key_handle,
         std::vector<uint8_t> public_key);

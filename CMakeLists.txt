@@ -156,24 +156,24 @@ set(ECLIPTIX_CORE_SOURCES
     ${ECLIPTIX_SOURCE_DIR}/crypto/shamir_secret_sharing.cpp
 
     # Models - Phase 3
-    ${ECLIPTIX_SOURCE_DIR}/models/key_materials/ed25519_key_material.cpp
-    ${ECLIPTIX_SOURCE_DIR}/models/key_materials/x25519_key_material.cpp
-    ${ECLIPTIX_SOURCE_DIR}/models/key_materials/signed_pre_key_material.cpp
-    ${ECLIPTIX_SOURCE_DIR}/models/keys/one_time_pre_key_local.cpp
-    ${ECLIPTIX_SOURCE_DIR}/models/keys/one_time_pre_key_record.cpp
+    ${ECLIPTIX_SOURCE_DIR}/models/key_materials/ed25519_key_pair.cpp
+    ${ECLIPTIX_SOURCE_DIR}/models/key_materials/x25519_key_pair.cpp
+    ${ECLIPTIX_SOURCE_DIR}/models/key_materials/signed_pre_key_pair.cpp
+    ${ECLIPTIX_SOURCE_DIR}/models/keys/one_time_pre_key.cpp
+    ${ECLIPTIX_SOURCE_DIR}/models/keys/one_time_pre_key_public.cpp
     ${ECLIPTIX_SOURCE_DIR}/models/bundles/local_public_key_bundle.cpp
 
     # Identity - Phase 3
-    ${ECLIPTIX_SOURCE_DIR}/identity/ecliptix_system_identity_keys.cpp
+    ${ECLIPTIX_SOURCE_DIR}/identity/identity_keys.cpp
 
     # Protocol - Phase 4
-    ${ECLIPTIX_SOURCE_DIR}/protocol/chain_step/ecliptix_protocol_chain_step.cpp
+    ${ECLIPTIX_SOURCE_DIR}/protocol/chain_step/chain_step.cpp
 
     # Connection - Phase 5
-    ${ECLIPTIX_SOURCE_DIR}/protocol/connection/ecliptix_protocol_connection.cpp
+    ${ECLIPTIX_SOURCE_DIR}/protocol/connection/protocol_connection.cpp
 
     # Protocol System - Phase 6
-    ${ECLIPTIX_SOURCE_DIR}/protocol/ecliptix_protocol_system.cpp
+    ${ECLIPTIX_SOURCE_DIR}/protocol/protocol_system.cpp
 
     # Security - Phase 5
     ${ECLIPTIX_SOURCE_DIR}/security/validation/dh_validator.cpp
@@ -190,13 +190,13 @@ set(ECLIPTIX_CORE_SOURCES
 
 set(ECLIPTIX_CLIENT_SOURCES
     ${ECLIPTIX_CORE_SOURCES}
-    ${ECLIPTIX_SOURCE_DIR}/c_api/ecliptix_c_api.cpp
+    ${ECLIPTIX_SOURCE_DIR}/c_api/epp_api.cpp
 )
 
 # Server sources include core + server-specific C API
 set(ECLIPTIX_SERVER_SOURCES
     ${ECLIPTIX_CORE_SOURCES}
-    ${ECLIPTIX_SOURCE_DIR}/c_api/ecliptix_server_c_api.cpp
+    ${ECLIPTIX_SOURCE_DIR}/c_api/epp_server_api.cpp
 )
 
 function(configure_protocol_target target_name output_name)

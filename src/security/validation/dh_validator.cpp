@@ -4,11 +4,11 @@
 #include <cstring>
 
 namespace ecliptix::protocol::security {
-    Result<Unit, EcliptixProtocolFailure> DhValidator::ValidateX25519PublicKey(
+    Result<Unit, ProtocolFailure> DhValidator::ValidateX25519PublicKey(
         const std::span<const uint8_t> public_key) {
         if (public_key.size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput(
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput(
                     compat::format(
                         "Invalid X25519 public key size: expected {}, got {}",
                         Constants::X_25519_PUBLIC_KEY_SIZE,
@@ -16,18 +16,18 @@ namespace ecliptix::protocol::security {
                 ));
         }
         if (HasSmallOrder(public_key)) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput(
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput(
                     "X25519 public key is a small-order point (invalid for DH)"
                 ));
         }
         if (!IsValidCurve25519Point(public_key)) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput(
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput(
                     "X25519 public key is not a valid Curve25519 field element"
                 ));
         }
-        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 
     bool DhValidator::HasSmallOrder(const std::span<const uint8_t> public_key) {

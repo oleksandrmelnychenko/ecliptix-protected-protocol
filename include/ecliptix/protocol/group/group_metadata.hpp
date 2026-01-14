@@ -11,7 +11,7 @@
 namespace ecliptix::protocol::group {
 
 using protocol::Result;
-using protocol::EcliptixProtocolFailure;
+using protocol::ProtocolFailure;
 
 enum class GroupType {
     Private = 0,
@@ -21,7 +21,7 @@ enum class GroupType {
 
 class GroupMetadata {
 public:
-    [[nodiscard]] static Result<GroupMetadata, EcliptixProtocolFailure> Create(
+    [[nodiscard]] static Result<GroupMetadata, ProtocolFailure> Create(
         std::span<const uint8_t> group_id,
         std::string group_name,
         std::span<const uint8_t> creator_id,
@@ -29,7 +29,7 @@ public:
         uint32_t max_members = 256,
         std::optional<std::string> description = std::nullopt);
 
-    [[nodiscard]] static Result<GroupMetadata, EcliptixProtocolFailure> FromProto(
+    [[nodiscard]] static Result<GroupMetadata, ProtocolFailure> FromProto(
         const proto::group::GroupMetadata& proto);
 
     [[nodiscard]] std::vector<uint8_t> GetGroupId() const;

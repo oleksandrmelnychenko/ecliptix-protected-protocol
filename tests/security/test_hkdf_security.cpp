@@ -159,7 +159,7 @@ TEST_CASE("HKDF Weak Input Material Detection", "[security][hkdf][weak-input]") 
         REQUIRE(result.IsErr());
 
         auto err = std::move(result).UnwrapErr();
-        REQUIRE(err.type == EcliptixProtocolFailureType::InvalidInput);
+        REQUIRE(err.type == ProtocolFailureType::InvalidInput);
     }
 
     SECTION("All-zero IKM should still work but be discouraged") {
@@ -394,7 +394,7 @@ TEST_CASE("HKDF Output Length Boundary Attacks", "[security][hkdf][output-length
         REQUIRE(result.IsErr());
 
         auto err = std::move(result).UnwrapErr();
-        REQUIRE(err.type == EcliptixProtocolFailureType::InvalidInput);
+        REQUIRE(err.type == ProtocolFailureType::InvalidInput);
     }
 
     SECTION("Multiple standard key sizes should all work") {
@@ -438,7 +438,7 @@ TEST_CASE("HKDF Extract-Expand Separation Security", "[security][hkdf][extract-e
         REQUIRE(result.IsErr());
 
         auto err = std::move(result).UnwrapErr();
-        REQUIRE(err.type == EcliptixProtocolFailureType::InvalidInput);
+        REQUIRE(err.type == ProtocolFailureType::InvalidInput);
     }
 
     SECTION("Extract-then-Expand workflow") {

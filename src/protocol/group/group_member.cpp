@@ -72,7 +72,7 @@ GroupMember::GroupMember(
 {
 }
 
-Result<GroupMember, EcliptixProtocolFailure> GroupMember::Create(
+Result<GroupMember, ProtocolFailure> GroupMember::Create(
     std::span<const uint8_t> member_id,
     std::span<const uint8_t> account_id,
     std::span<const uint8_t> app_instance_id,
@@ -82,33 +82,33 @@ Result<GroupMember, EcliptixProtocolFailure> GroupMember::Create(
     const MemberRole role) {
 
     if (member_id.size() < MIN_MEMBER_ID_SIZE) {
-        return Result<GroupMember, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::Generic("Member ID too short (minimum 16 bytes)"));
+        return Result<GroupMember, ProtocolFailure>::Err(
+            ProtocolFailure::Generic("Member ID too short (minimum 16 bytes)"));
     }
 
     if (account_id.size() < MIN_ACCOUNT_ID_SIZE) {
-        return Result<GroupMember, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::Generic("Account ID too short (minimum 16 bytes)"));
+        return Result<GroupMember, ProtocolFailure>::Err(
+            ProtocolFailure::Generic("Account ID too short (minimum 16 bytes)"));
     }
 
     if (app_instance_id.size() < MIN_APP_INSTANCE_ID_SIZE) {
-        return Result<GroupMember, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::Generic("App instance ID too short (minimum 16 bytes)"));
+        return Result<GroupMember, ProtocolFailure>::Err(
+            ProtocolFailure::Generic("App instance ID too short (minimum 16 bytes)"));
     }
 
     if (device_id.size() < MIN_DEVICE_ID_SIZE) {
-        return Result<GroupMember, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::Generic("Device ID too short (minimum 16 bytes)"));
+        return Result<GroupMember, ProtocolFailure>::Err(
+            ProtocolFailure::Generic("Device ID too short (minimum 16 bytes)"));
     }
 
     if (identity_public_key.size() != EXPECTED_PUBLIC_KEY_SIZE) {
-        return Result<GroupMember, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::Generic("Identity public key must be 32 bytes"));
+        return Result<GroupMember, ProtocolFailure>::Err(
+            ProtocolFailure::Generic("Identity public key must be 32 bytes"));
     }
 
     const auto now = std::chrono::system_clock::now();
 
-    return Result<GroupMember, EcliptixProtocolFailure>::Ok(
+    return Result<GroupMember, ProtocolFailure>::Ok(
         GroupMember(
             std::vector(member_id.begin(), member_id.end()),
             std::vector(account_id.begin(), account_id.end()),
@@ -123,32 +123,32 @@ Result<GroupMember, EcliptixProtocolFailure> GroupMember::Create(
     );
 }
 
-Result<GroupMember, EcliptixProtocolFailure> GroupMember::FromProto(
+Result<GroupMember, ProtocolFailure> GroupMember::FromProto(
     const proto::group::GroupMember& proto) {
 
     if (proto.member_id().empty()) {
-        return Result<GroupMember, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::Generic("Proto member_id is empty"));
+        return Result<GroupMember, ProtocolFailure>::Err(
+            ProtocolFailure::Generic("Proto member_id is empty"));
     }
 
     if (proto.account_id().empty()) {
-        return Result<GroupMember, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::Generic("Proto account_id is empty"));
+        return Result<GroupMember, ProtocolFailure>::Err(
+            ProtocolFailure::Generic("Proto account_id is empty"));
     }
 
     if (proto.app_instance_id().empty()) {
-        return Result<GroupMember, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::Generic("Proto app_instance_id is empty"));
+        return Result<GroupMember, ProtocolFailure>::Err(
+            ProtocolFailure::Generic("Proto app_instance_id is empty"));
     }
 
     if (proto.device_id().empty()) {
-        return Result<GroupMember, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::Generic("Proto device_id is empty"));
+        return Result<GroupMember, ProtocolFailure>::Err(
+            ProtocolFailure::Generic("Proto device_id is empty"));
     }
 
     if (proto.identity_public_key().empty()) {
-        return Result<GroupMember, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::Generic("Proto identity_public_key is empty"));
+        return Result<GroupMember, ProtocolFailure>::Err(
+            ProtocolFailure::Generic("Proto identity_public_key is empty"));
     }
 
     const auto member_id = reinterpret_cast<const uint8_t*>(proto.member_id().data());
@@ -160,7 +160,7 @@ Result<GroupMember, EcliptixProtocolFailure> GroupMember::FromProto(
     const auto joined_timestamp = std::chrono::system_clock::time_point(
         std::chrono::milliseconds(proto.joined_timestamp_ms()));
 
-    return Result<GroupMember, EcliptixProtocolFailure>::Ok(
+    return Result<GroupMember, ProtocolFailure>::Ok(
         GroupMember(
             std::vector(member_id, member_id + proto.member_id().size()),
             std::vector(account_id, account_id + proto.account_id().size()),

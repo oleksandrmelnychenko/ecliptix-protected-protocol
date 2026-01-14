@@ -100,7 +100,7 @@ TEST_CASE("ProtocolConfig - Performance Estimates", "[config][performance]") {
     SECTION("ZeroKnowledge has significant message overhead (proof generation)") {
         auto config = ProtocolConfig::MaximumSecurity();
         REQUIRE(config.EstimateHandshakeOverheadUs() == 200);
-        REQUIRE(config.EstimateMessageOverheadUs() == 150'070); // 150ms proof gen
+        REQUIRE(config.EstimateMessageOverheadUs() == 150'070);
         REQUIRE(config.EstimateMemoryOverheadBytes() == 10'400);
     }
 
@@ -201,7 +201,7 @@ TEST_CASE("ProtocolConfig - Use Cases", "[config][integration]") {
         REQUIRE(config.IsPuncturableEnabled());
         REQUIRE(config.IsZkEnabled());
 
-        REQUIRE(config.EstimateMessageOverheadUs() > 100'000); // >100ms
+        REQUIRE(config.EstimateMessageOverheadUs() > 100'000);
     }
 
     SECTION("Mobile app with PQ only (no ZK)") {
@@ -238,22 +238,19 @@ TEST_CASE("ProtocolConfig - Use Cases", "[config][integration]") {
 TEST_CASE("ProtocolConfig - Additive Layer Verification", "[config][security]") {
     SECTION("PostQuantum includes Classical") {
         auto pq = ProtocolConfig::PostQuantumOnly();
-        // PostQuantum doesn't "disable" classical crypto, it adds to it
-        // Classical X25519 + Ed25519 are still used alongside Kyber
         REQUIRE(pq.IsPqEnabled());
     }
 
     SECTION("Puncturable includes PostQuantum and Classical") {
         auto puncturable = ProtocolConfig::PuncturableOnly();
-        // All lower layers remain active
-        REQUIRE(puncturable.IsPqEnabled()); // Includes PQ layer
+        REQUIRE(puncturable.IsPqEnabled());
         REQUIRE(puncturable.IsPuncturableEnabled());
     }
 
     SECTION("ZeroKnowledge includes all layers") {
         auto zk = ProtocolConfig::MaximumSecurity();
-        REQUIRE(zk.IsPqEnabled()); // Classical + PQ
-        REQUIRE(zk.IsPuncturableEnabled()); // + Puncturable
-        REQUIRE(zk.IsZkEnabled()); // + ZK
+        REQUIRE(zk.IsPqEnabled());
+        REQUIRE(zk.IsPuncturableEnabled());
+        REQUIRE(zk.IsZkEnabled());
     }
 }

@@ -18,17 +18,17 @@ public:
     static constexpr uint8_t FLAG_HAS_AUTH = 0x01;
     static constexpr std::array<uint8_t, 4> MAGIC = {'E', 'S', 'S', '1'};
 
-    static Result<std::vector<std::vector<uint8_t>>, EcliptixProtocolFailure> Split(
+    static Result<std::vector<std::vector<uint8_t>>, ProtocolFailure> Split(
         std::span<const uint8_t> secret,
         uint8_t threshold,
         uint8_t share_count,
         std::span<const uint8_t> auth_key = {});
 
-    static Result<std::vector<uint8_t>, EcliptixProtocolFailure> Reconstruct(
+    static Result<std::vector<uint8_t>, ProtocolFailure> Reconstruct(
         std::span<const std::vector<uint8_t>> shares,
         std::span<const uint8_t> auth_key = {});
 
-    static Result<std::vector<uint8_t>, EcliptixProtocolFailure> ReconstructSerialized(
+    static Result<std::vector<uint8_t>, ProtocolFailure> ReconstructSerialized(
         std::span<const uint8_t> shares_blob,
         size_t share_length,
         size_t share_count,

@@ -1,17 +1,17 @@
 #include <catch2/catch_test_macros.hpp>
-#include "ecliptix/c_api/ecliptix_server_c_api.h"
+#include "ecliptix/c_api/epp_server_api.h"
 #include <cstring>
 #include <vector>
 
 TEST_CASE("Server C API - Secret sharing", "[c_api][server][secret-sharing]") {
-    REQUIRE(ecliptix_initialize() == ECLIPTIX_SUCCESS);
+    REQUIRE(epp_init() == EPP_SUCCESS);
 
     SECTION("Split rejects null outputs") {
         std::vector<uint8_t> secret(16, 0x11);
         size_t share_length = 0;
-        EcliptixError error{};
+        EppError error{};
 
-        auto result = ecliptix_secret_sharing_split(
+        auto result = epp_shamir_split(
             secret.data(),
             secret.size(),
             2,
@@ -21,13 +21,13 @@ TEST_CASE("Server C API - Secret sharing", "[c_api][server][secret-sharing]") {
             nullptr,
             &share_length,
             &error);
-        REQUIRE(result == ECLIPTIX_ERROR_NULL_POINTER);
+        REQUIRE(result == EPP_ERROR_NULL_POINTER);
         if (error.message) {
-            ecliptix_error_free(&error);
+            epp_error_free(&error);
         }
 
-        EcliptixBuffer* shares = ecliptix_buffer_allocate(0);
-        result = ecliptix_secret_sharing_split(
+        EppBuffer* shares = epp_buffer_alloc(0);
+        result = epp_shamir_split(
             secret.data(),
             secret.size(),
             2,
@@ -37,20 +37,20 @@ TEST_CASE("Server C API - Secret sharing", "[c_api][server][secret-sharing]") {
             shares,
             nullptr,
             &error);
-        REQUIRE(result == ECLIPTIX_ERROR_NULL_POINTER);
+        REQUIRE(result == EPP_ERROR_NULL_POINTER);
         if (error.message) {
-            ecliptix_error_free(&error);
+            epp_error_free(&error);
         }
-        ecliptix_buffer_free(shares);
+        epp_buffer_free(shares);
     }
 
     SECTION("Split rejects empty secret") {
         std::vector<uint8_t> secret(16, 0x22);
-        EcliptixBuffer* shares = ecliptix_buffer_allocate(0);
+        EppBuffer* shares = epp_buffer_alloc(0);
         size_t share_length = 0;
-        EcliptixError error{};
+        EppError error{};
 
-        const auto result = ecliptix_secret_sharing_split(
+        const auto result = epp_shamir_split(
             secret.data(),
             0,
             2,
@@ -60,21 +60,21 @@ TEST_CASE("Server C API - Secret sharing", "[c_api][server][secret-sharing]") {
             shares,
             &share_length,
             &error);
-        REQUIRE(result == ECLIPTIX_ERROR_INVALID_INPUT);
+        REQUIRE(result == EPP_ERROR_INVALID_INPUT);
         if (error.message) {
-            ecliptix_error_free(&error);
+            epp_error_free(&error);
         }
-        ecliptix_buffer_free(shares);
+        epp_buffer_free(shares);
     }
 
     SECTION("Split rejects invalid auth key length") {
         std::vector<uint8_t> secret(16, 0x33);
         std::vector<uint8_t> auth_key(31, 0xAB);
-        EcliptixBuffer* shares = ecliptix_buffer_allocate(0);
+        EppBuffer* shares = epp_buffer_alloc(0);
         size_t share_length = 0;
-        EcliptixError error{};
+        EppError error{};
 
-        const auto result = ecliptix_secret_sharing_split(
+        const auto result = epp_shamir_split(
             secret.data(),
             secret.size(),
             2,
@@ -84,20 +84,20 @@ TEST_CASE("Server C API - Secret sharing", "[c_api][server][secret-sharing]") {
             shares,
             &share_length,
             &error);
-        REQUIRE(result == ECLIPTIX_ERROR_INVALID_INPUT);
+        REQUIRE(result == EPP_ERROR_INVALID_INPUT);
         if (error.message) {
-            ecliptix_error_free(&error);
+            epp_error_free(&error);
         }
-        ecliptix_buffer_free(shares);
+        epp_buffer_free(shares);
     }
 
     SECTION("Roundtrip without auth") {
         std::vector<uint8_t> secret(32, 0x44);
-        EcliptixBuffer* shares = ecliptix_buffer_allocate(0);
+        EppBuffer* shares = epp_buffer_alloc(0);
         size_t share_length = 0;
-        EcliptixError error{};
+        EppError error{};
 
-        auto result = ecliptix_secret_sharing_split(
+        auto result = epp_shamir_split(
             secret.data(),
             secret.size(),
             3,
@@ -107,11 +107,11 @@ TEST_CASE("Server C API - Secret sharing", "[c_api][server][secret-sharing]") {
             shares,
             &share_length,
             &error);
-        REQUIRE(result == ECLIPTIX_SUCCESS);
+        REQUIRE(result == EPP_SUCCESS);
         REQUIRE(shares->data != nullptr);
 
-        EcliptixBuffer* out_secret = ecliptix_buffer_allocate(0);
-        result = ecliptix_secret_sharing_reconstruct(
+        EppBuffer* out_secret = epp_buffer_alloc(0);
+        result = epp_shamir_reconstruct(
             shares->data,
             shares->length,
             share_length,
@@ -120,22 +120,22 @@ TEST_CASE("Server C API - Secret sharing", "[c_api][server][secret-sharing]") {
             0,
             out_secret,
             &error);
-        REQUIRE(result == ECLIPTIX_SUCCESS);
+        REQUIRE(result == EPP_SUCCESS);
         REQUIRE(out_secret->length == secret.size());
         REQUIRE(std::memcmp(out_secret->data, secret.data(), secret.size()) == 0);
 
-        ecliptix_buffer_free(out_secret);
-        ecliptix_buffer_free(shares);
+        epp_buffer_free(out_secret);
+        epp_buffer_free(shares);
     }
 
     SECTION("Reconstruct rejects missing auth key for auth shares") {
         std::vector<uint8_t> secret(16, 0x55);
         std::vector<uint8_t> auth_key(32, 0xDD);
-        EcliptixBuffer* shares = ecliptix_buffer_allocate(0);
+        EppBuffer* shares = epp_buffer_alloc(0);
         size_t share_length = 0;
-        EcliptixError error{};
+        EppError error{};
 
-        auto result = ecliptix_secret_sharing_split(
+        auto result = epp_shamir_split(
             secret.data(),
             secret.size(),
             2,
@@ -145,10 +145,10 @@ TEST_CASE("Server C API - Secret sharing", "[c_api][server][secret-sharing]") {
             shares,
             &share_length,
             &error);
-        REQUIRE(result == ECLIPTIX_SUCCESS);
+        REQUIRE(result == EPP_SUCCESS);
 
-        EcliptixBuffer* out_secret = ecliptix_buffer_allocate(0);
-        result = ecliptix_secret_sharing_reconstruct(
+        EppBuffer* out_secret = epp_buffer_alloc(0);
+        result = epp_shamir_reconstruct(
             shares->data,
             shares->length,
             share_length,
@@ -157,23 +157,23 @@ TEST_CASE("Server C API - Secret sharing", "[c_api][server][secret-sharing]") {
             0,
             out_secret,
             &error);
-        REQUIRE(result == ECLIPTIX_ERROR_INVALID_INPUT);
+        REQUIRE(result == EPP_ERROR_INVALID_INPUT);
         if (error.message) {
-            ecliptix_error_free(&error);
+            epp_error_free(&error);
         }
 
-        ecliptix_buffer_free(out_secret);
-        ecliptix_buffer_free(shares);
+        epp_buffer_free(out_secret);
+        epp_buffer_free(shares);
     }
 
     SECTION("Reconstruct rejects invalid auth key length") {
         std::vector<uint8_t> secret(16, 0x66);
         std::vector<uint8_t> auth_key(31, 0x44);
-        EcliptixBuffer* shares = ecliptix_buffer_allocate(0);
+        EppBuffer* shares = epp_buffer_alloc(0);
         size_t share_length = 0;
-        EcliptixError error{};
+        EppError error{};
 
-        auto result = ecliptix_secret_sharing_split(
+        auto result = epp_shamir_split(
             secret.data(),
             secret.size(),
             2,
@@ -183,10 +183,10 @@ TEST_CASE("Server C API - Secret sharing", "[c_api][server][secret-sharing]") {
             shares,
             &share_length,
             &error);
-        REQUIRE(result == ECLIPTIX_SUCCESS);
+        REQUIRE(result == EPP_SUCCESS);
 
-        EcliptixBuffer* out_secret = ecliptix_buffer_allocate(0);
-        result = ecliptix_secret_sharing_reconstruct(
+        EppBuffer* out_secret = epp_buffer_alloc(0);
+        result = epp_shamir_reconstruct(
             shares->data,
             shares->length,
             share_length,
@@ -195,22 +195,22 @@ TEST_CASE("Server C API - Secret sharing", "[c_api][server][secret-sharing]") {
             auth_key.size(),
             out_secret,
             &error);
-        REQUIRE(result == ECLIPTIX_ERROR_INVALID_INPUT);
+        REQUIRE(result == EPP_ERROR_INVALID_INPUT);
         if (error.message) {
-            ecliptix_error_free(&error);
+            epp_error_free(&error);
         }
 
-        ecliptix_buffer_free(out_secret);
-        ecliptix_buffer_free(shares);
+        epp_buffer_free(out_secret);
+        epp_buffer_free(shares);
     }
 
     SECTION("Reconstruct rejects share length mismatch") {
         std::vector<uint8_t> secret(16, 0x77);
-        EcliptixBuffer* shares = ecliptix_buffer_allocate(0);
+        EppBuffer* shares = epp_buffer_alloc(0);
         size_t share_length = 0;
-        EcliptixError error{};
+        EppError error{};
 
-        auto result = ecliptix_secret_sharing_split(
+        auto result = epp_shamir_split(
             secret.data(),
             secret.size(),
             2,
@@ -220,10 +220,10 @@ TEST_CASE("Server C API - Secret sharing", "[c_api][server][secret-sharing]") {
             shares,
             &share_length,
             &error);
-        REQUIRE(result == ECLIPTIX_SUCCESS);
+        REQUIRE(result == EPP_SUCCESS);
 
-        EcliptixBuffer* out_secret = ecliptix_buffer_allocate(0);
-        result = ecliptix_secret_sharing_reconstruct(
+        EppBuffer* out_secret = epp_buffer_alloc(0);
+        result = epp_shamir_reconstruct(
             shares->data,
             shares->length,
             share_length + 1,
@@ -232,20 +232,20 @@ TEST_CASE("Server C API - Secret sharing", "[c_api][server][secret-sharing]") {
             0,
             out_secret,
             &error);
-        REQUIRE(result == ECLIPTIX_ERROR_INVALID_INPUT);
+        REQUIRE(result == EPP_ERROR_INVALID_INPUT);
         if (error.message) {
-            ecliptix_error_free(&error);
+            epp_error_free(&error);
         }
 
-        ecliptix_buffer_free(out_secret);
-        ecliptix_buffer_free(shares);
+        epp_buffer_free(out_secret);
+        epp_buffer_free(shares);
     }
 
     SECTION("Reconstruct rejects null shares") {
-        EcliptixBuffer* out_secret = ecliptix_buffer_allocate(0);
-        EcliptixError error{};
+        EppBuffer* out_secret = epp_buffer_alloc(0);
+        EppError error{};
 
-        const auto result = ecliptix_secret_sharing_reconstruct(
+        const auto result = epp_shamir_reconstruct(
             nullptr,
             16,
             8,
@@ -254,13 +254,13 @@ TEST_CASE("Server C API - Secret sharing", "[c_api][server][secret-sharing]") {
             0,
             out_secret,
             &error);
-        REQUIRE(result == ECLIPTIX_ERROR_NULL_POINTER);
+        REQUIRE(result == EPP_ERROR_NULL_POINTER);
         if (error.message) {
-            ecliptix_error_free(&error);
+            epp_error_free(&error);
         }
 
-        ecliptix_buffer_free(out_secret);
+        epp_buffer_free(out_secret);
     }
 
-    ecliptix_shutdown();
+    epp_shutdown();
 }

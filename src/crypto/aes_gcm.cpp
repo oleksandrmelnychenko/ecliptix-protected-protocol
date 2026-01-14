@@ -39,44 +39,44 @@ namespace ecliptix::protocol::crypto {
         }
     }
 
-    Result<std::vector<uint8_t>, EcliptixProtocolFailure>
+    Result<std::vector<uint8_t>, ProtocolFailure>
     AesGcm::Encrypt(
         std::span<const uint8_t> key,
         std::span<const uint8_t> nonce,
         std::span<const uint8_t> plaintext,
         std::span<const uint8_t> associated_data) {
         if (key.size() != Constants::AES_KEY_SIZE) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput(
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput(
                     ecliptix::compat::format("AES-256-GCM key must be {} bytes, got {}",
                                 Constants::AES_KEY_SIZE, key.size())));
         }
         if (nonce.size() != Constants::AES_GCM_NONCE_SIZE) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput(
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput(
                     ecliptix::compat::format("AES-GCM nonce must be {} bytes, got {}",
                                 Constants::AES_GCM_NONCE_SIZE, nonce.size())));
         }
         EVP_CIPHER_CTX_ptr ctx(EVP_CIPHER_CTX_new());
         if (!ctx) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     ecliptix::compat::format("Failed to create cipher context: {}", GetOpenSSLError())));
         }
         if (EVP_EncryptInit_ex(ctx.get(), EVP_aes_256_gcm(), nullptr, nullptr, nullptr) != OpenSSL::SUCCESS) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     ecliptix::compat::format("Failed to initialize AES-256-GCM: {}", GetOpenSSLError())));
         }
         if (EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_IVLEN,
                                 static_cast<int>(nonce.size()), nullptr) != OpenSSL::SUCCESS) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     ecliptix::compat::format("Failed to set nonce length: {}", GetOpenSSLError())));
         }
         if (EVP_EncryptInit_ex(ctx.get(), nullptr, nullptr, key.data(), nonce.data()) != OpenSSL::SUCCESS) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     ecliptix::compat::format("Failed to set key and nonce: {}", GetOpenSSLError())));
         }
         if (!associated_data.empty()) {
@@ -84,8 +84,8 @@ namespace ecliptix::protocol::crypto {
             if (EVP_EncryptUpdate(ctx.get(), nullptr, &outlen,
                                   associated_data.data(),
                                   static_cast<int>(associated_data.size())) != OpenSSL::SUCCESS) {
-                return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic(
+                return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic(
                         ecliptix::compat::format("Failed to add associated data: {}", GetOpenSSLError())));
             }
         }
@@ -98,8 +98,8 @@ namespace ecliptix::protocol::crypto {
                 auto _wipe = SodiumInterop::SecureWipe(std::span(output));
                 (void) _wipe;
             }
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     ecliptix::compat::format("Encryption failed: {}", GetOpenSSLError())));
         }
         int final_len = ProtocolConstants::ZERO_VALUE;
@@ -108,8 +108,8 @@ namespace ecliptix::protocol::crypto {
                 auto _wipe = SodiumInterop::SecureWipe(std::span(output));
                 (void) _wipe;
             }
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     ecliptix::compat::format("Encryption finalization failed: {}", GetOpenSSLError())));
         }
         ciphertext_len += final_len;
@@ -120,35 +120,35 @@ namespace ecliptix::protocol::crypto {
                 auto _wipe = SodiumInterop::SecureWipe(std::span(output));
                 (void) _wipe;
             }
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     ecliptix::compat::format("Failed to get authentication tag: {}", GetOpenSSLError())));
         }
         output.resize(ciphertext_len + Constants::AES_GCM_TAG_SIZE);
-        return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Ok(std::move(output));
+        return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(std::move(output));
     }
 
-    Result<std::vector<uint8_t>, EcliptixProtocolFailure>
+    Result<std::vector<uint8_t>, ProtocolFailure>
     AesGcm::Decrypt(
         std::span<const uint8_t> key,
         std::span<const uint8_t> nonce,
         std::span<const uint8_t> ciphertext_with_tag,
         std::span<const uint8_t> associated_data) {
         if (key.size() != Constants::AES_KEY_SIZE) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput(
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput(
                     ecliptix::compat::format("AES-256-GCM key must be {} bytes, got {}",
                                 Constants::AES_KEY_SIZE, key.size())));
         }
         if (nonce.size() != Constants::AES_GCM_NONCE_SIZE) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput(
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput(
                     ecliptix::compat::format("AES-GCM nonce must be {} bytes, got {}",
                                 Constants::AES_GCM_NONCE_SIZE, nonce.size())));
         }
         if (ciphertext_with_tag.size() < Constants::AES_GCM_TAG_SIZE) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput(
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput(
                     ecliptix::compat::format("Ciphertext too small: {} bytes (minimum {} for tag)",
                                 ciphertext_with_tag.size(), Constants::AES_GCM_TAG_SIZE)));
         }
@@ -157,24 +157,24 @@ namespace ecliptix::protocol::crypto {
         std::span<const uint8_t> tag = ciphertext_with_tag.subspan(ciphertext_len);
         EVP_CIPHER_CTX_ptr ctx(EVP_CIPHER_CTX_new());
         if (!ctx) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     ecliptix::compat::format("Failed to create cipher context: {}", GetOpenSSLError())));
         }
         if (EVP_DecryptInit_ex(ctx.get(), EVP_aes_256_gcm(), nullptr, nullptr, nullptr) != OpenSSL::SUCCESS) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     ecliptix::compat::format("Failed to initialize AES-256-GCM: {}", GetOpenSSLError())));
         }
         if (EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_IVLEN,
                                 static_cast<int>(nonce.size()), nullptr) != OpenSSL::SUCCESS) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     ecliptix::compat::format("Failed to set nonce length: {}", GetOpenSSLError())));
         }
         if (EVP_DecryptInit_ex(ctx.get(), nullptr, nullptr, key.data(), nonce.data()) != OpenSSL::SUCCESS) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     ecliptix::compat::format("Failed to set key and nonce: {}", GetOpenSSLError())));
         }
         if (!associated_data.empty()) {
@@ -182,8 +182,8 @@ namespace ecliptix::protocol::crypto {
             if (EVP_DecryptUpdate(ctx.get(), nullptr, &outlen,
                                   associated_data.data(),
                                   static_cast<int>(associated_data.size())) != OpenSSL::SUCCESS) {
-                return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic(
+                return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic(
                         ecliptix::compat::format("Failed to add associated data: {}", GetOpenSSLError())));
             }
         }
@@ -196,8 +196,8 @@ namespace ecliptix::protocol::crypto {
                 auto _wipe = SodiumInterop::SecureWipe(std::span(output));
                 (void) _wipe;
             }
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     ecliptix::compat::format("Decryption failed: {}", GetOpenSSLError())));
         }
         std::vector tag_copy(tag.begin(), tag.end());
@@ -211,8 +211,8 @@ namespace ecliptix::protocol::crypto {
                 auto _wipe2 = SodiumInterop::SecureWipe(std::span(tag_copy));
                 (void) _wipe2;
             }
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     ecliptix::compat::format("Failed to set authentication tag: {}", GetOpenSSLError())));
         } {
             auto _wipe = SodiumInterop::SecureWipe(std::span(tag_copy));
@@ -225,12 +225,12 @@ namespace ecliptix::protocol::crypto {
                 auto _wipe = SodiumInterop::SecureWipe(std::span(output));
                 (void) _wipe;
             }
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     "Authentication tag verification failed - data may have been tampered with"));
         }
         plaintext_len += final_len;
         output.resize(plaintext_len);
-        return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Ok(std::move(output));
+        return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(std::move(output));
     }
 }

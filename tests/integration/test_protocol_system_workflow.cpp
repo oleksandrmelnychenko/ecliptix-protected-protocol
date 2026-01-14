@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
-#include "ecliptix/protocol/ecliptix_protocol_system.hpp"
-#include "ecliptix/identity/ecliptix_system_identity_keys.hpp"
+#include "ecliptix/protocol/protocol_system.hpp"
+#include "ecliptix/identity/identity_keys.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/crypto/kyber_interop.hpp"
 #include "ecliptix/core/constants.hpp"
@@ -47,49 +47,49 @@ namespace {
     }
 
     struct ProtocolSystemTestContext {
-        std::unique_ptr<EcliptixProtocolSystem> alice;
-        std::unique_ptr<EcliptixProtocolSystem> bob;
+        std::unique_ptr<ProtocolSystem> alice;
+        std::unique_ptr<ProtocolSystem> bob;
 
-        [[nodiscard]] static Result<ProtocolSystemTestContext, EcliptixProtocolFailure> Create() {
+        [[nodiscard]] static Result<ProtocolSystemTestContext, ProtocolFailure> Create() {
             ProtocolSystemTestContext ctx;
 
-            auto alice_id_result = EcliptixSystemIdentityKeys::Create(5);
+            auto alice_id_result = IdentityKeys::Create(5);
             if (alice_id_result.IsErr()) {
-                return Result<ProtocolSystemTestContext, EcliptixProtocolFailure>::Err(
+                return Result<ProtocolSystemTestContext, ProtocolFailure>::Err(
                     std::move(alice_id_result).UnwrapErr());
             }
-            auto alice_identity = std::make_unique<EcliptixSystemIdentityKeys>(
+            auto alice_identity = std::make_unique<IdentityKeys>(
                 std::move(alice_id_result).Unwrap());
 
-            auto bob_id_result = EcliptixSystemIdentityKeys::Create(5);
+            auto bob_id_result = IdentityKeys::Create(5);
             if (bob_id_result.IsErr()) {
-                return Result<ProtocolSystemTestContext, EcliptixProtocolFailure>::Err(
+                return Result<ProtocolSystemTestContext, ProtocolFailure>::Err(
                     std::move(bob_id_result).UnwrapErr());
             }
-            auto bob_identity = std::make_unique<EcliptixSystemIdentityKeys>(
+            auto bob_identity = std::make_unique<IdentityKeys>(
                 std::move(bob_id_result).Unwrap());
 
-            auto alice_system_result = EcliptixProtocolSystem::Create(std::move(alice_identity));
+            auto alice_system_result = ProtocolSystem::Create(std::move(alice_identity));
             if (alice_system_result.IsErr()) {
-                return Result<ProtocolSystemTestContext, EcliptixProtocolFailure>::Err(
+                return Result<ProtocolSystemTestContext, ProtocolFailure>::Err(
                     std::move(alice_system_result).UnwrapErr());
             }
             ctx.alice = std::move(alice_system_result).Unwrap();
 
-            auto bob_system_result = EcliptixProtocolSystem::Create(std::move(bob_identity));
+            auto bob_system_result = ProtocolSystem::Create(std::move(bob_identity));
             if (bob_system_result.IsErr()) {
-                return Result<ProtocolSystemTestContext, EcliptixProtocolFailure>::Err(
+                return Result<ProtocolSystemTestContext, ProtocolFailure>::Err(
                     std::move(bob_system_result).UnwrapErr());
             }
             ctx.bob = std::move(bob_system_result).Unwrap();
 
-            return Result<ProtocolSystemTestContext, EcliptixProtocolFailure>::Ok(std::move(ctx));
+            return Result<ProtocolSystemTestContext, ProtocolFailure>::Ok(std::move(ctx));
         }
 
-        [[nodiscard]] Result<Unit, EcliptixProtocolFailure> PerformHandshake() {
+        [[nodiscard]] Result<Unit, ProtocolFailure> PerformHandshake() {
             auto bob_bundle_result = bob->GetIdentityKeys().CreatePublicBundle();
             if (bob_bundle_result.IsErr()) {
-                return Result<Unit, EcliptixProtocolFailure>::Err(
+                return Result<Unit, ProtocolFailure>::Err(
                     std::move(bob_bundle_result).UnwrapErr());
             }
             auto bob_bundle = std::move(bob_bundle_result).Unwrap();
@@ -98,7 +98,7 @@ namespace {
 
             auto alice_bundle_result = alice->GetIdentityKeys().CreatePublicBundle();
             if (alice_bundle_result.IsErr()) {
-                return Result<Unit, EcliptixProtocolFailure>::Err(
+                return Result<Unit, ProtocolFailure>::Err(
                     std::move(alice_bundle_result).UnwrapErr());
             }
             auto alice_bundle = std::move(alice_bundle_result).Unwrap();
@@ -109,12 +109,12 @@ namespace {
 
             auto alice_ek_public = alice->GetIdentityKeys().GetEphemeralX25519PublicKeyCopy();
             if (!alice_ek_public.has_value()) {
-                return Result<Unit, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic("Alice ephemeral key not available"));
+                return Result<Unit, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic("Alice ephemeral key not available"));
             }
             auto alice_ek_private_result = alice->GetIdentityKeys().GetEphemeralX25519PrivateKeyCopy();
             if (alice_ek_private_result.IsErr()) {
-                return Result<Unit, EcliptixProtocolFailure>::Err(
+                return Result<Unit, ProtocolFailure>::Err(
                     alice_ek_private_result.UnwrapErr());
             }
             auto alice_ek_private = alice_ek_private_result.Unwrap();
@@ -122,7 +122,7 @@ namespace {
             auto bob_spk_public = bob->GetIdentityKeys().GetSignedPreKeyPublicCopy();
             auto bob_spk_private_result = bob->GetIdentityKeys().GetSignedPreKeyPrivateCopy();
             if (bob_spk_private_result.IsErr()) {
-                return Result<Unit, EcliptixProtocolFailure>::Err(
+                return Result<Unit, ProtocolFailure>::Err(
                     bob_spk_private_result.UnwrapErr());
             }
             auto bob_spk_private = bob_spk_private_result.Unwrap();
@@ -131,21 +131,21 @@ namespace {
             auto alice_shared_result = alice->GetIdentityKeysMutable().X3dhDeriveSharedSecret(
                 bob_bundle, info, true);
             if (alice_shared_result.IsErr()) {
-                return Result<Unit, EcliptixProtocolFailure>::Err(
+                return Result<Unit, ProtocolFailure>::Err(
                     std::move(alice_shared_result).UnwrapErr());
             }
             auto alice_shared = std::move(alice_shared_result).Unwrap();
 
             auto alice_root_result = alice_shared.ReadBytes(alice_shared.Size());
             if (alice_root_result.IsErr()) {
-                return Result<Unit, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic("Failed to read Alice shared secret"));
+                return Result<Unit, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic("Failed to read Alice shared secret"));
             }
             auto alice_root_key = std::move(alice_root_result).Unwrap();
 
             auto alice_kyber_result = alice->GetIdentityKeysMutable().ConsumePendingKyberHandshake();
             if (alice_kyber_result.IsErr()) {
-                return Result<Unit, EcliptixProtocolFailure>::Err(
+                return Result<Unit, ProtocolFailure>::Err(
                     alice_kyber_result.UnwrapErr());
             }
             auto alice_kyber = std::move(alice_kyber_result).Unwrap();
@@ -154,14 +154,14 @@ namespace {
             auto bob_decap_result = bob->GetIdentityKeysMutable().DecapsulateKyberCiphertext(
                 alice_kyber.kyber_ciphertext);
             if (bob_decap_result.IsErr()) {
-                return Result<Unit, EcliptixProtocolFailure>::Err(
+                return Result<Unit, ProtocolFailure>::Err(
                     bob_decap_result.UnwrapErr());
             }
             auto bob_kyber = bob_decap_result.Unwrap();
 
             if (bob_kyber.kyber_shared_secret != alice_kyber.kyber_shared_secret) {
-                return Result<Unit, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic("Kyber shared secret mismatch"));
+                return Result<Unit, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic("Kyber shared secret mismatch"));
             }
 
             auto alice_finalize = alice->FinalizeWithRootAndPeerBundle(
@@ -173,7 +173,7 @@ namespace {
                 alice_ek_public.value(),
                 alice_ek_private);
             if (alice_finalize.IsErr()) {
-                return Result<Unit, EcliptixProtocolFailure>::Err(
+                return Result<Unit, ProtocolFailure>::Err(
                     std::move(alice_finalize).UnwrapErr());
             }
 
@@ -186,11 +186,11 @@ namespace {
                 bob_spk_public,
                 bob_spk_private);
             if (bob_finalize.IsErr()) {
-                return Result<Unit, EcliptixProtocolFailure>::Err(
+                return Result<Unit, ProtocolFailure>::Err(
                     std::move(bob_finalize).UnwrapErr());
             }
 
-            return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+            return Result<Unit, ProtocolFailure>::Ok(Unit{});
         }
     };
 }

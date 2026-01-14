@@ -1,5 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
-#include "ecliptix/protocol/connection/ecliptix_protocol_connection.hpp"
+#include "ecliptix/protocol/connection/protocol_connection.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/crypto/kyber_interop.hpp"
 #include "ecliptix/core/constants.hpp"
@@ -151,7 +151,7 @@ TEST_CASE("State Transitions - Unfinalized Violations: PrepareNextSendMessage", 
         REQUIRE(result.IsErr());
 
         auto err = std::move(result).UnwrapErr();
-        REQUIRE(err.type == EcliptixProtocolFailureType::Generic);
+        REQUIRE(err.type == ProtocolFailureType::Generic);
     }
 
     SECTION("PrepareNextSendMessage after SetPeerBundle but before finalization must fail") {
@@ -164,7 +164,7 @@ TEST_CASE("State Transitions - Unfinalized Violations: PrepareNextSendMessage", 
         REQUIRE(send_result.IsErr());
 
         auto err = std::move(send_result).UnwrapErr();
-        REQUIRE(err.type == EcliptixProtocolFailureType::Generic);
+        REQUIRE(err.type == ProtocolFailureType::Generic);
     }
 }
 
@@ -179,7 +179,7 @@ TEST_CASE("State Transitions - Unfinalized Violations: ProcessReceivedMessage", 
         REQUIRE(result.IsErr());
 
         auto err = std::move(result).UnwrapErr();
-        REQUIRE(err.type == EcliptixProtocolFailureType::Generic);
+        REQUIRE(err.type == ProtocolFailureType::Generic);
     }
 
     SECTION("ProcessReceivedMessage after SetPeerBundle but before finalization must fail") {
@@ -193,7 +193,7 @@ TEST_CASE("State Transitions - Unfinalized Violations: ProcessReceivedMessage", 
         REQUIRE(recv_result.IsErr());
 
         auto err = std::move(recv_result).UnwrapErr();
-        REQUIRE(err.type == EcliptixProtocolFailureType::Generic);
+        REQUIRE(err.type == ProtocolFailureType::Generic);
     }
 }
 
@@ -207,7 +207,7 @@ TEST_CASE("State Transitions - Unfinalized Violations: GetMetadataEncryptionKey"
         REQUIRE(result.IsErr());
 
         auto err = std::move(result).UnwrapErr();
-        REQUIRE(err.type == EcliptixProtocolFailureType::Generic);
+        REQUIRE(err.type == ProtocolFailureType::Generic);
     }
 
     SECTION("GetMetadataEncryptionKey after SetPeerBundle but before finalization must fail") {
@@ -220,27 +220,27 @@ TEST_CASE("State Transitions - Unfinalized Violations: GetMetadataEncryptionKey"
         REQUIRE(key_result.IsErr());
 
         auto err = std::move(key_result).UnwrapErr();
-        REQUIRE(err.type == EcliptixProtocolFailureType::Generic);
+        REQUIRE(err.type == ProtocolFailureType::Generic);
     }
 }
 
-TEST_CASE("State Transitions - Unfinalized Violations: PerformReceivingRatchet", "[boundaries][state][critical]") {
+TEST_CASE("State Transitions - Unfinalized Violations: ExecuteReceivingRatchet", "[boundaries][state][critical]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     auto conn = CreateUnfinalizedConnection();
 
-    SECTION("PerformReceivingRatchet before finalization must fail") {
+    SECTION("ExecuteReceivingRatchet before finalization must fail") {
         std::vector<uint8_t> fake_dh_key(Constants::X_25519_PUBLIC_KEY_SIZE, 0x42);
 
         auto kyber_ct = EncapsulateTo(conn->GetKyberPublicKeyCopy());
-        auto result = conn->PerformReceivingRatchet(fake_dh_key, kyber_ct);
+        auto result = conn->ExecuteReceivingRatchet(fake_dh_key, kyber_ct);
         REQUIRE(result.IsErr());
 
         auto err = std::move(result).UnwrapErr();
-        REQUIRE(err.type == EcliptixProtocolFailureType::Generic);
+        REQUIRE(err.type == ProtocolFailureType::Generic);
     }
 
-    SECTION("PerformReceivingRatchet after SetPeerBundle but before finalization must fail") {
+    SECTION("ExecuteReceivingRatchet after SetPeerBundle but before finalization must fail") {
         const auto material = TestKeyMaterial::Generate();
 
         auto peer_result = conn->SetPeerBundle(material.GetBundle());
@@ -248,11 +248,11 @@ TEST_CASE("State Transitions - Unfinalized Violations: PerformReceivingRatchet",
 
         std::vector<uint8_t> fake_dh_key(Constants::X_25519_PUBLIC_KEY_SIZE, 0x42);
         auto kyber_ct = EncapsulateTo(conn->GetKyberPublicKeyCopy());
-        auto ratchet_result = conn->PerformReceivingRatchet(fake_dh_key, kyber_ct);
+        auto ratchet_result = conn->ExecuteReceivingRatchet(fake_dh_key, kyber_ct);
         REQUIRE(ratchet_result.IsErr());
 
         auto err = std::move(ratchet_result).UnwrapErr();
-        REQUIRE(err.type == EcliptixProtocolFailureType::Generic);
+        REQUIRE(err.type == ProtocolFailureType::Generic);
     }
 }
 
@@ -288,7 +288,7 @@ TEST_CASE("State Transitions - Double Finalization Attack", "[boundaries][state]
         REQUIRE(second_finalize.IsErr());
 
         auto err = std::move(second_finalize).UnwrapErr();
-        REQUIRE(err.type == EcliptixProtocolFailureType::Generic);
+        REQUIRE(err.type == ProtocolFailureType::Generic);
     }
 
     SECTION("Third finalization attempt also fails") {
@@ -321,7 +321,7 @@ TEST_CASE("State Transitions - SetPeerBundle After Finalization", "[boundaries][
         REQUIRE(result.IsErr());
 
         auto err = std::move(result).UnwrapErr();
-        REQUIRE(err.type == EcliptixProtocolFailureType::Generic);
+        REQUIRE(err.type == ProtocolFailureType::Generic);
     }
 
     SECTION("Multiple SetPeerBundle attempts after finalization all fail") {

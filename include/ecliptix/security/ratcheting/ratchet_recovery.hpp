@@ -27,12 +27,12 @@ namespace ecliptix::protocol::security {
 
         ~RatchetRecovery() = default;
 
-        Result<Unit, EcliptixProtocolFailure> StoreSkippedMessageKeys(
+        Result<Unit, ProtocolFailure> StoreSkippedMessageKeys(
             std::span<const uint8_t> current_chain_key,
             uint32_t from_index,
             uint32_t to_index);
 
-        Result<std::optional<SecureMemoryHandle>, EcliptixProtocolFailure>
+        Result<std::optional<SecureMemoryHandle>, ProtocolFailure>
         TryGetSkippedMessageKey(uint32_t message_index);
 
         bool HasSkippedMessageKey(uint32_t message_index) const;
@@ -46,11 +46,11 @@ namespace ecliptix::protocol::security {
         uint32_t GetMaxSkippedKeys() const { return max_skipped_keys_; }
 
     private:
-        static Result<SecureMemoryHandle, EcliptixProtocolFailure> DeriveMessageKey(
+        static Result<SecureMemoryHandle, ProtocolFailure> DeriveMessageKey(
             std::span<const uint8_t> chain_key,
             uint32_t message_index);
 
-        static Result<Unit, EcliptixProtocolFailure> AdvanceChainKey(
+        static Result<Unit, ProtocolFailure> AdvanceChainKey(
             std::span<uint8_t> chain_key_buffer);
 
         uint32_t max_skipped_keys_;

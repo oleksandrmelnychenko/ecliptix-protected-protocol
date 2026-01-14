@@ -1,5 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
-#include "ecliptix/protocol/connection/ecliptix_protocol_connection.hpp"
+#include "ecliptix/protocol/connection/protocol_connection.hpp"
 #include "ecliptix/crypto/aes_gcm.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/crypto/kyber_interop.hpp"
@@ -112,7 +112,7 @@ TEST_CASE("Fuzzing - Random Nonce Lengths", "[fuzzing][envelope][nonce]") {
                 random_nonce[j] = static_cast<uint8_t>(gen() & 0xFF);
             }
 
-            auto check_result = conn->CheckReplayProtection(random_nonce, i);
+            auto check_result = conn->ValidateNotReplayed(random_nonce, i);
 
             if (nonce_length == 12) {
                 if (check_result.IsOk()) {
@@ -167,7 +167,7 @@ TEST_CASE("Fuzzing - Random Payload Sizes", "[fuzzing][envelope][payload]") {
                 auto alice_dh_pub = alice->GetCurrentSenderDhPublicKey();
                 if (alice_dh_pub.IsErr() || !alice_dh_pub.Unwrap().has_value()) continue;
                 auto alice_ct = GetKyberCiphertextForSender(alice);
-                auto ratchet_result = bob->PerformReceivingRatchet(*alice_dh_pub.Unwrap(), alice_ct);
+                auto ratchet_result = bob->ExecuteReceivingRatchet(*alice_dh_pub.Unwrap(), alice_ct);
                 if (ratchet_result.IsErr()) continue;
             }
 
@@ -378,7 +378,7 @@ TEST_CASE("Fuzzing - Random Bit Flips in Ciphertext", "[fuzzing][envelope][bitfl
                 auto alice_dh_pub = alice->GetCurrentSenderDhPublicKey();
                 if (alice_dh_pub.IsErr() || !alice_dh_pub.Unwrap().has_value()) continue;
                 auto alice_ct = GetKyberCiphertextForSender(alice);
-                auto ratchet_result = bob->PerformReceivingRatchet(*alice_dh_pub.Unwrap(), alice_ct);
+                auto ratchet_result = bob->ExecuteReceivingRatchet(*alice_dh_pub.Unwrap(), alice_ct);
                 if (ratchet_result.IsErr()) continue;
             }
 
@@ -473,7 +473,7 @@ TEST_CASE("Fuzzing - Empty and Null Inputs", "[fuzzing][envelope][empty]") {
                 auto pre_alice_root = alice->DebugGetRootKey();
                 auto pre_bob_root = bob->DebugGetRootKey();
                 auto alice_ct = GetKyberCiphertextForSender(alice);
-                auto ratchet_result = bob->PerformReceivingRatchet(*alice_dh_pub.Unwrap(), alice_ct);
+                auto ratchet_result = bob->ExecuteReceivingRatchet(*alice_dh_pub.Unwrap(), alice_ct);
                 if (ratchet_result.IsErr()) break;
                 if (i >= 99 && i <= 102) {
                     auto alice_current_dh = alice->GetCurrentSenderDhPublicKey();

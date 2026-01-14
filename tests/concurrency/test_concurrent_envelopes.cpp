@@ -1,5 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
-#include "ecliptix/protocol/connection/ecliptix_protocol_connection.hpp"
+#include "ecliptix/protocol/connection/protocol_connection.hpp"
 #include "ecliptix/crypto/aes_gcm.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/utilities/envelope_builder.hpp"
@@ -349,7 +349,7 @@ TEST_CASE("Concurrency - Concurrent Replay Protection Checks", "[concurrency][en
                     nonce[10] = static_cast<uint8_t>(i & 0xFF);
                     nonce[11] = static_cast<uint8_t>((i >> 8) & 0xFF);
 
-                    auto check_result = conn->CheckReplayProtection(nonce, msg_index);
+                    auto check_result = conn->ValidateNotReplayed(nonce, msg_index);
                     if (check_result.IsOk()) {
                         replay_checks_passed.fetch_add(1);
                     } else {

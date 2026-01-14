@@ -1,46 +1,46 @@
 #include <catch2/catch_test_macros.hpp>
-#include "ecliptix/c_api/ecliptix_c_api.h"
+#include "ecliptix/c_api/epp_api.h"
 #include "common/secure_envelope.pb.h"
 #include <cstring>
 #include <vector>
 #include <string>
 
 extern "C" {
-    EcliptixErrorCode ecliptix_protocol_server_system_create(
-        EcliptixIdentityKeysHandle* identity_keys,
-        EcliptixProtocolSystemHandle** out_handle,
-        EcliptixError* out_error);
+    EppErrorCode epp_server_create(
+        EppIdentityHandle* identity_keys,
+        ProtocolSystemHandle** out_handle,
+        EppError* out_error);
 
-    EcliptixErrorCode ecliptix_protocol_server_system_begin_handshake_with_peer_kyber(
-        EcliptixProtocolSystemHandle* handle,
+    EppErrorCode epp_server_begin_handshake_with_peer_kyber(
+        ProtocolSystemHandle* handle,
         uint64_t peer_device_id,
         uint64_t peer_identity_id,
         const uint8_t* peer_kyber_public_key,
         size_t peer_kyber_public_key_length,
-        EcliptixBuffer* out_handshake_message,
-        EcliptixError* out_error);
+        EppBuffer* out_handshake_message,
+        EppError* out_error);
 
-    EcliptixErrorCode ecliptix_protocol_server_system_complete_handshake_auto(
-        EcliptixProtocolSystemHandle* handle,
+    EppErrorCode epp_server_complete_handshake_auto(
+        ProtocolSystemHandle* handle,
         const uint8_t* peer_handshake_message,
         size_t peer_handshake_message_length,
-        EcliptixError* out_error);
+        EppError* out_error);
 
-    EcliptixErrorCode ecliptix_protocol_server_system_send_message(
-        EcliptixProtocolSystemHandle* handle,
+    EppErrorCode epp_server_encrypt(
+        ProtocolSystemHandle* handle,
         const uint8_t* plaintext,
         size_t plaintext_length,
-        EcliptixBuffer* out_encrypted_envelope,
-        EcliptixError* out_error);
+        EppBuffer* out_encrypted_envelope,
+        EppError* out_error);
 
-    EcliptixErrorCode ecliptix_protocol_server_system_receive_message(
-        EcliptixProtocolSystemHandle* handle,
+    EppErrorCode epp_server_decrypt(
+        ProtocolSystemHandle* handle,
         const uint8_t* encrypted_envelope,
         size_t encrypted_envelope_length,
-        EcliptixBuffer* out_plaintext,
-        EcliptixError* out_error);
+        EppBuffer* out_plaintext,
+        EppError* out_error);
 
-    void ecliptix_protocol_server_system_destroy(EcliptixProtocolSystemHandle* handle);
+    void epp_server_destroy(ProtocolSystemHandle* handle);
 }
 
 namespace {
@@ -48,7 +48,7 @@ namespace {
     constexpr size_t KYBER_CIPHERTEXT_SIZE = 1088;
     constexpr size_t X25519_KEY_SIZE = 32;
 
-    void free_buffer_data(EcliptixBuffer* buffer) {
+    void free_buffer_data(EppBuffer* buffer) {
         if (buffer && buffer->data) {
             delete[] buffer->data;
             buffer->data = nullptr;
@@ -57,43 +57,43 @@ namespace {
     }
 
     struct IdentityKeysGuard {
-        EcliptixIdentityKeysHandle* handle = nullptr;
+        EppIdentityHandle* handle = nullptr;
         ~IdentityKeysGuard() {
-            if (handle) ecliptix_identity_keys_destroy(handle);
+            if (handle) epp_identity_destroy(handle);
         }
     };
 
     struct ClientSystemGuard {
-        EcliptixProtocolSystemHandle* handle = nullptr;
+        ProtocolSystemHandle* handle = nullptr;
         ~ClientSystemGuard() {
-            if (handle) ecliptix_protocol_system_destroy(handle);
+            if (handle) epp_session_destroy(handle);
         }
     };
 
     struct ServerSystemGuard {
-        EcliptixProtocolSystemHandle* handle = nullptr;
+        ProtocolSystemHandle* handle = nullptr;
         ~ServerSystemGuard() {
-            if (handle) ecliptix_protocol_server_system_destroy(handle);
+            if (handle) epp_server_destroy(handle);
         }
     };
 }
 
 TEST_CASE("C API Hybrid PQ - Kyber Public Key Retrieval", "[c_api][hybrid][pq][kyber]") {
-    REQUIRE(ecliptix_initialize() == ECLIPTIX_SUCCESS);
+    REQUIRE(epp_init() == EPP_SUCCESS);
 
     SECTION("Can retrieve Kyber public key from identity keys") {
         IdentityKeysGuard keys;
-        REQUIRE(ecliptix_identity_keys_create(&keys.handle, nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_identity_create(&keys.handle, nullptr) == EPP_SUCCESS);
 
         std::vector<uint8_t> kyber_pk(KYBER_PUBLIC_KEY_SIZE);
-        const auto result = ecliptix_identity_keys_get_public_kyber(
+        const auto result = epp_identity_get_kyber_public(
             keys.handle,
             kyber_pk.data(),
             kyber_pk.size(),
             nullptr
         );
 
-        REQUIRE(result == ECLIPTIX_SUCCESS);
+        REQUIRE(result == EPP_SUCCESS);
 
         bool all_zero = true;
         for (const auto& byte : kyber_pk) {
@@ -107,49 +107,49 @@ TEST_CASE("C API Hybrid PQ - Kyber Public Key Retrieval", "[c_api][hybrid][pq][k
 
     SECTION("Kyber key buffer too small returns error") {
         IdentityKeysGuard keys;
-        REQUIRE(ecliptix_identity_keys_create(&keys.handle, nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_identity_create(&keys.handle, nullptr) == EPP_SUCCESS);
 
         std::vector<uint8_t> small_buf(100);
-        EcliptixError error{};
+        EppError error{};
 
-        const auto result = ecliptix_identity_keys_get_public_kyber(
+        const auto result = epp_identity_get_kyber_public(
             keys.handle,
             small_buf.data(),
             small_buf.size(),
             &error
         );
 
-        REQUIRE(result == ECLIPTIX_ERROR_BUFFER_TOO_SMALL);
-        if (error.message) ecliptix_error_free(&error);
+        REQUIRE(result == EPP_ERROR_BUFFER_TOO_SMALL);
+        if (error.message) epp_error_free(&error);
     }
 
     SECTION("Same seed produces same Kyber key") {
         std::vector<uint8_t> seed(32, 0xCC);
 
         IdentityKeysGuard keys1;
-        REQUIRE(ecliptix_identity_keys_create_from_seed(
+        REQUIRE(epp_identity_create_from_seed(
             seed.data(), seed.size(), &keys1.handle, nullptr
-        ) == ECLIPTIX_SUCCESS);
+        ) == EPP_SUCCESS);
 
         IdentityKeysGuard keys2;
-        REQUIRE(ecliptix_identity_keys_create_from_seed(
+        REQUIRE(epp_identity_create_from_seed(
             seed.data(), seed.size(), &keys2.handle, nullptr
-        ) == ECLIPTIX_SUCCESS);
+        ) == EPP_SUCCESS);
 
         std::vector<uint8_t> kyber1(KYBER_PUBLIC_KEY_SIZE);
         std::vector<uint8_t> kyber2(KYBER_PUBLIC_KEY_SIZE);
 
-        REQUIRE(ecliptix_identity_keys_get_public_kyber(keys1.handle, kyber1.data(), kyber1.size(), nullptr) == ECLIPTIX_SUCCESS);
-        REQUIRE(ecliptix_identity_keys_get_public_kyber(keys2.handle, kyber2.data(), kyber2.size(), nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_identity_get_kyber_public(keys1.handle, kyber1.data(), kyber1.size(), nullptr) == EPP_SUCCESS);
+        REQUIRE(epp_identity_get_kyber_public(keys2.handle, kyber2.data(), kyber2.size(), nullptr) == EPP_SUCCESS);
 
         REQUIRE(std::memcmp(kyber1.data(), kyber2.data(), KYBER_PUBLIC_KEY_SIZE) == 0);
     }
 
-    ecliptix_shutdown();
+    epp_shutdown();
 }
 
 TEST_CASE("C API Hybrid PQ - Envelope Validation", "[c_api][hybrid][pq][envelope]") {
-    REQUIRE(ecliptix_initialize() == ECLIPTIX_SUCCESS);
+    REQUIRE(epp_init() == EPP_SUCCESS);
 
     std::vector<uint8_t> dh_key(X25519_KEY_SIZE, 0x01);
     std::vector<uint8_t> kyber_ct(KYBER_CIPHERTEXT_SIZE, 0x02);
@@ -160,16 +160,16 @@ TEST_CASE("C API Hybrid PQ - Envelope Validation", "[c_api][hybrid][pq][envelope
         envelope.set_ratchet_epoch(0);
         const std::string serialized = envelope.SerializeAsString();
 
-        EcliptixError error{};
-        const auto result = ecliptix_envelope_validate_hybrid_requirements(
+        EppError error{};
+        const auto result = epp_envelope_validate(
             reinterpret_cast<const uint8_t*>(serialized.data()),
             serialized.size(),
             &error
         );
 
-        REQUIRE(result == ECLIPTIX_ERROR_PQ_MISSING);
+        REQUIRE(result == EPP_ERROR_PQ_MISSING);
         REQUIRE(error.message != nullptr);
-        ecliptix_error_free(&error);
+        epp_error_free(&error);
     }
 
     SECTION("Accepts DH + Kyber envelope") {
@@ -179,13 +179,13 @@ TEST_CASE("C API Hybrid PQ - Envelope Validation", "[c_api][hybrid][pq][envelope
         envelope.set_ratchet_epoch(0);
         const std::string serialized = envelope.SerializeAsString();
 
-        const auto result = ecliptix_envelope_validate_hybrid_requirements(
+        const auto result = epp_envelope_validate(
             reinterpret_cast<const uint8_t*>(serialized.data()),
             serialized.size(),
             nullptr
         );
 
-        REQUIRE(result == ECLIPTIX_SUCCESS);
+        REQUIRE(result == EPP_SUCCESS);
     }
 
     SECTION("Rejects envelope with wrong Kyber ciphertext size") {
@@ -196,15 +196,15 @@ TEST_CASE("C API Hybrid PQ - Envelope Validation", "[c_api][hybrid][pq][envelope
         envelope.set_ratchet_epoch(0);
         const std::string serialized = envelope.SerializeAsString();
 
-        EcliptixError error{};
-        const auto result = ecliptix_envelope_validate_hybrid_requirements(
+        EppError error{};
+        const auto result = epp_envelope_validate(
             reinterpret_cast<const uint8_t*>(serialized.data()),
             serialized.size(),
             &error
         );
 
-        REQUIRE(result == ECLIPTIX_ERROR_DECODE);
-        if (error.message) ecliptix_error_free(&error);
+        REQUIRE(result == EPP_ERROR_DECODE);
+        if (error.message) epp_error_free(&error);
     }
 
     SECTION("Accepts envelope without DH key (chain message)") {
@@ -212,83 +212,83 @@ TEST_CASE("C API Hybrid PQ - Envelope Validation", "[c_api][hybrid][pq][envelope
         envelope.set_ratchet_epoch(0);
         const std::string serialized = envelope.SerializeAsString();
 
-        const auto result = ecliptix_envelope_validate_hybrid_requirements(
+        const auto result = epp_envelope_validate(
             reinterpret_cast<const uint8_t*>(serialized.data()),
             serialized.size(),
             nullptr
         );
 
-        REQUIRE(result == ECLIPTIX_SUCCESS);
+        REQUIRE(result == EPP_SUCCESS);
     }
 
-    ecliptix_shutdown();
+    epp_shutdown();
 }
 
 TEST_CASE("C API Hybrid PQ - First Message Contains Kyber", "[c_api][hybrid][pq][first-message]") {
-    REQUIRE(ecliptix_initialize() == ECLIPTIX_SUCCESS);
+    REQUIRE(epp_init() == EPP_SUCCESS);
 
     SECTION("Client's first message after handshake contains Kyber ciphertext") {
         IdentityKeysGuard client_keys;
-        REQUIRE(ecliptix_identity_keys_create(&client_keys.handle, nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_identity_create(&client_keys.handle, nullptr) == EPP_SUCCESS);
 
         IdentityKeysGuard server_keys;
-        REQUIRE(ecliptix_identity_keys_create(&server_keys.handle, nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_identity_create(&server_keys.handle, nullptr) == EPP_SUCCESS);
 
         std::vector<uint8_t> server_kyber_pk(KYBER_PUBLIC_KEY_SIZE);
-        REQUIRE(ecliptix_identity_keys_get_public_kyber(
+        REQUIRE(epp_identity_get_kyber_public(
             server_keys.handle, server_kyber_pk.data(), server_kyber_pk.size(), nullptr
-        ) == ECLIPTIX_SUCCESS);
+        ) == EPP_SUCCESS);
 
         std::vector<uint8_t> client_kyber_pk(KYBER_PUBLIC_KEY_SIZE);
-        REQUIRE(ecliptix_identity_keys_get_public_kyber(
+        REQUIRE(epp_identity_get_kyber_public(
             client_keys.handle, client_kyber_pk.data(), client_kyber_pk.size(), nullptr
-        ) == ECLIPTIX_SUCCESS);
+        ) == EPP_SUCCESS);
 
         ClientSystemGuard client_system;
-        REQUIRE(ecliptix_protocol_system_create(client_keys.handle, &client_system.handle, nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_session_create(client_keys.handle, &client_system.handle, nullptr) == EPP_SUCCESS);
 
         ServerSystemGuard server_system;
-        REQUIRE(ecliptix_protocol_server_system_create(server_keys.handle, &server_system.handle, nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_server_create(server_keys.handle, &server_system.handle, nullptr) == EPP_SUCCESS);
 
-        EcliptixBuffer client_handshake_msg{};
-        REQUIRE(ecliptix_protocol_system_begin_handshake_with_peer_kyber(
+        EppBuffer client_handshake_msg{};
+        REQUIRE(epp_session_begin_handshake(
             client_system.handle, 1, 0, server_kyber_pk.data(), server_kyber_pk.size(),
             &client_handshake_msg, nullptr
-        ) == ECLIPTIX_SUCCESS);
+        ) == EPP_SUCCESS);
 
-        EcliptixBuffer server_handshake_msg{};
-        REQUIRE(ecliptix_protocol_server_system_begin_handshake_with_peer_kyber(
+        EppBuffer server_handshake_msg{};
+        REQUIRE(epp_server_begin_handshake_with_peer_kyber(
             server_system.handle, 1, 0, client_kyber_pk.data(), client_kyber_pk.size(),
             &server_handshake_msg, nullptr
-        ) == ECLIPTIX_SUCCESS);
+        ) == EPP_SUCCESS);
 
-        REQUIRE(ecliptix_protocol_server_system_complete_handshake_auto(
+        REQUIRE(epp_server_complete_handshake_auto(
             server_system.handle, client_handshake_msg.data, client_handshake_msg.length, nullptr
-        ) == ECLIPTIX_SUCCESS);
+        ) == EPP_SUCCESS);
 
-        REQUIRE(ecliptix_protocol_system_complete_handshake_auto(
+        REQUIRE(epp_session_complete_handshake_auto(
             client_system.handle, server_handshake_msg.data, server_handshake_msg.length, nullptr
-        ) == ECLIPTIX_SUCCESS);
+        ) == EPP_SUCCESS);
 
         free_buffer_data(&client_handshake_msg);
         free_buffer_data(&server_handshake_msg);
 
         const std::string msg = "First message";
-        EcliptixBuffer envelope{};
-        REQUIRE(ecliptix_protocol_system_send_message(
+        EppBuffer envelope{};
+        REQUIRE(epp_session_encrypt(
             client_system.handle,
             reinterpret_cast<const uint8_t*>(msg.data()),
             msg.size(),
             &envelope,
             nullptr
-        ) == ECLIPTIX_SUCCESS);
+        ) == EPP_SUCCESS);
 
-        const auto validate_result = ecliptix_envelope_validate_hybrid_requirements(
+        const auto validate_result = epp_envelope_validate(
             envelope.data,
             envelope.length,
             nullptr
         );
-        REQUIRE(validate_result == ECLIPTIX_SUCCESS);
+        REQUIRE(validate_result == EPP_SUCCESS);
 
         ecliptix::proto::common::SecureEnvelope parsed_envelope;
         REQUIRE(parsed_envelope.ParseFromArray(envelope.data, static_cast<int>(envelope.length)));
@@ -301,18 +301,18 @@ TEST_CASE("C API Hybrid PQ - First Message Contains Kyber", "[c_api][hybrid][pq]
         free_buffer_data(&envelope);
     }
 
-    ecliptix_shutdown();
+    epp_shutdown();
 }
 
 TEST_CASE("C API Hybrid PQ - Reject DH-only at Receive", "[c_api][hybrid][pq][receive]") {
-    REQUIRE(ecliptix_initialize() == ECLIPTIX_SUCCESS);
+    REQUIRE(epp_init() == EPP_SUCCESS);
 
     SECTION("Receiving DH-only envelope returns PQ_MISSING error") {
         IdentityKeysGuard keys;
-        REQUIRE(ecliptix_identity_keys_create(&keys.handle, nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_identity_create(&keys.handle, nullptr) == EPP_SUCCESS);
 
         ClientSystemGuard system;
-        REQUIRE(ecliptix_protocol_system_create(keys.handle, &system.handle, nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_session_create(keys.handle, &system.handle, nullptr) == EPP_SUCCESS);
 
         ecliptix::proto::common::SecureEnvelope envelope;
         std::vector<uint8_t> dh_key(X25519_KEY_SIZE, 0x01);
@@ -320,9 +320,9 @@ TEST_CASE("C API Hybrid PQ - Reject DH-only at Receive", "[c_api][hybrid][pq][re
         envelope.set_ratchet_epoch(0);
         const std::string serialized = envelope.SerializeAsString();
 
-        EcliptixBuffer plaintext{};
-        EcliptixError error{};
-        const auto result = ecliptix_protocol_system_receive_message(
+        EppBuffer plaintext{};
+        EppError error{};
+        const auto result = epp_session_decrypt(
             system.handle,
             reinterpret_cast<const uint8_t*>(serialized.data()),
             serialized.size(),
@@ -330,27 +330,27 @@ TEST_CASE("C API Hybrid PQ - Reject DH-only at Receive", "[c_api][hybrid][pq][re
             &error
         );
 
-        REQUIRE(result == ECLIPTIX_ERROR_PQ_MISSING);
+        REQUIRE(result == EPP_ERROR_PQ_MISSING);
         REQUIRE(error.message != nullptr);
-        ecliptix_error_free(&error);
+        epp_error_free(&error);
     }
 
-    ecliptix_shutdown();
+    epp_shutdown();
 }
 
 TEST_CASE("C API Hybrid PQ - Handshake Requires Kyber", "[c_api][hybrid][pq][handshake]") {
-    REQUIRE(ecliptix_initialize() == ECLIPTIX_SUCCESS);
+    REQUIRE(epp_init() == EPP_SUCCESS);
 
     SECTION("Begin handshake with NULL Kyber key fails") {
         IdentityKeysGuard client_keys;
-        REQUIRE(ecliptix_identity_keys_create(&client_keys.handle, nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_identity_create(&client_keys.handle, nullptr) == EPP_SUCCESS);
 
         ClientSystemGuard client_system;
-        REQUIRE(ecliptix_protocol_system_create(client_keys.handle, &client_system.handle, nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_session_create(client_keys.handle, &client_system.handle, nullptr) == EPP_SUCCESS);
 
-        EcliptixBuffer handshake_msg{};
-        EcliptixError error{};
-        const auto result = ecliptix_protocol_system_begin_handshake_with_peer_kyber(
+        EppBuffer handshake_msg{};
+        EppError error{};
+        const auto result = epp_session_begin_handshake(
             client_system.handle,
             1, 0,
             nullptr,
@@ -359,21 +359,21 @@ TEST_CASE("C API Hybrid PQ - Handshake Requires Kyber", "[c_api][hybrid][pq][han
             &error
         );
 
-        REQUIRE(result == ECLIPTIX_ERROR_NULL_POINTER);
-        if (error.message) ecliptix_error_free(&error);
+        REQUIRE(result == EPP_ERROR_NULL_POINTER);
+        if (error.message) epp_error_free(&error);
     }
 
     SECTION("Begin handshake with wrong Kyber key size fails") {
         IdentityKeysGuard client_keys;
-        REQUIRE(ecliptix_identity_keys_create(&client_keys.handle, nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_identity_create(&client_keys.handle, nullptr) == EPP_SUCCESS);
 
         ClientSystemGuard client_system;
-        REQUIRE(ecliptix_protocol_system_create(client_keys.handle, &client_system.handle, nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_session_create(client_keys.handle, &client_system.handle, nullptr) == EPP_SUCCESS);
 
         std::vector<uint8_t> short_key(100, 0xAA);
-        EcliptixBuffer handshake_msg{};
-        EcliptixError error{};
-        const auto result = ecliptix_protocol_system_begin_handshake_with_peer_kyber(
+        EppBuffer handshake_msg{};
+        EppError error{};
+        const auto result = epp_session_begin_handshake(
             client_system.handle,
             1, 0,
             short_key.data(),
@@ -382,27 +382,27 @@ TEST_CASE("C API Hybrid PQ - Handshake Requires Kyber", "[c_api][hybrid][pq][han
             &error
         );
 
-        REQUIRE(result == ECLIPTIX_ERROR_INVALID_INPUT);
-        if (error.message) ecliptix_error_free(&error);
+        REQUIRE(result == EPP_ERROR_INVALID_INPUT);
+        if (error.message) epp_error_free(&error);
     }
 
-    ecliptix_shutdown();
+    epp_shutdown();
 }
 
 TEST_CASE("C API Hybrid PQ - Manual Kyber Secrets Setup", "[c_api][hybrid][pq][manual]") {
-    REQUIRE(ecliptix_initialize() == ECLIPTIX_SUCCESS);
+    REQUIRE(epp_init() == EPP_SUCCESS);
 
     SECTION("Can set Kyber secrets manually") {
         IdentityKeysGuard keys;
-        REQUIRE(ecliptix_identity_keys_create(&keys.handle, nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_identity_create(&keys.handle, nullptr) == EPP_SUCCESS);
 
         ClientSystemGuard system;
-        REQUIRE(ecliptix_protocol_system_create(keys.handle, &system.handle, nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_session_create(keys.handle, &system.handle, nullptr) == EPP_SUCCESS);
 
         std::vector<uint8_t> kyber_ct(KYBER_CIPHERTEXT_SIZE, 0xAA);
         std::vector<uint8_t> kyber_ss(32, 0xBB);
 
-        const auto result = ecliptix_protocol_system_set_kyber_secrets(
+        const auto result = epp_session_set_kyber_secrets(
             system.handle,
             kyber_ct.data(),
             kyber_ct.size(),
@@ -416,15 +416,15 @@ TEST_CASE("C API Hybrid PQ - Manual Kyber Secrets Setup", "[c_api][hybrid][pq][m
 
     SECTION("Set Kyber secrets with NULL ciphertext fails") {
         IdentityKeysGuard keys;
-        REQUIRE(ecliptix_identity_keys_create(&keys.handle, nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_identity_create(&keys.handle, nullptr) == EPP_SUCCESS);
 
         ClientSystemGuard system;
-        REQUIRE(ecliptix_protocol_system_create(keys.handle, &system.handle, nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_session_create(keys.handle, &system.handle, nullptr) == EPP_SUCCESS);
 
         std::vector<uint8_t> kyber_ss(32, 0xBB);
-        EcliptixError error{};
+        EppError error{};
 
-        const auto result = ecliptix_protocol_system_set_kyber_secrets(
+        const auto result = epp_session_set_kyber_secrets(
             system.handle,
             nullptr,
             KYBER_CIPHERTEXT_SIZE,
@@ -433,21 +433,21 @@ TEST_CASE("C API Hybrid PQ - Manual Kyber Secrets Setup", "[c_api][hybrid][pq][m
             &error
         );
 
-        REQUIRE(result == ECLIPTIX_ERROR_NULL_POINTER);
-        if (error.message) ecliptix_error_free(&error);
+        REQUIRE(result == EPP_ERROR_NULL_POINTER);
+        if (error.message) epp_error_free(&error);
     }
 
     SECTION("Set Kyber secrets with NULL shared secret fails") {
         IdentityKeysGuard keys;
-        REQUIRE(ecliptix_identity_keys_create(&keys.handle, nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_identity_create(&keys.handle, nullptr) == EPP_SUCCESS);
 
         ClientSystemGuard system;
-        REQUIRE(ecliptix_protocol_system_create(keys.handle, &system.handle, nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_session_create(keys.handle, &system.handle, nullptr) == EPP_SUCCESS);
 
         std::vector<uint8_t> kyber_ct(KYBER_CIPHERTEXT_SIZE, 0xAA);
-        EcliptixError error{};
+        EppError error{};
 
-        const auto result = ecliptix_protocol_system_set_kyber_secrets(
+        const auto result = epp_session_set_kyber_secrets(
             system.handle,
             kyber_ct.data(),
             kyber_ct.size(),
@@ -456,9 +456,9 @@ TEST_CASE("C API Hybrid PQ - Manual Kyber Secrets Setup", "[c_api][hybrid][pq][m
             &error
         );
 
-        REQUIRE(result == ECLIPTIX_ERROR_NULL_POINTER);
-        if (error.message) ecliptix_error_free(&error);
+        REQUIRE(result == EPP_ERROR_NULL_POINTER);
+        if (error.message) epp_error_free(&error);
     }
 
-    ecliptix_shutdown();
+    epp_shutdown();
 }

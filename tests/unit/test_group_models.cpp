@@ -7,7 +7,7 @@ using namespace ecliptix::protocol::group;
 
 TEST_CASE("GroupMember FromProto enforces sizes", "[group][security]") {
     ecliptix::proto::group::GroupMember proto_msg;
-    proto_msg.set_member_id(std::string(8, 'a'));     // too short
+    proto_msg.set_member_id(std::string(8, 'a'));
     proto_msg.set_account_id(std::string(16, 'b'));
     proto_msg.set_app_instance_id(std::string(16, 'c'));
     proto_msg.set_device_id(std::string(16, 'd'));
@@ -26,7 +26,7 @@ TEST_CASE("GroupMember FromProto enforces sizes", "[group][security]") {
 
 TEST_CASE("GroupMetadata FromProto enforces bounds", "[group][security]") {
     ecliptix::proto::group::GroupMetadata proto_msg;
-    proto_msg.set_group_id(std::string(4, 'g')); // too short
+    proto_msg.set_group_id(std::string(4, 'g'));
     proto_msg.set_group_name("x");
     proto_msg.set_creator_id(std::string(16, 'c'));
     proto_msg.set_version(1);

@@ -1,5 +1,5 @@
 #pragma once
-#include "ecliptix/models/keys/one_time_pre_key_record.hpp"
+#include "ecliptix/models/keys/one_time_pre_key_public.hpp"
 #include <vector>
 #include <cstdint>
 #include <optional>
@@ -12,7 +12,7 @@ public:
         uint32_t signed_pre_key_id,
         std::vector<uint8_t> signed_pre_key_public,
         std::vector<uint8_t> signed_pre_key_signature,
-        std::vector<OneTimePreKeyRecord> one_time_pre_keys,
+        std::vector<OneTimePreKeyPublic> one_time_pre_keys,
         std::optional<std::vector<uint8_t>> ephemeral_x25519_public = std::nullopt,
         std::optional<std::vector<uint8_t>> kyber_public_key = std::nullopt,
         std::optional<std::vector<uint8_t>> kyber_ciphertext = std::nullopt,
@@ -43,7 +43,7 @@ public:
     [[nodiscard]] const std::vector<uint8_t>& GetSignedPreKeySignature() const noexcept {
         return signed_pre_key_signature_;
     }
-    [[nodiscard]] const std::vector<OneTimePreKeyRecord>& GetOneTimePreKeys() const noexcept {
+    [[nodiscard]] const std::vector<OneTimePreKeyPublic>& GetOneTimePreKeys() const noexcept {
         return one_time_pre_keys_;
     }
     [[nodiscard]] size_t GetOneTimePreKeyCount() const noexcept {
@@ -85,7 +85,7 @@ private:
     uint32_t signed_pre_key_id_;
     std::vector<uint8_t> signed_pre_key_public_;
     std::vector<uint8_t> signed_pre_key_signature_;
-    std::vector<OneTimePreKeyRecord> one_time_pre_keys_;
+    std::vector<OneTimePreKeyPublic> one_time_pre_keys_;
     std::optional<std::vector<uint8_t>> ephemeral_x25519_public_;
     std::optional<std::vector<uint8_t>> kyber_public_key_;
     std::optional<std::vector<uint8_t>> kyber_ciphertext_;

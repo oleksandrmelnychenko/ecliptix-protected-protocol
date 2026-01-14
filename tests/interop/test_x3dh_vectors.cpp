@@ -1,5 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
-#include "ecliptix/identity/ecliptix_system_identity_keys.hpp"
+#include "ecliptix/identity/identity_keys.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/core/constants.hpp"
 #include "ecliptix/models/bundles/local_public_key_bundle.hpp"
@@ -173,11 +173,11 @@ TEST_CASE("X3DH Test Vectors - Basic Key Agreement", "[x3dh][interop][vectors]")
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Generate keys and perform X3DH") {
-        auto alice_keys_result = EcliptixSystemIdentityKeys::Create(5);
+        auto alice_keys_result = IdentityKeys::Create(5);
         REQUIRE(alice_keys_result.IsOk());
         auto alice_keys = std::move(alice_keys_result).Unwrap();
 
-        auto bob_keys_result = EcliptixSystemIdentityKeys::Create(5);
+        auto bob_keys_result = IdentityKeys::Create(5);
         REQUIRE(bob_keys_result.IsOk());
         auto bob_keys = std::move(bob_keys_result).Unwrap();
 
@@ -260,7 +260,7 @@ TEST_CASE("X3DH Test Vectors - Signed PreKey Verification", "[x3dh][interop][vec
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Valid signature verification succeeds") {
-        auto bob_keys_result = EcliptixSystemIdentityKeys::Create(1);
+        auto bob_keys_result = IdentityKeys::Create(1);
         REQUIRE(bob_keys_result.IsOk());
         auto bob_keys = std::move(bob_keys_result).Unwrap();
 
@@ -268,7 +268,7 @@ TEST_CASE("X3DH Test Vectors - Signed PreKey Verification", "[x3dh][interop][vec
         REQUIRE(bob_bundle_result.IsOk());
         auto bob_bundle = std::move(bob_bundle_result).Unwrap();
 
-        auto verify_result = EcliptixSystemIdentityKeys::VerifyRemoteSpkSignature(
+        auto verify_result = IdentityKeys::VerifyRemoteSpkSignature(
             bob_bundle.GetEd25519Public(),
             bob_bundle.GetSignedPreKeyPublic(),
             bob_bundle.GetSignedPreKeySignature()
@@ -278,7 +278,7 @@ TEST_CASE("X3DH Test Vectors - Signed PreKey Verification", "[x3dh][interop][vec
     }
 
     SECTION("Invalid signature verification fails") {
-        auto bob_keys_result = EcliptixSystemIdentityKeys::Create(1);
+        auto bob_keys_result = IdentityKeys::Create(1);
         REQUIRE(bob_keys_result.IsOk());
         auto bob_keys = std::move(bob_keys_result).Unwrap();
 
@@ -289,7 +289,7 @@ TEST_CASE("X3DH Test Vectors - Signed PreKey Verification", "[x3dh][interop][vec
         std::vector<uint8_t> corrupted_signature = bob_bundle.GetSignedPreKeySignature();
         corrupted_signature[0] ^= 0x01;
 
-        auto verify_result = EcliptixSystemIdentityKeys::VerifyRemoteSpkSignature(
+        auto verify_result = IdentityKeys::VerifyRemoteSpkSignature(
             bob_bundle.GetEd25519Public(),
             bob_bundle.GetSignedPreKeyPublic(),
             corrupted_signature
@@ -298,11 +298,11 @@ TEST_CASE("X3DH Test Vectors - Signed PreKey Verification", "[x3dh][interop][vec
     }
 
     SECTION("Wrong identity key verification fails") {
-        auto bob_keys_result = EcliptixSystemIdentityKeys::Create(1);
+        auto bob_keys_result = IdentityKeys::Create(1);
         REQUIRE(bob_keys_result.IsOk());
         auto bob_keys = std::move(bob_keys_result).Unwrap();
 
-        auto attacker_keys_result = EcliptixSystemIdentityKeys::Create(1);
+        auto attacker_keys_result = IdentityKeys::Create(1);
         REQUIRE(attacker_keys_result.IsOk());
         auto attacker_keys = std::move(attacker_keys_result).Unwrap();
 
@@ -312,7 +312,7 @@ TEST_CASE("X3DH Test Vectors - Signed PreKey Verification", "[x3dh][interop][vec
 
         auto attacker_identity = attacker_keys.GetIdentityEd25519PublicKeyCopy();
 
-        auto verify_result = EcliptixSystemIdentityKeys::VerifyRemoteSpkSignature(
+        auto verify_result = IdentityKeys::VerifyRemoteSpkSignature(
             attacker_identity,
             bob_bundle.GetSignedPreKeyPublic(),
             bob_bundle.GetSignedPreKeySignature()
@@ -324,12 +324,12 @@ TEST_CASE("X3DH Test Vectors - Signed PreKey Verification", "[x3dh][interop][vec
 TEST_CASE("X3DH rejects tampered SPK signature during handshake", "[x3dh][security][signature]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
-    auto alice_keys_result = EcliptixSystemIdentityKeys::Create(1);
+    auto alice_keys_result = IdentityKeys::Create(1);
     REQUIRE(alice_keys_result.IsOk());
     auto alice_keys = std::move(alice_keys_result).Unwrap();
     alice_keys.GenerateEphemeralKeyPair();
 
-    auto bob_keys_result = EcliptixSystemIdentityKeys::Create(1);
+    auto bob_keys_result = IdentityKeys::Create(1);
     REQUIRE(bob_keys_result.IsOk());
     auto bob_keys = std::move(bob_keys_result).Unwrap();
 
@@ -362,12 +362,12 @@ TEST_CASE("X3DH Test Vectors - One-Time PreKey Consumption", "[x3dh][interop][ve
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("X3DH with one-time prekey") {
-        auto alice_keys_result = EcliptixSystemIdentityKeys::Create(0);
+        auto alice_keys_result = IdentityKeys::Create(0);
         REQUIRE(alice_keys_result.IsOk());
         auto alice_keys = std::move(alice_keys_result).Unwrap();
         alice_keys.GenerateEphemeralKeyPair();
 
-        auto bob_keys_result = EcliptixSystemIdentityKeys::Create(10);
+        auto bob_keys_result = IdentityKeys::Create(10);
         REQUIRE(bob_keys_result.IsOk());
         auto bob_keys = std::move(bob_keys_result).Unwrap();
 
@@ -384,12 +384,12 @@ TEST_CASE("X3DH Test Vectors - One-Time PreKey Consumption", "[x3dh][interop][ve
     }
 
     SECTION("X3DH without one-time prekey fallback") {
-        auto alice_keys_result = EcliptixSystemIdentityKeys::Create(0);
+        auto alice_keys_result = IdentityKeys::Create(0);
         REQUIRE(alice_keys_result.IsOk());
         auto alice_keys = std::move(alice_keys_result).Unwrap();
         alice_keys.GenerateEphemeralKeyPair();
 
-        auto bob_keys_result = EcliptixSystemIdentityKeys::Create(0);
+        auto bob_keys_result = IdentityKeys::Create(0);
         REQUIRE(bob_keys_result.IsOk());
         auto bob_keys = std::move(bob_keys_result).Unwrap();
 
@@ -408,12 +408,12 @@ TEST_CASE("X3DH Test Vectors - One-Time PreKey Consumption", "[x3dh][interop][ve
 TEST_CASE("X3DH Explicit OPK Selection Consumes Key", "[x3dh][opk][consume]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
-    auto alice_result = EcliptixSystemIdentityKeys::Create(3);
+    auto alice_result = IdentityKeys::Create(3);
     REQUIRE(alice_result.IsOk());
     auto alice = std::move(alice_result).Unwrap();
     alice.GenerateEphemeralKeyPair();
 
-    auto bob_result = EcliptixSystemIdentityKeys::Create(3);
+    auto bob_result = IdentityKeys::Create(3);
     REQUIRE(bob_result.IsOk());
     auto bob = std::move(bob_result).Unwrap();
     bob.GenerateEphemeralKeyPair();
@@ -476,7 +476,7 @@ TEST_CASE("X3DH Explicit OPK Selection Consumes Key", "[x3dh][opk][consume]") {
     const bool opk_still_present = std::any_of(
         bob_bundle_after.GetOneTimePreKeys().begin(),
         bob_bundle_after.GetOneTimePreKeys().end(),
-        [opk_id](const OneTimePreKeyRecord &opk) {
+        [opk_id](const OneTimePreKeyPublic &opk) {
             return opk.GetPreKeyId() == opk_id;
         });
     REQUIRE_FALSE(opk_still_present);
@@ -487,13 +487,13 @@ TEST_CASE("X3DH Test Vectors - Ephemeral Key Management", "[x3dh][interop][vecto
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Multiple ephemeral key generations") {
-        auto alice_keys_result = EcliptixSystemIdentityKeys::Create(1);
+        auto alice_keys_result = IdentityKeys::Create(1);
         REQUIRE(alice_keys_result.IsOk());
         auto alice_keys = std::move(alice_keys_result).Unwrap();
 
         alice_keys.GenerateEphemeralKeyPair();
 
-        auto bob_keys_result = EcliptixSystemIdentityKeys::Create(1);
+        auto bob_keys_result = IdentityKeys::Create(1);
         REQUIRE(bob_keys_result.IsOk());
         auto bob_keys = std::move(bob_keys_result).Unwrap();
 
@@ -533,12 +533,12 @@ TEST_CASE("X3DH Test Vectors - Info String Validation", "[x3dh][interop][vectors
     }
 
     SECTION("Custom info strings") {
-        auto alice_keys_result = EcliptixSystemIdentityKeys::Create(0);
+        auto alice_keys_result = IdentityKeys::Create(0);
         REQUIRE(alice_keys_result.IsOk());
         auto alice_keys = std::move(alice_keys_result).Unwrap();
         alice_keys.GenerateEphemeralKeyPair();
 
-        auto bob_keys_result = EcliptixSystemIdentityKeys::Create(1);
+        auto bob_keys_result = IdentityKeys::Create(1);
         REQUIRE(bob_keys_result.IsOk());
         auto bob_keys = std::move(bob_keys_result).Unwrap();
 
@@ -558,7 +558,7 @@ TEST_CASE("X3DH Test Vectors - Key Length Validation", "[x3dh][interop][vectors]
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("All generated keys have correct sizes") {
-        auto keys_result = EcliptixSystemIdentityKeys::Create(5);
+        auto keys_result = IdentityKeys::Create(5);
         REQUIRE(keys_result.IsOk());
         auto keys = std::move(keys_result).Unwrap();
 
@@ -582,12 +582,12 @@ TEST_CASE("X3DH Test Vectors - Cross-Session Consistency", "[x3dh][interop][vect
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Ephemeral key properly consumed") {
-        auto alice_keys_result = EcliptixSystemIdentityKeys::Create(0);
+        auto alice_keys_result = IdentityKeys::Create(0);
         REQUIRE(alice_keys_result.IsOk());
         auto alice_keys = std::move(alice_keys_result).Unwrap();
         alice_keys.GenerateEphemeralKeyPair();
 
-        auto bob_keys_result = EcliptixSystemIdentityKeys::Create(1);
+        auto bob_keys_result = IdentityKeys::Create(1);
         REQUIRE(bob_keys_result.IsOk());
         auto bob_keys = std::move(bob_keys_result).Unwrap();
 

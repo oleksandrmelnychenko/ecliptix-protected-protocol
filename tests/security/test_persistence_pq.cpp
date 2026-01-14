@@ -1,15 +1,15 @@
 #include <catch2/catch_test_macros.hpp>
-#include "ecliptix/protocol/connection/ecliptix_protocol_connection.hpp"
+#include "ecliptix/protocol/connection/protocol_connection.hpp"
 #include "protocol/protocol_state.pb.h"
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/configuration/ratchet_config.hpp"
-#include "ecliptix/enums/pub_key_exchange_type.hpp"
+#include "ecliptix/enums/key_exchange_type.hpp"
 #include "helpers/hybrid_handshake.hpp"
 
-using ecliptix::protocol::connection::EcliptixProtocolConnection;
+using ecliptix::protocol::connection::ProtocolConnection;
 using ecliptix::protocol::configuration::RatchetConfig;
 using ecliptix::protocol::crypto::SodiumInterop;
-using ecliptix::protocol::enums::PubKeyExchangeType;
+using ecliptix::protocol::enums::KeyExchangeType;
 using ecliptix::protocol::Constants;
 using namespace ecliptix::protocol::test_helpers;
 
@@ -32,11 +32,11 @@ TEST_CASE("Persisted state rejects tampered Kyber artifacts", "[persistence][pq]
         auto ct = tampered.kyber_ciphertext();
         ct[0] ^= 0x01;
         tampered.set_kyber_ciphertext(ct);
-        auto restore = EcliptixProtocolConnection::FromProtoState(
+        auto restore = ProtocolConnection::FromProtoState(
             1001,
             tampered,
             ratchet_config,
-            PubKeyExchangeType::X3DH);
+            KeyExchangeType::X3DH);
         REQUIRE(restore.IsErr());
     }
 
@@ -45,22 +45,22 @@ TEST_CASE("Persisted state rejects tampered Kyber artifacts", "[persistence][pq]
         auto peer_pk_str = tampered.peer_kyber_public_key();
         peer_pk_str.resize(peer_pk_str.size() - 1);
         tampered.set_peer_kyber_public_key(peer_pk_str);
-        auto restore = EcliptixProtocolConnection::FromProtoState(
+        auto restore = ProtocolConnection::FromProtoState(
             1001,
             tampered,
             ratchet_config,
-            PubKeyExchangeType::X3DH);
+            KeyExchangeType::X3DH);
         REQUIRE(restore.IsErr());
     }
 
     SECTION("tampered Kyber secret key nonce fails MAC/invariant checks") {
         auto tampered = state;
         tampered.set_kyber_secret_key_nonce("short");
-        auto restore = EcliptixProtocolConnection::FromProtoState(
+        auto restore = ProtocolConnection::FromProtoState(
             1001,
             tampered,
             ratchet_config,
-            PubKeyExchangeType::X3DH);
+            KeyExchangeType::X3DH);
         REQUIRE(restore.IsErr());
     }
 
@@ -69,11 +69,11 @@ TEST_CASE("Persisted state rejects tampered Kyber artifacts", "[persistence][pq]
         auto sealed = tampered.kyber_secret_key();
         sealed[0] ^= 0x42;
         tampered.set_kyber_secret_key(sealed);
-        auto restore = EcliptixProtocolConnection::FromProtoState(
+        auto restore = ProtocolConnection::FromProtoState(
             1001,
             tampered,
             ratchet_config,
-            PubKeyExchangeType::X3DH);
+            KeyExchangeType::X3DH);
         REQUIRE(restore.IsErr());
     }
 
@@ -82,11 +82,11 @@ TEST_CASE("Persisted state rejects tampered Kyber artifacts", "[persistence][pq]
         auto nonce = tampered.kyber_secret_key_nonce();
         nonce[0] ^= 0x7E;
         tampered.set_kyber_secret_key_nonce(nonce);
-        auto restore = EcliptixProtocolConnection::FromProtoState(
+        auto restore = ProtocolConnection::FromProtoState(
             1001,
             tampered,
             ratchet_config,
-            PubKeyExchangeType::X3DH);
+            KeyExchangeType::X3DH);
         REQUIRE(restore.IsErr());
     }
 }

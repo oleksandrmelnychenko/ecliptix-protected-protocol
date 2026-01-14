@@ -1,18 +1,18 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_vector.hpp>
-#include "ecliptix/protocol/chain_step/ecliptix_protocol_chain_step.hpp"
+#include "ecliptix/protocol/chain_step/chain_step.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/core/constants.hpp"
 using namespace ecliptix::protocol;
 using namespace ecliptix::protocol::chain_step;
 using namespace ecliptix::protocol::crypto;
 using namespace ecliptix::protocol::enums;
-TEST_CASE("EcliptixProtocolChainStep - Basic creation and initialization", "[chain_step]") {
+TEST_CASE("ChainStep - Basic creation and initialization", "[chain_step]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Create SENDER chain with valid chain key") {
         std::vector<uint8_t> chain_key(Constants::X_25519_KEY_SIZE, 0x42);
-        auto result = EcliptixProtocolChainStep::Create(
-            ChainStepType::SENDER,
+        auto result = ChainStep::Create(
+            ChainStepType::Sender,
             chain_key,
             std::nullopt,
             std::nullopt
@@ -25,8 +25,8 @@ TEST_CASE("EcliptixProtocolChainStep - Basic creation and initialization", "[cha
     }
     SECTION("Create RECEIVER chain with valid chain key") {
         std::vector<uint8_t> chain_key(Constants::X_25519_KEY_SIZE, 0x43);
-        auto result = EcliptixProtocolChainStep::Create(
-            ChainStepType::RECEIVER,
+        auto result = ChainStep::Create(
+            ChainStepType::Receiver,
             chain_key,
             std::nullopt,
             std::nullopt
@@ -39,8 +39,8 @@ TEST_CASE("EcliptixProtocolChainStep - Basic creation and initialization", "[cha
     }
     SECTION("Reject invalid chain key size") {
         std::vector<uint8_t> invalid_key(16, 0x44); 
-        auto result = EcliptixProtocolChainStep::Create(
-            ChainStepType::SENDER,
+        auto result = ChainStep::Create(
+            ChainStepType::Sender,
             invalid_key,
             std::nullopt,
             std::nullopt
@@ -51,8 +51,8 @@ TEST_CASE("EcliptixProtocolChainStep - Basic creation and initialization", "[cha
         std::vector<uint8_t> chain_key(Constants::X_25519_KEY_SIZE, 0x45);
         std::vector<uint8_t> dh_private(Constants::X_25519_PRIVATE_KEY_SIZE, 0x46);
         std::vector<uint8_t> dh_public(Constants::X_25519_PUBLIC_KEY_SIZE, 0x47);
-        auto result = EcliptixProtocolChainStep::Create(
-            ChainStepType::SENDER,
+        auto result = ChainStep::Create(
+            ChainStepType::Sender,
             chain_key,
             dh_private,
             dh_public
@@ -66,11 +66,11 @@ TEST_CASE("EcliptixProtocolChainStep - Basic creation and initialization", "[cha
         REQUIRE(pk_opt->size() == Constants::X_25519_PUBLIC_KEY_SIZE);
     }
 }
-TEST_CASE("EcliptixProtocolChainStep - Symmetric ratchet (sequential messages)", "[chain_step]") {
+TEST_CASE("ChainStep - Symmetric ratchet (sequential messages)", "[chain_step]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     std::vector<uint8_t> initial_chain_key(Constants::X_25519_KEY_SIZE, 0x50);
-    auto result = EcliptixProtocolChainStep::Create(
-        ChainStepType::SENDER,
+    auto result = ChainStep::Create(
+        ChainStepType::Sender,
         initial_chain_key,
         std::nullopt,
         std::nullopt
@@ -83,9 +83,9 @@ TEST_CASE("EcliptixProtocolChainStep - Symmetric ratchet (sequential messages)",
         auto key = key_result.Unwrap();
         REQUIRE(key.Index() == 0);
         auto operation_result = key.WithKeyMaterial<std::vector<uint8_t>>(
-            [](std::span<const uint8_t> key_bytes) -> Result<std::vector<uint8_t>, EcliptixProtocolFailure> {
+            [](std::span<const uint8_t> key_bytes) -> Result<std::vector<uint8_t>, ProtocolFailure> {
                 REQUIRE(key_bytes.size() == Constants::X_25519_KEY_SIZE);
-                return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Ok(
+                return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(
                     std::vector<uint8_t>(key_bytes.begin(), key_bytes.end())
                 );
             }
@@ -104,8 +104,8 @@ TEST_CASE("EcliptixProtocolChainStep - Symmetric ratchet (sequential messages)",
             REQUIRE(key_result.IsOk());
             auto key = key_result.Unwrap();
             auto bytes_result = key.WithKeyMaterial<std::vector<uint8_t>>(
-                [](std::span<const uint8_t> key_bytes) -> Result<std::vector<uint8_t>, EcliptixProtocolFailure> {
-                    return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Ok(
+                [](std::span<const uint8_t> key_bytes) -> Result<std::vector<uint8_t>, ProtocolFailure> {
+                    return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(
                         std::vector<uint8_t>(key_bytes.begin(), key_bytes.end())
                     );
                 }
@@ -121,11 +121,11 @@ TEST_CASE("EcliptixProtocolChainStep - Symmetric ratchet (sequential messages)",
         REQUIRE(index_result.Unwrap() == 3);
     }
 }
-TEST_CASE("EcliptixProtocolChainStep - Out-of-order message support", "[chain_step]") {
+TEST_CASE("ChainStep - Out-of-order message support", "[chain_step]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     std::vector<uint8_t> initial_chain_key(Constants::X_25519_KEY_SIZE, 0x60);
-    auto result = EcliptixProtocolChainStep::Create(
-        ChainStepType::RECEIVER,
+    auto result = ChainStep::Create(
+        ChainStepType::Receiver,
         initial_chain_key,
         std::nullopt,
         std::nullopt
@@ -142,9 +142,9 @@ TEST_CASE("EcliptixProtocolChainStep - Out-of-order message support", "[chain_st
         REQUIRE(key2_result.IsOk());
         auto key2 = key2_result.Unwrap();
         auto use2_result = key2.WithKeyMaterial<Unit>(
-            [](std::span<const uint8_t> bytes) -> Result<Unit, EcliptixProtocolFailure> {
+            [](std::span<const uint8_t> bytes) -> Result<Unit, ProtocolFailure> {
                 REQUIRE(bytes.size() == Constants::X_25519_KEY_SIZE);
-                return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+                return Result<Unit, ProtocolFailure>::Ok(Unit{});
             }
         );
         REQUIRE(use2_result.IsOk());
@@ -167,13 +167,13 @@ TEST_CASE("EcliptixProtocolChainStep - Out-of-order message support", "[chain_st
         REQUIRE(index_result.Unwrap() == 0);
     }
 }
-TEST_CASE("EcliptixProtocolChainStep - DH ratchet integration", "[chain_step]") {
+TEST_CASE("ChainStep - DH ratchet integration", "[chain_step]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     std::vector<uint8_t> initial_chain_key(Constants::X_25519_KEY_SIZE, 0x70);
     std::vector<uint8_t> initial_dh_private(Constants::X_25519_PRIVATE_KEY_SIZE, 0x71);
     std::vector<uint8_t> initial_dh_public(Constants::X_25519_PUBLIC_KEY_SIZE, 0x72);
-    auto result = EcliptixProtocolChainStep::Create(
-        ChainStepType::SENDER,
+    auto result = ChainStep::Create(
+        ChainStepType::Sender,
         initial_chain_key,
         initial_dh_private,
         initial_dh_public
@@ -184,13 +184,13 @@ TEST_CASE("EcliptixProtocolChainStep - DH ratchet integration", "[chain_step]") 
         auto key0_result = chain_step.GetOrDeriveKeyFor(0);
         REQUIRE(key0_result.IsOk());
         auto use0 = key0_result.Unwrap().WithKeyMaterial<Unit>(
-            [](std::span<const uint8_t>) { return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{}); }
+            [](std::span<const uint8_t>) { return Result<Unit, ProtocolFailure>::Ok(Unit{}); }
         );
         REQUIRE(use0.IsOk());
         auto key1_result = chain_step.GetOrDeriveKeyFor(1);
         REQUIRE(key1_result.IsOk());
         auto use1 = key1_result.Unwrap().WithKeyMaterial<Unit>(
-            [](std::span<const uint8_t>) { return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{}); }
+            [](std::span<const uint8_t>) { return Result<Unit, ProtocolFailure>::Ok(Unit{}); }
         );
         REQUIRE(use1.IsOk());
         auto index_before = chain_step.GetCurrentIndex();
@@ -229,11 +229,11 @@ TEST_CASE("EcliptixProtocolChainStep - DH ratchet integration", "[chain_step]") 
         REQUIRE(*pk_opt == initial_dh_public);
     }
 }
-TEST_CASE("EcliptixProtocolChainStep - Index management", "[chain_step]") {
+TEST_CASE("ChainStep - Index management", "[chain_step]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     std::vector<uint8_t> chain_key(Constants::X_25519_KEY_SIZE, 0xA0);
-    auto result = EcliptixProtocolChainStep::Create(
-        ChainStepType::SENDER,
+    auto result = ChainStep::Create(
+        ChainStepType::Sender,
         chain_key,
         std::nullopt,
         std::nullopt
@@ -251,11 +251,11 @@ TEST_CASE("EcliptixProtocolChainStep - Index management", "[chain_step]") {
         REQUIRE(get_result2.Unwrap() == 42);
     }
 }
-TEST_CASE("EcliptixProtocolChainStep - Chain key access", "[chain_step]") {
+TEST_CASE("ChainStep - Chain key access", "[chain_step]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     std::vector<uint8_t> chain_key(Constants::X_25519_KEY_SIZE, 0xB0);
-    auto result = EcliptixProtocolChainStep::Create(
-        ChainStepType::SENDER,
+    auto result = ChainStep::Create(
+        ChainStepType::Sender,
         chain_key,
         std::nullopt,
         std::nullopt
@@ -270,14 +270,14 @@ TEST_CASE("EcliptixProtocolChainStep - Chain key access", "[chain_step]") {
         SodiumInterop::SecureWipe(std::span<uint8_t>(key_bytes));
     }
 }
-TEST_CASE("EcliptixProtocolChainStep - DH key handle access", "[chain_step]") {
+TEST_CASE("ChainStep - DH key handle access", "[chain_step]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     std::vector<uint8_t> chain_key(Constants::X_25519_KEY_SIZE, 0xC0);
     std::vector<uint8_t> dh_private(Constants::X_25519_PRIVATE_KEY_SIZE, 0xC1);
     std::vector<uint8_t> dh_public(Constants::X_25519_PUBLIC_KEY_SIZE, 0xC2);
     SECTION("SENDER has DH private key handle") {
-        auto result = EcliptixProtocolChainStep::Create(
-            ChainStepType::SENDER,
+        auto result = ChainStep::Create(
+            ChainStepType::Sender,
             chain_key,
             dh_private,
             dh_public
@@ -289,8 +289,8 @@ TEST_CASE("EcliptixProtocolChainStep - DH key handle access", "[chain_step]") {
         REQUIRE(*handle_opt != nullptr);
     }
     SECTION("RECEIVER without DH private key has no handle") {
-        auto result = EcliptixProtocolChainStep::Create(
-            ChainStepType::RECEIVER,
+        auto result = ChainStep::Create(
+            ChainStepType::Receiver,
             chain_key,
             std::nullopt,
             dh_public
@@ -301,11 +301,11 @@ TEST_CASE("EcliptixProtocolChainStep - DH key handle access", "[chain_step]") {
         REQUIRE_FALSE(handle_opt.has_value());
     }
 }
-TEST_CASE("EcliptixProtocolChainStep - IKeyProvider interface", "[chain_step]") {
+TEST_CASE("ChainStep - IKeyProvider interface", "[chain_step]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     std::vector<uint8_t> chain_key(Constants::X_25519_KEY_SIZE, 0xD0);
-    auto result = EcliptixProtocolChainStep::Create(
-        ChainStepType::SENDER,
+    auto result = ChainStep::Create(
+        ChainStepType::Sender,
         chain_key,
         std::nullopt,
         std::nullopt
@@ -316,10 +316,10 @@ TEST_CASE("EcliptixProtocolChainStep - IKeyProvider interface", "[chain_step]") 
         bool callback_executed = false;
         auto exec_result = chain_step.ExecuteWithKey(
             0,
-            [&callback_executed](std::span<const uint8_t> key_bytes) -> Result<Unit, EcliptixProtocolFailure> {
+            [&callback_executed](std::span<const uint8_t> key_bytes) -> Result<Unit, ProtocolFailure> {
                 callback_executed = true;
                 REQUIRE(key_bytes.size() == Constants::X_25519_KEY_SIZE);
-                return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+                return Result<Unit, ProtocolFailure>::Ok(Unit{});
             }
         );
         REQUIRE(exec_result.IsOk());
@@ -331,8 +331,8 @@ TEST_CASE("EcliptixProtocolChainStep - IKeyProvider interface", "[chain_step]") 
         REQUIRE(index_before.Unwrap() == 0);
         auto exec_result = chain_step.ExecuteWithKey(
             0,
-            [](std::span<const uint8_t>) -> Result<Unit, EcliptixProtocolFailure> {
-                return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+            [](std::span<const uint8_t>) -> Result<Unit, ProtocolFailure> {
+                return Result<Unit, ProtocolFailure>::Ok(Unit{});
             }
         );
         REQUIRE(exec_result.IsOk());

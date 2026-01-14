@@ -1,25 +1,25 @@
-#include "ecliptix/models/keys/one_time_pre_key_local.hpp"
+#include "ecliptix/models/keys/one_time_pre_key.hpp"
 
 namespace ecliptix::protocol::models {
-    Result<OneTimePreKeyLocal, EcliptixProtocolFailure> OneTimePreKeyLocal::Generate(const uint32_t pre_key_id) {
+    Result<OneTimePreKey, ProtocolFailure> OneTimePreKey::Generate(const uint32_t pre_key_id) {
         auto key_result = crypto::SodiumInterop::GenerateX25519KeyPair("OneTimePreKey");
         if (key_result.IsErr()) {
-            return Result<OneTimePreKeyLocal, EcliptixProtocolFailure>::Err(
+            return Result<OneTimePreKey, ProtocolFailure>::Err(
                 std::move(key_result).UnwrapErr());
         }
         auto [private_key_handle, public_key] = std::move(key_result).Unwrap();
-        return Result<OneTimePreKeyLocal, EcliptixProtocolFailure>::Ok(
-            OneTimePreKeyLocal(pre_key_id, std::move(private_key_handle), std::move(public_key)));
+        return Result<OneTimePreKey, ProtocolFailure>::Ok(
+            OneTimePreKey(pre_key_id, std::move(private_key_handle), std::move(public_key)));
     }
 
-    OneTimePreKeyLocal OneTimePreKeyLocal::CreateFromParts(
+    OneTimePreKey OneTimePreKey::CreateFromParts(
         const uint32_t pre_key_id,
         crypto::SecureMemoryHandle private_key_handle,
         std::vector<uint8_t> public_key) {
         return {pre_key_id, std::move(private_key_handle), std::move(public_key)};
     }
 
-    OneTimePreKeyLocal::OneTimePreKeyLocal(
+    OneTimePreKey::OneTimePreKey(
         const uint32_t pre_key_id,
         crypto::SecureMemoryHandle private_key_handle,
         std::vector<uint8_t> public_key)

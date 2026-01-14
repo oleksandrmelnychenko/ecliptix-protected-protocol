@@ -12,7 +12,7 @@ namespace ecliptix::protocol::test_helpers {
 
 using protocol::Result;
 using protocol::Unit;
-using protocol::EcliptixProtocolFailure;
+using protocol::ProtocolFailure;
 using crypto::SecureMemoryHandle;
 using interfaces::IKeyProvider;
 
@@ -32,20 +32,20 @@ public:
         }
     }
 
-    [[nodiscard]] Result<Unit, EcliptixProtocolFailure> ExecuteWithKey(
+    [[nodiscard]] Result<Unit, ProtocolFailure> ExecuteWithKey(
         const uint32_t index,
-        const std::function<Result<Unit, EcliptixProtocolFailure>(std::span<const uint8_t>)> operation) override {
+        const std::function<Result<Unit, ProtocolFailure>(std::span<const uint8_t>)> operation) override {
 
         if (!keys_.contains(index)) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Mock key provider: Key index not found"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Mock key provider: Key index not found"));
         }
 
         std::vector<uint8_t> key_bytes(keys_[index].Size());
         const auto read_result = keys_[index].Read(key_bytes);
         if (read_result.IsErr()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Mock key provider: Failed to read key"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Mock key provider: Failed to read key"));
         }
 
         return operation(key_bytes);

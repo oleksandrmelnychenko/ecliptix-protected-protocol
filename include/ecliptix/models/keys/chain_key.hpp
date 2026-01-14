@@ -5,15 +5,14 @@
 #include <cstdint>
 #include <functional>
 #include <span>
-#include <vector>
 namespace ecliptix::protocol::models {
 using protocol::Result;
 using protocol::Unit;
 using protocol::ProtocolFailure;
 using interfaces::IKeyProvider;
-class MessageKey {
+class ChainKey {
 public:
-    MessageKey(IKeyProvider* provider, const uint32_t index) noexcept
+    ChainKey(IKeyProvider* provider, const uint32_t index) noexcept
         : provider_(provider), index_(index) {}
     [[nodiscard]] uint32_t Index() const noexcept {
         return index_;
@@ -27,20 +26,20 @@ public:
         }
         return provider_->ExecuteWithKeyTyped<T>(index_, operation);
     }
-    [[nodiscard]] bool operator==(const MessageKey& other) const noexcept {
+    [[nodiscard]] bool operator==(const ChainKey& other) const noexcept {
         return index_ == other.index_;
     }
-    [[nodiscard]] bool operator!=(const MessageKey& other) const noexcept {
+    [[nodiscard]] bool operator!=(const ChainKey& other) const noexcept {
         return !(*this == other);
     }
-    [[nodiscard]] bool operator<(const MessageKey& other) const noexcept {
+    [[nodiscard]] bool operator<(const ChainKey& other) const noexcept {
         return index_ < other.index_;
     }
-    MessageKey(const MessageKey&) = default;
-    MessageKey& operator=(const MessageKey&) = default;
-    MessageKey(MessageKey&&) noexcept = default;
-    MessageKey& operator=(MessageKey&&) noexcept = default;
-    ~MessageKey() = default;
+    ChainKey(const ChainKey&) = default;
+    ChainKey& operator=(const ChainKey&) = default;
+    ChainKey(ChainKey&&) noexcept = default;
+    ChainKey& operator=(ChainKey&&) noexcept = default;
+    ~ChainKey() = default;
 private:
     IKeyProvider* provider_;
     uint32_t index_;

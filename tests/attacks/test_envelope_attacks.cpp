@@ -1,5 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
-#include "ecliptix/protocol/connection/ecliptix_protocol_connection.hpp"
+#include "ecliptix/protocol/connection/protocol_connection.hpp"
 #include "ecliptix/crypto/aes_gcm.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/utilities/envelope_builder.hpp"
@@ -28,12 +28,12 @@ static std::vector<uint8_t> MakeBoundNonce(uint32_t index, uint8_t fill = 0x42) 
 }
 
 struct AttackTestContext {
-    std::unique_ptr<EcliptixProtocolConnection> alice;
-    std::unique_ptr<EcliptixProtocolConnection> bob;
+    std::unique_ptr<ProtocolConnection> alice;
+    std::unique_ptr<ProtocolConnection> bob;
     std::vector<uint8_t> alice_metadata_key;
     std::vector<uint8_t> bob_metadata_key;
 
-    [[nodiscard]] static Result<AttackTestContext, EcliptixProtocolFailure> Create() {
+    [[nodiscard]] static Result<AttackTestContext, ProtocolFailure> Create() {
         AttackTestContext ctx;
 
         auto [alice, bob] = CreatePreparedPair(1, 2);
@@ -44,45 +44,45 @@ struct AttackTestContext {
 
         auto alice_dh_result = ctx.alice->GetCurrentSenderDhPublicKey();
         if (alice_dh_result.IsErr()) {
-            return Result<AttackTestContext, EcliptixProtocolFailure>::Err(
+            return Result<AttackTestContext, ProtocolFailure>::Err(
                 std::move(alice_dh_result).UnwrapErr());
         }
         auto alice_dh = std::move(alice_dh_result).Unwrap().value();
 
         auto bob_dh_result = ctx.bob->GetCurrentSenderDhPublicKey();
         if (bob_dh_result.IsErr()) {
-            return Result<AttackTestContext, EcliptixProtocolFailure>::Err(
+            return Result<AttackTestContext, ProtocolFailure>::Err(
                 std::move(bob_dh_result).UnwrapErr());
         }
         auto bob_dh = std::move(bob_dh_result).Unwrap().value();
 
         auto alice_finalize = ctx.alice->FinalizeChainAndDhKeys(root_key, bob_dh);
         if (alice_finalize.IsErr()) {
-            return Result<AttackTestContext, EcliptixProtocolFailure>::Err(
+            return Result<AttackTestContext, ProtocolFailure>::Err(
                 std::move(alice_finalize).UnwrapErr());
         }
 
         auto bob_finalize = ctx.bob->FinalizeChainAndDhKeys(root_key, alice_dh);
         if (bob_finalize.IsErr()) {
-            return Result<AttackTestContext, EcliptixProtocolFailure>::Err(
+            return Result<AttackTestContext, ProtocolFailure>::Err(
                 std::move(bob_finalize).UnwrapErr());
         }
 
         auto alice_key_result = ctx.alice->GetMetadataEncryptionKey();
         if (alice_key_result.IsErr()) {
-            return Result<AttackTestContext, EcliptixProtocolFailure>::Err(
+            return Result<AttackTestContext, ProtocolFailure>::Err(
                 std::move(alice_key_result).UnwrapErr());
         }
         ctx.alice_metadata_key = std::move(alice_key_result).Unwrap();
 
         auto bob_key_result = ctx.bob->GetMetadataEncryptionKey();
         if (bob_key_result.IsErr()) {
-            return Result<AttackTestContext, EcliptixProtocolFailure>::Err(
+            return Result<AttackTestContext, ProtocolFailure>::Err(
                 std::move(bob_key_result).UnwrapErr());
         }
         ctx.bob_metadata_key = std::move(bob_key_result).Unwrap();
 
-        return Result<AttackTestContext, EcliptixProtocolFailure>::Ok(std::move(ctx));
+        return Result<AttackTestContext, ProtocolFailure>::Ok(std::move(ctx));
     }
 };
 
@@ -221,14 +221,14 @@ TEST_CASE("Attacks - Envelope Replay Protection", "[attacks][envelope][replay]")
         REQUIRE(encrypted_result.IsOk());
         auto encrypted = std::move(encrypted_result).Unwrap();
 
-        auto first_check = ctx.bob->CheckReplayProtection(nonce, 1);
+        auto first_check = ctx.bob->ValidateNotReplayed(nonce, 1);
         REQUIRE(first_check.IsOk());
 
         constexpr uint32_t REPLAY_ATTEMPTS = 1000;
         uint32_t detected_replays = 0;
 
         for (uint32_t i = 0; i < REPLAY_ATTEMPTS; ++i) {
-            auto replay_check = ctx.bob->CheckReplayProtection(nonce, 1);
+            auto replay_check = ctx.bob->ValidateNotReplayed(nonce, 1);
             if (replay_check.IsErr()) {
                 ++detected_replays;
             }
@@ -284,7 +284,7 @@ TEST_CASE("Attacks - Nonce Reuse Scenarios", "[attacks][envelope][nonce]") {
         uint32_t detected_collisions = 0;
 
         for (uint32_t i = 0; i < COLLISION_ATTEMPTS; ++i) {
-            auto check_result = ctx.alice->CheckReplayProtection(fixed_nonce, i);
+            auto check_result = ctx.alice->ValidateNotReplayed(fixed_nonce, i);
             if (check_result.IsErr()) {
                 ++detected_collisions;
             }

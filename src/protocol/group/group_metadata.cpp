@@ -61,7 +61,7 @@ GroupMetadata::GroupMetadata(
 {
 }
 
-Result<GroupMetadata, EcliptixProtocolFailure> GroupMetadata::Create(
+Result<GroupMetadata, ProtocolFailure> GroupMetadata::Create(
     std::span<const uint8_t> group_id,
     std::string group_name,
     std::span<const uint8_t> creator_id,
@@ -70,43 +70,43 @@ Result<GroupMetadata, EcliptixProtocolFailure> GroupMetadata::Create(
     std::optional<std::string> description) {
 
     if (group_id.size() < MIN_GROUP_ID_SIZE) {
-        return Result<GroupMetadata, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::Generic("Group ID too short (minimum 16 bytes)"));
+        return Result<GroupMetadata, ProtocolFailure>::Err(
+            ProtocolFailure::Generic("Group ID too short (minimum 16 bytes)"));
     }
 
     if (group_name.length() < MIN_GROUP_NAME_LENGTH) {
-        return Result<GroupMetadata, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::Generic("Group name cannot be empty"));
+        return Result<GroupMetadata, ProtocolFailure>::Err(
+            ProtocolFailure::Generic("Group name cannot be empty"));
     }
 
     if (group_name.length() > MAX_GROUP_NAME_LENGTH) {
-        return Result<GroupMetadata, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::Generic("Group name too long (maximum 255 characters)"));
+        return Result<GroupMetadata, ProtocolFailure>::Err(
+            ProtocolFailure::Generic("Group name too long (maximum 255 characters)"));
     }
 
     if (creator_id.size() < MIN_CREATOR_ID_SIZE) {
-        return Result<GroupMetadata, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::Generic("Creator ID too short (minimum 16 bytes)"));
+        return Result<GroupMetadata, ProtocolFailure>::Err(
+            ProtocolFailure::Generic("Creator ID too short (minimum 16 bytes)"));
     }
 
     if (max_members < MIN_MAX_MEMBERS) {
-        return Result<GroupMetadata, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::Generic("Group must support at least 2 members"));
+        return Result<GroupMetadata, ProtocolFailure>::Err(
+            ProtocolFailure::Generic("Group must support at least 2 members"));
     }
 
     if (max_members > MAX_MAX_MEMBERS) {
-        return Result<GroupMetadata, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::Generic("Maximum members limit exceeded (100,000)"));
+        return Result<GroupMetadata, ProtocolFailure>::Err(
+            ProtocolFailure::Generic("Maximum members limit exceeded (100,000)"));
     }
 
     if (description.has_value() && description->length() > MAX_DESCRIPTION_LENGTH) {
-        return Result<GroupMetadata, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::Generic("Description too long (maximum 1024 characters)"));
+        return Result<GroupMetadata, ProtocolFailure>::Err(
+            ProtocolFailure::Generic("Description too long (maximum 1024 characters)"));
     }
 
     const auto now = std::chrono::system_clock::now();
 
-    return Result<GroupMetadata, EcliptixProtocolFailure>::Ok(
+    return Result<GroupMetadata, ProtocolFailure>::Ok(
         GroupMetadata(
             std::vector(group_id.begin(), group_id.end()),
             std::move(group_name),
@@ -121,22 +121,22 @@ Result<GroupMetadata, EcliptixProtocolFailure> GroupMetadata::Create(
     );
 }
 
-Result<GroupMetadata, EcliptixProtocolFailure> GroupMetadata::FromProto(
+Result<GroupMetadata, ProtocolFailure> GroupMetadata::FromProto(
     const proto::group::GroupMetadata& proto) {
 
     if (proto.group_id().empty()) {
-        return Result<GroupMetadata, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::Generic("Proto group_id is empty"));
+        return Result<GroupMetadata, ProtocolFailure>::Err(
+            ProtocolFailure::Generic("Proto group_id is empty"));
     }
 
     if (proto.group_name().empty()) {
-        return Result<GroupMetadata, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::Generic("Proto group_name is empty"));
+        return Result<GroupMetadata, ProtocolFailure>::Err(
+            ProtocolFailure::Generic("Proto group_name is empty"));
     }
 
     if (proto.creator_id().empty()) {
-        return Result<GroupMetadata, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::Generic("Proto creator_id is empty"));
+        return Result<GroupMetadata, ProtocolFailure>::Err(
+            ProtocolFailure::Generic("Proto creator_id is empty"));
     }
 
     const auto group_id = reinterpret_cast<const uint8_t*>(proto.group_id().data());
@@ -152,7 +152,7 @@ Result<GroupMetadata, EcliptixProtocolFailure> GroupMetadata::FromProto(
         description = proto.description();
     }
 
-    return Result<GroupMetadata, EcliptixProtocolFailure>::Ok(
+    return Result<GroupMetadata, ProtocolFailure>::Ok(
         GroupMetadata(
             std::vector(group_id, group_id + proto.group_id().size()),
             proto.group_name(),

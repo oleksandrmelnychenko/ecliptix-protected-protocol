@@ -1,5 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
-#include "ecliptix/protocol/connection/ecliptix_protocol_connection.hpp"
+#include "ecliptix/protocol/connection/protocol_connection.hpp"
 #include "ecliptix/crypto/aes_gcm.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/utilities/envelope_builder.hpp"
@@ -112,7 +112,7 @@ TEST_CASE("Performance - Sustained Message Encryption", "[performance][envelope]
                 auto alice_dh_pub = alice->GetCurrentSenderDhPublicKey();
                 if (alice_dh_pub.IsErr() || !alice_dh_pub.Unwrap().has_value()) break;
                 auto alice_ct = GetKyberCiphertextForSender(alice);
-                auto ratchet_result = bob->PerformReceivingRatchet(*alice_dh_pub.Unwrap(), alice_ct);
+                auto ratchet_result = bob->ExecuteReceivingRatchet(*alice_dh_pub.Unwrap(), alice_ct);
                 if (ratchet_result.IsErr()) break;
             }
 
@@ -359,7 +359,7 @@ TEST_CASE("Performance - Large Payload Throughput", "[performance][envelope][pay
                     break;
                 }
                 auto alice_ct = GetKyberCiphertextForSender(alice);
-                auto ratchet_result = bob->PerformReceivingRatchet(*alice_dh_pub.Unwrap(), alice_ct);
+                auto ratchet_result = bob->ExecuteReceivingRatchet(*alice_dh_pub.Unwrap(), alice_ct);
                 if (ratchet_result.IsErr()) {
                     last_error = ratchet_result.UnwrapErr().message;
                     break;

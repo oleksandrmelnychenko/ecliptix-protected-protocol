@@ -1,4 +1,4 @@
-#include "ecliptix/protocol/connection/ecliptix_protocol_connection.hpp"
+#include "ecliptix/protocol/connection/protocol_connection.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/crypto/kyber_interop.hpp"
 #include "ecliptix/crypto/aes_gcm.hpp"
@@ -21,22 +21,22 @@ namespace ecliptix::protocol::connection {
     using namespace ecliptix::protocol::chain_step;
     using namespace ecliptix::protocol::enums;
     using ProtocolConstants = ProtocolConstants;
-    using models::OneTimePreKeyRecord;
+    using models::OneTimePreKeyPublic;
 
     namespace {
-        Result<LocalPublicKeyBundle, EcliptixProtocolFailure> ParsePeerBundle(
+        Result<LocalPublicKeyBundle, ProtocolFailure> ParsePeerBundle(
             const proto::protocol::PublicKeyBundle &bundle) {
             if (bundle.identity_public_key().size() != Constants::ED_25519_PUBLIC_KEY_SIZE) {
-                return Result<LocalPublicKeyBundle, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::InvalidInput("Peer identity ed25519 key must be 32 bytes"));
+                return Result<LocalPublicKeyBundle, ProtocolFailure>::Err(
+                    ProtocolFailure::InvalidInput("Peer identity ed25519 key must be 32 bytes"));
             }
             if (bundle.identity_x25519_public_key().size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
-                return Result<LocalPublicKeyBundle, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::InvalidInput("Peer identity x25519 key must be 32 bytes"));
+                return Result<LocalPublicKeyBundle, ProtocolFailure>::Err(
+                    ProtocolFailure::InvalidInput("Peer identity x25519 key must be 32 bytes"));
             }
             if (bundle.kyber_public_key().size() != KyberInterop::KYBER_768_PUBLIC_KEY_SIZE) {
-                return Result<LocalPublicKeyBundle, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::InvalidInput("Peer Kyber public key must be 1184 bytes"));
+                return Result<LocalPublicKeyBundle, ProtocolFailure>::Err(
+                    ProtocolFailure::InvalidInput("Peer Kyber public key must be 1184 bytes"));
             }
             std::vector<uint8_t> ed25519(
                 bundle.identity_public_key().begin(), bundle.identity_public_key().end());
@@ -46,12 +46,12 @@ namespace ecliptix::protocol::connection {
                 bundle.signed_pre_key_public_key().begin(), bundle.signed_pre_key_public_key().end());
             std::vector<uint8_t> spk_sig(
                 bundle.signed_pre_key_signature().begin(), bundle.signed_pre_key_signature().end());
-            std::vector<OneTimePreKeyRecord> otps;
+            std::vector<OneTimePreKeyPublic> otps;
             otps.reserve(bundle.one_time_pre_keys_size());
             for (const auto &otp: bundle.one_time_pre_keys()) {
                 if (otp.public_key().size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
-                    return Result<LocalPublicKeyBundle, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::InvalidInput("One-time pre-key must be 32 bytes"));
+                    return Result<LocalPublicKeyBundle, ProtocolFailure>::Err(
+                        ProtocolFailure::InvalidInput("One-time pre-key must be 32 bytes"));
                 }
                 otps.emplace_back(
                     otp.pre_key_id(),
@@ -88,12 +88,12 @@ namespace ecliptix::protocol::connection {
                 std::move(kyber_pk),
                 std::move(kyber_ct),
                 used_opk_id);
-            return Result<LocalPublicKeyBundle, EcliptixProtocolFailure>::Ok(std::move(local_bundle));
+            return Result<LocalPublicKeyBundle, ProtocolFailure>::Ok(std::move(local_bundle));
         }
     }
 
     namespace {
-        Result<std::vector<uint8_t>, EcliptixProtocolFailure> GetStateMacSecret() {
+        Result<std::vector<uint8_t>, ProtocolFailure> GetStateMacSecret() {
             static std::once_flag init_flag;
             static std::optional<std::vector<uint8_t> > cached_secret;
             static std::string init_error;
@@ -130,24 +130,24 @@ namespace ecliptix::protocol::connection {
                 cached_secret = std::move(hashed);
             });
             if (!cached_secret.has_value()) {
-                return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic(init_error));
+                return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic(init_error));
             }
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Ok(*cached_secret);
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(*cached_secret);
         }
 
-        Result<std::vector<uint8_t>, EcliptixProtocolFailure> DeriveHybridDhSecret(
+        Result<std::vector<uint8_t>, ProtocolFailure> DeriveHybridDhSecret(
             std::span<const uint8_t> x25519_secret,
             std::span<const uint8_t> current_root_key,
             const std::optional<std::vector<uint8_t> > &kyber_ss_opt) {
             if (x25519_secret.size() != Constants::X_25519_KEY_SIZE ||
                 current_root_key.size() != Constants::X_25519_KEY_SIZE) {
-                return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::InvalidInput("Hybrid secret derivation requires 32-byte inputs"));
+                return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                    ProtocolFailure::InvalidInput("Hybrid secret derivation requires 32-byte inputs"));
             }
             if (!kyber_ss_opt || kyber_ss_opt->empty()) {
-                return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic("Kyber shared secret is required for hybrid ratchet"));
+                return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic("Kyber shared secret is required for hybrid ratchet"));
             }
             std::vector<uint8_t> kyber_ss = *kyber_ss_opt;
             auto hybrid_handle_result = KyberInterop::CombineHybridSecrets(
@@ -157,19 +157,19 @@ namespace ecliptix::protocol::connection {
             auto _wipe_pq = SodiumInterop::SecureWipe(std::span(kyber_ss));
             (void) _wipe_pq;
             if (hybrid_handle_result.IsErr()) {
-                return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
+                return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                     hybrid_handle_result.UnwrapErr());
             }
             auto hybrid_handle = std::move(hybrid_handle_result).Unwrap();
             auto hybrid_bytes_result = hybrid_handle.ReadBytes(Constants::X_25519_KEY_SIZE);
             if (hybrid_bytes_result.IsErr()) {
-                return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::FromSodiumFailure(hybrid_bytes_result.UnwrapErr()));
+                return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                    ProtocolFailure::FromSodiumFailure(hybrid_bytes_result.UnwrapErr()));
             }
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Ok(hybrid_bytes_result.Unwrap());
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(hybrid_bytes_result.Unwrap());
         }
 
-        Result<std::vector<uint8_t>, EcliptixProtocolFailure> DeriveKyberWrapKey(
+        Result<std::vector<uint8_t>, ProtocolFailure> DeriveKyberWrapKey(
             const std::span<const uint8_t> root_key_bytes,
             const uint32_t connection_id,
             std::span<const uint8_t> session_id,
@@ -194,9 +194,9 @@ namespace ecliptix::protocol::connection {
                 std::vector<uint8_t>(),
                 info);
             if (wrap_key_result.IsErr()) {
-                return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(wrap_key_result.UnwrapErr());
+                return Result<std::vector<uint8_t>, ProtocolFailure>::Err(wrap_key_result.UnwrapErr());
             }
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Ok(wrap_key_result.Unwrap());
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(wrap_key_result.Unwrap());
         }
 
         std::vector<uint8_t> BuildKyberWrapAssociatedData(
@@ -222,16 +222,16 @@ namespace ecliptix::protocol::connection {
         }
     }
 
-    EcliptixProtocolConnection::EcliptixProtocolConnection(
+    ProtocolConnection::ProtocolConnection(
         const uint32_t connection_id,
         const bool is_initiator,
         const RatchetConfig ratchet_config,
-        const PubKeyExchangeType exchange_type,
+        const KeyExchangeType exchange_type,
         SecureMemoryHandle initial_sending_dh_private_handle,
         const std::vector<uint8_t> &initial_sending_dh_public,
         SecureMemoryHandle persistent_dh_private_handle,
         std::vector<uint8_t> persistent_dh_public,
-        EcliptixProtocolChainStep sending_step)
+        ChainStep sending_step)
         : lock_(std::make_unique<std::mutex>())
           , id_(connection_id)
           , created_at_(std::chrono::system_clock::now())
@@ -268,18 +268,18 @@ namespace ecliptix::protocol::connection {
           , event_handler_(nullptr) {
     }
 
-    EcliptixProtocolConnection::EcliptixProtocolConnection(
+    ProtocolConnection::ProtocolConnection(
         uint32_t connection_id,
         bool is_initiator,
         RatchetConfig ratchet_config,
-        PubKeyExchangeType exchange_type,
+        KeyExchangeType exchange_type,
         std::chrono::system_clock::time_point created_at,
         std::vector<uint8_t> session_id,
         uint64_t nonce_counter,
         SecureMemoryHandle root_key_handle,
         SecureMemoryHandle metadata_encryption_key_handle,
-        EcliptixProtocolChainStep sending_step,
-        std::optional<EcliptixProtocolChainStep> receiving_step,
+        ChainStep sending_step,
+        std::optional<ChainStep> receiving_step,
         std::optional<LocalPublicKeyBundle> peer_bundle,
         std::optional<std::vector<uint8_t> > peer_dh_public_key,
         std::optional<std::vector<uint8_t> > peer_kyber_public_key,
@@ -334,13 +334,13 @@ namespace ecliptix::protocol::connection {
           , event_handler_(nullptr) {
     }
 
-    Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::Create(const uint32_t connection_id, const bool is_initiator) {
+    Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>
+    ProtocolConnection::Create(const uint32_t connection_id, const bool is_initiator) {
         return Create(connection_id, is_initiator, RatchetConfig::Default());
     }
 
-    Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::Create(
+    Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>
+    ProtocolConnection::Create(
         uint32_t connection_id,
         bool is_initiator,
         const RatchetConfig &ratchet_config) {
@@ -348,28 +348,28 @@ namespace ecliptix::protocol::connection {
         try {
             auto initial_dh_result = SodiumInterop::GenerateX25519KeyPair("Initial sending DH key");
             if (initial_dh_result.IsErr()) {
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
                     initial_dh_result.UnwrapErr());
             }
             auto [initial_dh_private, initial_dh_public] = std::move(initial_dh_result).Unwrap();
             auto initial_private_bytes_result = initial_dh_private.ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
             if (initial_private_bytes_result.IsErr()) {
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic("Failed to read initial DH private key"));
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic("Failed to read initial DH private key"));
             }
             auto initial_private_bytes = initial_private_bytes_result.Unwrap();
             auto persistent_dh_result = SodiumInterop::GenerateX25519KeyPair("Persistent DH key");
             if (persistent_dh_result.IsErr()) {
                 auto wipe_result = SodiumInterop::SecureWipe(std::span(initial_private_bytes));
                 (void) wipe_result;
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
                     persistent_dh_result.UnwrapErr());
             }
             auto [persistent_dh_private, persistent_dh_public] = std::move(persistent_dh_result).Unwrap();
             std::vector<uint8_t> temp_chain_key(Constants::X_25519_KEY_SIZE,
                                        ProtocolConstants::ZERO_VALUE);
-            auto sending_step_result = EcliptixProtocolChainStep::Create(
-                ChainStepType::SENDER,
+            auto sending_step_result = ChainStep::Create(
+                ChainStepType::Sender,
                 temp_chain_key,
                 initial_private_bytes,
                 initial_dh_public);
@@ -378,22 +378,22 @@ namespace ecliptix::protocol::connection {
             (void) wipe1;
             (void) wipe2;
             if (sending_step_result.IsErr()) {
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
                     sending_step_result.UnwrapErr());
             }
             auto sending_step = std::move(sending_step_result).Unwrap();
             auto kyber_keypair_result = KyberInterop::GenerateKyber768KeyPair("Initial Kyber key");
             if (kyber_keypair_result.IsErr()) {
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::FromSodiumFailure(kyber_keypair_result.UnwrapErr()));
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                    ProtocolFailure::FromSodiumFailure(kyber_keypair_result.UnwrapErr()));
             }
             auto [kyber_sk_handle, kyber_pk] = std::move(kyber_keypair_result).Unwrap();
-            auto connection = std::unique_ptr<EcliptixProtocolConnection>(
-                new EcliptixProtocolConnection(
+            auto connection = std::unique_ptr<ProtocolConnection>(
+                new ProtocolConnection(
                     connection_id,
                     is_initiator,
                     config,
-                    PubKeyExchangeType::X3DH,
+                    KeyExchangeType::X3DH,
                     std::move(initial_dh_private),
                     std::move(initial_dh_public),
                     std::move(persistent_dh_private),
@@ -404,49 +404,49 @@ namespace ecliptix::protocol::connection {
             auto initial_copy_result = connection->initial_sending_dh_private_handle_.ReadBytes(
                 Constants::X_25519_PRIVATE_KEY_SIZE);
             if (initial_copy_result.IsErr()) {
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic("Failed to copy initial DH key"));
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic("Failed to copy initial DH key"));
             }
             auto initial_copy_bytes = initial_copy_result.Unwrap();
             auto current_dh_alloc = SecureMemoryHandle::Allocate(Constants::X_25519_PRIVATE_KEY_SIZE);
             if (current_dh_alloc.IsErr()) {
                 auto wipe_result = SodiumInterop::SecureWipe(std::span(initial_copy_bytes));
                 (void) wipe_result;
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::FromSodiumFailure(current_dh_alloc.UnwrapErr()));
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                    ProtocolFailure::FromSodiumFailure(current_dh_alloc.UnwrapErr()));
             }
             auto current_dh_handle = std::move(current_dh_alloc).Unwrap();
             auto write_result = current_dh_handle.Write(initial_copy_bytes);
             auto wipe3 = SodiumInterop::SecureWipe(std::span(initial_copy_bytes));
             (void) wipe3;
             if (write_result.IsErr()) {
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::FromSodiumFailure(write_result.UnwrapErr()));
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                    ProtocolFailure::FromSodiumFailure(write_result.UnwrapErr()));
             }
             connection->current_sending_dh_private_handle_ = std::move(current_dh_handle);
-            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Ok(
+            return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Ok(
                 std::move(connection));
         } catch (const std::exception &ex) {
-            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     compat::format("Unexpected error creating connection {}: {}",
                                              connection_id, ex.what())));
         }
     }
 
-    Result<std::vector<uint8_t>, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::DeriveOpaqueMessagingRoot(
+    Result<std::vector<uint8_t>, ProtocolFailure>
+    ProtocolConnection::DeriveOpaqueMessagingRoot(
         const std::span<const uint8_t> opaque_session_key,
         const std::span<const uint8_t> user_context) {
         if (opaque_session_key.size() != Constants::X_25519_KEY_SIZE) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput(
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput(
                     compat::format("OPAQUE session key must be {} bytes, got {}",
                                              Constants::X_25519_KEY_SIZE, opaque_session_key.size())));
         }
         if (user_context.empty()) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput("OPAQUE user context must not be empty"));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("OPAQUE user context must not be empty"));
         }
         auto root_result = Hkdf::DeriveKeyBytes(
             opaque_session_key,
@@ -455,28 +455,28 @@ namespace ecliptix::protocol::connection {
             std::span(reinterpret_cast<const uint8_t *>(ProtocolConstants::OPAQUE_MSG_ROOT_INFO.data()),
                       ProtocolConstants::OPAQUE_MSG_ROOT_INFO.size()));
         if (root_result.IsErr()) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                 std::move(root_result).UnwrapErr());
         }
         return root_result;
     }
 
-    Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::FromRootAndPeerBundle(
+    Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>
+    ProtocolConnection::FromRootAndPeerBundle(
         uint32_t connection_id,
         std::span<const uint8_t> root_key,
         const proto::protocol::PublicKeyBundle &peer_bundle,
         bool is_initiator) {
         if (root_key.size() != Constants::X_25519_KEY_SIZE) {
-            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput(
+            return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput(
                     compat::format("Root key must be {} bytes, got {}",
                                              Constants::X_25519_KEY_SIZE, root_key.size())));
         }
 
         auto parse_result = ParsePeerBundle(peer_bundle);
         if (parse_result.IsErr()) {
-            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+            return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
                 parse_result.UnwrapErr());
         }
 
@@ -484,13 +484,13 @@ namespace ecliptix::protocol::connection {
             connection_id,
             is_initiator);
         if (conn_result.IsErr()) {
-            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+            return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
                 conn_result.UnwrapErr());
         }
 
         auto connection = std::move(conn_result.Unwrap());
         if (auto set_peer_result = connection->SetPeerBundle(parse_result.Unwrap()); set_peer_result.IsErr()) {
-            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+            return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
                 set_peer_result.UnwrapErr());
         }
 
@@ -501,16 +501,16 @@ namespace ecliptix::protocol::connection {
         }
 
         if (auto finalize_result = connection->FinalizeChainAndDhKeysWithRoot(root_key); finalize_result.IsErr()) {
-            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+            return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
                 finalize_result.UnwrapErr());
         }
 
-        return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Ok(
+        return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Ok(
             std::move(connection));
     }
 
-    Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::FromRootAndPeerBundle(
+    Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>
+    ProtocolConnection::FromRootAndPeerBundle(
         uint32_t connection_id,
         std::span<const uint8_t> root_key,
         const proto::protocol::PublicKeyBundle &peer_bundle,
@@ -518,15 +518,15 @@ namespace ecliptix::protocol::connection {
         std::span<const uint8_t> kyber_ciphertext,
         std::span<const uint8_t> kyber_shared_secret) {
         if (root_key.size() != Constants::X_25519_KEY_SIZE) {
-            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput(
+            return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput(
                     compat::format("Root key must be {} bytes, got {}",
                                              Constants::X_25519_KEY_SIZE, root_key.size())));
         }
 
         auto parse_result = ParsePeerBundle(peer_bundle);
         if (parse_result.IsErr()) {
-            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+            return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
                 parse_result.UnwrapErr());
         }
 
@@ -534,13 +534,13 @@ namespace ecliptix::protocol::connection {
             connection_id,
             is_initiator);
         if (conn_result.IsErr()) {
-            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+            return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
                 conn_result.UnwrapErr());
         }
 
         auto connection = std::move(conn_result.Unwrap());
         if (auto set_peer_result = connection->SetPeerBundle(parse_result.Unwrap()); set_peer_result.IsErr()) {
-            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+            return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
                 set_peer_result.UnwrapErr());
         }
 
@@ -551,21 +551,21 @@ namespace ecliptix::protocol::connection {
         }
 
         if (auto set_kyber_result = connection->SetHybridHandshakeSecrets(kyber_ciphertext, kyber_shared_secret); set_kyber_result.IsErr()) {
-            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+            return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
                 set_kyber_result.UnwrapErr());
         }
 
         if (auto finalize_result = connection->FinalizeChainAndDhKeysWithRoot(root_key); finalize_result.IsErr()) {
-            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+            return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
                 finalize_result.UnwrapErr());
         }
 
-        return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Ok(
+        return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Ok(
             std::move(connection));
     }
 
-    Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::FromRootAndPeerBundle(
+    Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>
+    ProtocolConnection::FromRootAndPeerBundle(
         uint32_t connection_id,
         std::span<const uint8_t> root_key,
         const proto::protocol::PublicKeyBundle &peer_bundle,
@@ -575,29 +575,29 @@ namespace ecliptix::protocol::connection {
         std::span<const uint8_t> initial_dh_public_key,
         std::span<const uint8_t> initial_dh_private_key) {
         if (root_key.size() != Constants::X_25519_KEY_SIZE) {
-            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput(
+            return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput(
                     compat::format("Root key must be {} bytes, got {}",
                                              Constants::X_25519_KEY_SIZE, root_key.size())));
         }
 
         if (!initial_dh_public_key.empty() && initial_dh_public_key.size() != Constants::X_25519_KEY_SIZE) {
-            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput(
+            return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput(
                     compat::format("Initial DH public key must be {} bytes, got {}",
                                              Constants::X_25519_KEY_SIZE, initial_dh_public_key.size())));
         }
 
         if (!initial_dh_private_key.empty() && initial_dh_private_key.size() != Constants::X_25519_PRIVATE_KEY_SIZE) {
-            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput(
+            return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput(
                     compat::format("Initial DH private key must be {} bytes, got {}",
                                              Constants::X_25519_PRIVATE_KEY_SIZE, initial_dh_private_key.size())));
         }
 
         auto parse_result = ParsePeerBundle(peer_bundle);
         if (parse_result.IsErr()) {
-            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+            return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
                 parse_result.UnwrapErr());
         }
 
@@ -605,7 +605,7 @@ namespace ecliptix::protocol::connection {
             connection_id,
             is_initiator);
         if (conn_result.IsErr()) {
-            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+            return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
                 conn_result.UnwrapErr());
         }
 
@@ -622,31 +622,31 @@ namespace ecliptix::protocol::connection {
         if (!initial_dh_private_key.empty()) {
             auto new_handle_result = SecureMemoryHandle::Allocate(Constants::X_25519_PRIVATE_KEY_SIZE);
             if (new_handle_result.IsErr()) {
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::FromSodiumFailure(new_handle_result.UnwrapErr()));
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                    ProtocolFailure::FromSodiumFailure(new_handle_result.UnwrapErr()));
             }
             auto new_handle = std::move(new_handle_result).Unwrap();
             if (auto write_result = new_handle.Write(initial_dh_private_key); write_result.IsErr()) {
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::FromSodiumFailure(write_result.UnwrapErr()));
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                    ProtocolFailure::FromSodiumFailure(write_result.UnwrapErr()));
             }
             connection->initial_sending_dh_private_handle_ = std::move(new_handle);
 
             auto current_handle_result = SecureMemoryHandle::Allocate(Constants::X_25519_PRIVATE_KEY_SIZE);
             if (current_handle_result.IsErr()) {
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::FromSodiumFailure(current_handle_result.UnwrapErr()));
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                    ProtocolFailure::FromSodiumFailure(current_handle_result.UnwrapErr()));
             }
             auto current_handle = std::move(current_handle_result).Unwrap();
             if (auto write_current = current_handle.Write(initial_dh_private_key); write_current.IsErr()) {
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::FromSodiumFailure(write_current.UnwrapErr()));
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                    ProtocolFailure::FromSodiumFailure(write_current.UnwrapErr()));
             }
             connection->current_sending_dh_private_handle_ = std::move(current_handle);
         }
 
         if (auto set_peer_result = connection->SetPeerBundle(parse_result.Unwrap()); set_peer_result.IsErr()) {
-            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+            return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
                 set_peer_result.UnwrapErr());
         }
 
@@ -657,37 +657,37 @@ namespace ecliptix::protocol::connection {
         }
 
         if (auto set_kyber_result = connection->SetHybridHandshakeSecrets(kyber_ciphertext, kyber_shared_secret); set_kyber_result.IsErr()) {
-            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+            return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
                 set_kyber_result.UnwrapErr());
         }
 
         if (auto finalize_result = connection->FinalizeChainAndDhKeysWithRoot(root_key); finalize_result.IsErr()) {
-            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+            return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
                 finalize_result.UnwrapErr());
         }
 
-        return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Ok(
+        return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Ok(
             std::move(connection));
     }
 
-    Result<Unit, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::FinalizeChainAndDhKeys(
+    Result<Unit, ProtocolFailure>
+    ProtocolConnection::FinalizeChainAndDhKeys(
         std::span<const uint8_t> initial_root_key,
         std::span<const uint8_t> initial_peer_dh_public_key) {
         std::lock_guard lock(*lock_);
         if (root_key_handle_.has_value()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Connection already finalized"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Connection already finalized"));
         }
         if (initial_root_key.size() != Constants::X_25519_KEY_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput(
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput(
                     compat::format("Initial root key must be {} bytes, got {}",
                                              Constants::X_25519_KEY_SIZE, initial_root_key.size())));
         }
         if (initial_peer_dh_public_key.size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput(
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput(
                     compat::format("Initial peer DH public key must be {} bytes, got {}",
                                              Constants::X_25519_PUBLIC_KEY_SIZE, initial_peer_dh_public_key.size())));
         }
@@ -695,17 +695,17 @@ namespace ecliptix::protocol::connection {
             return validation_result;
         }
         if (!peer_kyber_public_key_ || peer_kyber_public_key_->size() != KyberInterop::KYBER_768_PUBLIC_KEY_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Peer Kyber public key required for hybrid ratchet"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Peer Kyber public key required for hybrid ratchet"));
         }
         if (!kyber_shared_secret_ || kyber_shared_secret_->size() != KyberInterop::KYBER_768_SHARED_SECRET_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Kyber shared secret missing before finalization"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Kyber shared secret missing before finalization"));
         }
         if (std::equal(initial_peer_dh_public_key.begin(), initial_peer_dh_public_key.end(),
                        initial_sending_dh_public_.begin())) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     std::string(ErrorMessages::REFLECTION_ATTACK)));
         }
         std::vector<uint8_t> dh_secret;
@@ -721,8 +721,8 @@ namespace ecliptix::protocol::connection {
             auto private_key_result = initial_sending_dh_private_handle_.ReadBytes(
                 Constants::X_25519_PRIVATE_KEY_SIZE);
             if (private_key_result.IsErr()) {
-                return Result<Unit, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic("Failed to read initial DH private key"));
+                return Result<Unit, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic("Failed to read initial DH private key"));
             }
             persistent_private_bytes = private_key_result.Unwrap();
             dh_secret.resize(Constants::X_25519_KEY_SIZE);
@@ -731,8 +731,8 @@ namespace ecliptix::protocol::connection {
                     auto _wipe = SodiumInterop::SecureWipe(std::span(persistent_private_bytes));
                     (void) _wipe;
                 }
-                return Result<Unit, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::DeriveKey("Failed to compute DH shared secret"));
+                return Result<Unit, ProtocolFailure>::Err(
+                    ProtocolFailure::DeriveKey("Failed to compute DH shared secret"));
             }
             auto hybrid_secret_result = DeriveHybridDhSecret(
                 dh_secret,
@@ -743,7 +743,7 @@ namespace ecliptix::protocol::connection {
                 (void) _wipe;
                 auto _wipe_dh = SodiumInterop::SecureWipe(std::span(dh_secret));
                 (void) _wipe_dh;
-                return Result<Unit, EcliptixProtocolFailure>::Err(hybrid_secret_result.UnwrapErr());
+                return Result<Unit, ProtocolFailure>::Err(hybrid_secret_result.UnwrapErr());
             }
             hybrid_secret = hybrid_secret_result.Unwrap();
             std::vector<uint8_t> hkdf_output(Constants::X_25519_KEY_SIZE * 2);
@@ -764,7 +764,7 @@ namespace ecliptix::protocol::connection {
                     auto __wipe = SodiumInterop::SecureWipe(std::span(hybrid_secret));
                     (void) __wipe;
                 }
-                return Result<Unit, EcliptixProtocolFailure>::Err(root_derive_result.UnwrapErr());
+                return Result<Unit, ProtocolFailure>::Err(root_derive_result.UnwrapErr());
             }
             hkdf_output = root_derive_result.Unwrap();
             new_root_key.assign(hkdf_output.begin(), hkdf_output.begin() + Constants::X_25519_KEY_SIZE);
@@ -785,7 +785,7 @@ namespace ecliptix::protocol::connection {
                     auto __wipe = SodiumInterop::SecureWipe(std::span(new_root_key));
                     (void) __wipe;
                 }
-                return Result<Unit, EcliptixProtocolFailure>::Err(sender_chain_result.UnwrapErr());
+                return Result<Unit, ProtocolFailure>::Err(sender_chain_result.UnwrapErr());
             }
             auto receiver_chain_result = Hkdf::DeriveKeyBytes(
                 new_root_key,
@@ -804,7 +804,7 @@ namespace ecliptix::protocol::connection {
                     auto __wipe = SodiumInterop::SecureWipe(std::span(new_root_key));
                     (void) __wipe;
                 }
-                return Result<Unit, EcliptixProtocolFailure>::Err(receiver_chain_result.UnwrapErr());
+                return Result<Unit, ProtocolFailure>::Err(receiver_chain_result.UnwrapErr());
             }
             auto sender_derived = sender_chain_result.Unwrap();
             auto receiver_derived = receiver_chain_result.Unwrap();
@@ -838,8 +838,8 @@ namespace ecliptix::protocol::connection {
                 }
                 return update_result;
             }
-            auto receiving_step_result = EcliptixProtocolChainStep::Create(
-                ChainStepType::RECEIVER,
+            auto receiving_step_result = ChainStep::Create(
+                ChainStepType::Receiver,
                 receiver_chain_key,
                 persistent_private_bytes,
                 persistent_dh_public_); {
@@ -857,7 +857,7 @@ namespace ecliptix::protocol::connection {
                     auto __wipe = SodiumInterop::SecureWipe(std::span(new_root_key));
                     (void) __wipe;
                 }
-                return Result<Unit, EcliptixProtocolFailure>::Err(
+                return Result<Unit, ProtocolFailure>::Err(
                     receiving_step_result.UnwrapErr());
             }
             auto root_handle_result = SecureMemoryHandle::Allocate(Constants::X_25519_KEY_SIZE);
@@ -869,8 +869,8 @@ namespace ecliptix::protocol::connection {
                     auto __wipe = SodiumInterop::SecureWipe(std::span(hybrid_secret));
                     (void) __wipe;
                 }
-                return Result<Unit, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::FromSodiumFailure(root_handle_result.UnwrapErr()));
+                return Result<Unit, ProtocolFailure>::Err(
+                    ProtocolFailure::FromSodiumFailure(root_handle_result.UnwrapErr()));
             }
             auto root_handle = std::move(root_handle_result).Unwrap();
             auto root_write_result = root_handle.Write(new_root_key); {
@@ -878,8 +878,8 @@ namespace ecliptix::protocol::connection {
                 (void) __wipe;
             }
             if (root_write_result.IsErr()) {
-                return Result<Unit, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::FromSodiumFailure(root_write_result.UnwrapErr()));
+                return Result<Unit, ProtocolFailure>::Err(
+                    ProtocolFailure::FromSodiumFailure(root_write_result.UnwrapErr()));
             }
             root_key_handle_ = std::move(root_handle);
             receiving_step_ = std::move(receiving_step_result).Unwrap();
@@ -894,7 +894,7 @@ namespace ecliptix::protocol::connection {
             if (event_handler_) {
                 event_handler_->OnProtocolStateChanged(id_);
             }
-            return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+            return Result<Unit, ProtocolFailure>::Ok(Unit{});
         } catch (const std::exception &ex) {
             {
                 auto __wipe = SodiumInterop::SecureWipe(std::span(persistent_private_bytes));
@@ -915,22 +915,22 @@ namespace ecliptix::protocol::connection {
                 auto __wipe = SodiumInterop::SecureWipe(std::span(hybrid_secret));
                 (void) __wipe;
             }
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     compat::format("Unexpected error during finalization: {}", ex.what())));
         }
     }
 
-    Result<Unit, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::DeriveMetadataEncryptionKey() {
+    Result<Unit, ProtocolFailure>
+    ProtocolConnection::DeriveMetadataEncryptionKey() {
         if (!root_key_handle_.has_value()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Root key not initialized"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Root key not initialized"));
         }
         auto root_bytes_result = root_key_handle_->ReadBytes(Constants::X_25519_KEY_SIZE);
         if (root_bytes_result.IsErr()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Failed to read root key"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Failed to read root key"));
         }
         auto root_bytes = root_bytes_result.Unwrap();
         std::vector<uint8_t> sender_dh = initial_sending_dh_public_;
@@ -938,8 +938,8 @@ namespace ecliptix::protocol::connection {
         if (!kyber_shared_secret_ || kyber_shared_secret_->empty()) {
             auto __wipe = SodiumInterop::SecureWipe(std::span(root_bytes));
             (void) __wipe;
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Kyber shared secret required for metadata key derivation"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Kyber shared secret required for metadata key derivation"));
         }
         auto pq_ss = *kyber_shared_secret_;
         std::vector<uint8_t> info;
@@ -964,7 +964,7 @@ namespace ecliptix::protocol::connection {
         if (metadata_key_result.IsErr()) {
             auto __wipe = SodiumInterop::SecureWipe(std::span(pq_ss));
             (void) __wipe;
-            return Result<Unit, EcliptixProtocolFailure>::Err(metadata_key_result.UnwrapErr());
+            return Result<Unit, ProtocolFailure>::Err(metadata_key_result.UnwrapErr());
         }
         auto metadata_key_bytes = metadata_key_result.Unwrap();
         auto __wipe_pq = SodiumInterop::SecureWipe(std::span(pq_ss));
@@ -975,8 +975,8 @@ namespace ecliptix::protocol::connection {
                 auto __wipe = SodiumInterop::SecureWipe(std::span(metadata_key_bytes));
                 (void) __wipe;
             }
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::FromSodiumFailure(metadata_handle_result.UnwrapErr()));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(metadata_handle_result.UnwrapErr()));
         }
         auto metadata_handle = std::move(metadata_handle_result).Unwrap();
         auto write_result = metadata_handle.Write(metadata_key_bytes); {
@@ -984,22 +984,22 @@ namespace ecliptix::protocol::connection {
             (void) __wipe;
         }
         if (write_result.IsErr()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::FromSodiumFailure(write_result.UnwrapErr()));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(write_result.UnwrapErr()));
         }
         metadata_encryption_key_handle_ = std::move(metadata_handle);
-        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 
-    Result<std::vector<uint8_t>, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::DeriveMetadataEncryptionKeyBytes(
+    Result<std::vector<uint8_t>, ProtocolFailure>
+    ProtocolConnection::DeriveMetadataEncryptionKeyBytes(
         const std::span<const uint8_t> root_bytes,
         std::span<const uint8_t> sender_dh_public,
         std::span<const uint8_t> peer_dh_public,
         std::span<const uint8_t> kyber_shared_secret) {
         if (kyber_shared_secret.size() != KyberInterop::KYBER_768_SHARED_SECRET_SIZE) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Kyber shared secret required for metadata key derivation"));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Kyber shared secret required for metadata key derivation"));
         }
         auto pq_ss = std::vector(kyber_shared_secret.begin(), kyber_shared_secret.end());
         std::vector<uint8_t> info;
@@ -1026,7 +1026,7 @@ namespace ecliptix::protocol::connection {
         return metadata_key_result;
     }
 
-    Result<std::vector<uint8_t>, EcliptixProtocolFailure> EcliptixProtocolConnection::DeriveStateMacKey(
+    Result<std::vector<uint8_t>, ProtocolFailure> ProtocolConnection::DeriveStateMacKey(
         std::span<const uint8_t> root_key_bytes,
         std::span<const uint8_t> session_id,
         const bool is_initiator,
@@ -1038,27 +1038,27 @@ namespace ecliptix::protocol::connection {
         std::span<const uint8_t> kyber_ciphertext) {
         auto secret_result = GetStateMacSecret();
         if (secret_result.IsErr()) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(secret_result.UnwrapErr());
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(secret_result.UnwrapErr());
         }
         const auto &mac_secret = secret_result.Unwrap();
         if (root_key_bytes.size() != Constants::X_25519_KEY_SIZE) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput("Invalid root key size for state MAC derivation"));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("Invalid root key size for state MAC derivation"));
         }
         if (session_id.size() != 16) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput("Session id must be 16 bytes for state MAC derivation"));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("Session id must be 16 bytes for state MAC derivation"));
         }
         if (initial_sending_dh_public.size() != Constants::X_25519_PUBLIC_KEY_SIZE ||
             current_sending_dh_public.size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput("DH public keys must be 32 bytes for state MAC derivation"));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("DH public keys must be 32 bytes for state MAC derivation"));
         }
         if (kyber_public_key.size() != KyberInterop::KYBER_768_PUBLIC_KEY_SIZE ||
             peer_kyber_public_key.size() != KyberInterop::KYBER_768_PUBLIC_KEY_SIZE ||
             kyber_ciphertext.size() != KyberInterop::KYBER_768_CIPHERTEXT_SIZE) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput("Kyber artifacts must match expected hybrid sizes"));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("Kyber artifacts must match expected hybrid sizes"));
         }
         std::vector<uint8_t> info;
         info.insert(info.end(),
@@ -1082,19 +1082,19 @@ namespace ecliptix::protocol::connection {
             mac_secret,
             info);
         if (mac_key_result.IsErr()) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(mac_key_result.UnwrapErr());
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(mac_key_result.UnwrapErr());
         }
-        return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Ok(mac_key_result.Unwrap());
+        return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(mac_key_result.Unwrap());
     }
 
-    Result<std::vector<uint8_t>, EcliptixProtocolFailure> EcliptixProtocolConnection::ComputeStateMac(
+    Result<std::vector<uint8_t>, ProtocolFailure> ProtocolConnection::ComputeStateMac(
         proto::protocol::RatchetState state,
         const std::span<const uint8_t> mac_key) {
         state.clear_state_mac();
         std::string serialized;
         if (!state.SerializeToString(&serialized)) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Failed to serialize ratchet state for MAC"));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Failed to serialize ratchet state for MAC"));
         }
         std::vector<uint8_t> mac(crypto_generichash_BYTES);
         crypto_generichash(
@@ -1104,44 +1104,44 @@ namespace ecliptix::protocol::connection {
             serialized.size(),
             mac_key.data(),
             mac_key.size());
-        return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Ok(std::move(mac));
+        return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(std::move(mac));
     }
 
-    Result<Unit, EcliptixProtocolFailure> EcliptixProtocolConnection::VerifyStateMac(
+    Result<Unit, ProtocolFailure> ProtocolConnection::VerifyStateMac(
         const proto::protocol::RatchetState &proto,
         const uint32_t expected_connection_id) {
         if (proto.state_mac().size() != crypto_generichash_BYTES) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Invalid or missing state MAC"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Invalid or missing state MAC"));
         }
         if (proto.root_key().size() != Constants::X_25519_KEY_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Invalid root key size in stored state"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Invalid root key size in stored state"));
         }
         if (proto.session_id().size() != 16) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Missing or invalid session id in stored state"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Missing or invalid session id in stored state"));
         }
         if (proto.initial_sending_dh_public().size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Missing or invalid initial sending DH public key in stored state"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Missing or invalid initial sending DH public key in stored state"));
         }
         if (!proto.current_sending_dh_public().empty() &&
             proto.current_sending_dh_public().size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Invalid current sending DH public key size in stored state"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Invalid current sending DH public key size in stored state"));
         }
         if (proto.kyber_public_key().size() != KyberInterop::KYBER_768_PUBLIC_KEY_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Missing or invalid Kyber public key in stored state"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Missing or invalid Kyber public key in stored state"));
         }
         if (proto.peer_kyber_public_key().size() != KyberInterop::KYBER_768_PUBLIC_KEY_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Missing or invalid peer Kyber public key in stored state"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Missing or invalid peer Kyber public key in stored state"));
         }
         if (proto.kyber_ciphertext().size() != KyberInterop::KYBER_768_CIPHERTEXT_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Missing or invalid Kyber ciphertext in stored state"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Missing or invalid Kyber ciphertext in stored state"));
         }
         std::vector<uint8_t> session_id_bytes(proto.session_id().begin(), proto.session_id().end());
         auto mac_key_result = DeriveStateMacKey(
@@ -1163,74 +1163,74 @@ namespace ecliptix::protocol::connection {
             std::span(reinterpret_cast<const uint8_t *>(proto.kyber_ciphertext().data()),
                       proto.kyber_ciphertext().size()));
         if (mac_key_result.IsErr()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(mac_key_result.UnwrapErr());
+            return Result<Unit, ProtocolFailure>::Err(mac_key_result.UnwrapErr());
         }
         auto computed_mac_result = ComputeStateMac(proto, mac_key_result.Unwrap());
         if (computed_mac_result.IsErr()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(computed_mac_result.UnwrapErr());
+            return Result<Unit, ProtocolFailure>::Err(computed_mac_result.UnwrapErr());
         }
         auto computed_mac = std::move(computed_mac_result.Unwrap());
         if (sodium_memcmp(computed_mac.data(), proto.state_mac().data(), computed_mac.size()) != 0) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("State MAC verification failed"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("State MAC verification failed"));
         }
-        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 
-    EcliptixProtocolConnection::~EcliptixProtocolConnection() {
+    ProtocolConnection::~ProtocolConnection() {
     }
 
-    uint64_t EcliptixProtocolConnection::GetSendingRatchetEpoch() const noexcept {
+    uint64_t ProtocolConnection::GetSendingRatchetEpoch() const noexcept {
         return sending_ratchet_epoch_.load(std::memory_order_acquire);
     }
 
-    uint64_t EcliptixProtocolConnection::GetReceivingRatchetEpoch() const noexcept {
+    uint64_t ProtocolConnection::GetReceivingRatchetEpoch() const noexcept {
         return receiving_ratchet_epoch_.load(std::memory_order_acquire);
     }
 
-    Result<std::pair<uint32_t, uint32_t>, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::GetChainIndices() const {
+    Result<std::pair<uint32_t, uint32_t>, ProtocolFailure>
+    ProtocolConnection::GetChainIndices() const {
         std::lock_guard lock(*lock_);
 
-        auto disposed_check = CheckDisposed();
+        auto disposed_check = EnsureNotDisposed();
         if (disposed_check.IsErr()) {
-            return Result<std::pair<uint32_t, uint32_t>, EcliptixProtocolFailure>::Err(
+            return Result<std::pair<uint32_t, uint32_t>, ProtocolFailure>::Err(
                 disposed_check.UnwrapErr());
         }
 
-        auto finalized_check = CheckIfFinalized();
+        auto finalized_check = IsFinalized();
         if (finalized_check.IsErr()) {
-            return Result<std::pair<uint32_t, uint32_t>, EcliptixProtocolFailure>::Err(
+            return Result<std::pair<uint32_t, uint32_t>, ProtocolFailure>::Err(
                 finalized_check.UnwrapErr());
         }
 
         auto sending_index_result = sending_step_.GetCurrentIndex();
         if (sending_index_result.IsErr()) {
-            return Result<std::pair<uint32_t, uint32_t>, EcliptixProtocolFailure>::Err(
+            return Result<std::pair<uint32_t, uint32_t>, ProtocolFailure>::Err(
                 sending_index_result.UnwrapErr());
         }
 
         auto receiving_index_result = receiving_step_->GetCurrentIndex();
         if (receiving_index_result.IsErr()) {
-            return Result<std::pair<uint32_t, uint32_t>, EcliptixProtocolFailure>::Err(
+            return Result<std::pair<uint32_t, uint32_t>, ProtocolFailure>::Err(
                 receiving_index_result.UnwrapErr());
         }
 
-        return Result<std::pair<uint32_t, uint32_t>, EcliptixProtocolFailure>::Ok(
+        return Result<std::pair<uint32_t, uint32_t>, ProtocolFailure>::Ok(
             std::make_pair(sending_index_result.Unwrap(), receiving_index_result.Unwrap()));
     }
 
-    Result<Unit, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::CheckDisposed() const {
+    Result<Unit, ProtocolFailure>
+    ProtocolConnection::EnsureNotDisposed() const {
         if (disposed_.load()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Connection has been disposed"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Connection has been disposed"));
         }
-        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 
-    Result<Unit, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::EnsureNotExpired() const {
+    Result<Unit, ProtocolFailure>
+    ProtocolConnection::EnsureNotExpired() const {
         auto now = std::chrono::system_clock::now();
         auto age = now - created_at_;
 #ifdef ECLIPTIX_TEST_BUILD
@@ -1240,199 +1240,199 @@ namespace ecliptix::protocol::connection {
         constexpr auto SESSION_TIMEOUT = std::chrono::hours(24);
 #endif
         if (age > SESSION_TIMEOUT) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     "Session expired (age: " + std::to_string(
                         std::chrono::duration_cast<std::chrono::seconds>(age).count()) + " seconds)"));
         }
-        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 
-    Result<Unit, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::CheckIfFinalized() const {
+    Result<Unit, ProtocolFailure>
+    ProtocolConnection::IsFinalized() const {
         if (!root_key_handle_.has_value()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Connection not finalized - root key not set"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Connection not finalized - root key not set"));
         }
         if (!receiving_step_.has_value()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Connection not finalized - receiving step not initialized"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Connection not finalized - receiving step not initialized"));
         }
-        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 
-    Result<Unit, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::CheckIfNotFinalized() const {
+    Result<Unit, ProtocolFailure>
+    ProtocolConnection::EnsureNotFinalized() const {
         if (root_key_handle_.has_value() || receiving_step_.has_value()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Connection already finalized"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Connection already finalized"));
         }
-        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 
-    uint32_t EcliptixProtocolConnection::GetId() const noexcept {
+    uint32_t ProtocolConnection::GetId() const noexcept {
         return id_;
     }
 
-    bool EcliptixProtocolConnection::IsInitiator() const noexcept {
+    bool ProtocolConnection::IsInitiator() const noexcept {
         return is_initiator_;
     }
 
-    PubKeyExchangeType EcliptixProtocolConnection::ExchangeType() const noexcept {
+    KeyExchangeType ProtocolConnection::ExchangeType() const noexcept {
         return exchange_type_;
     }
 
-    uint64_t EcliptixProtocolConnection::GetSessionAgeSeconds() const noexcept {
+    uint64_t ProtocolConnection::GetSessionAgeSeconds() const noexcept {
         const auto now = std::chrono::system_clock::now();
         const auto age = now - created_at_;
         return static_cast<uint64_t>(
             std::chrono::duration_cast<std::chrono::seconds>(age).count());
     }
 
-    Result<LocalPublicKeyBundle, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::GetPeerBundle() const {
+    Result<LocalPublicKeyBundle, ProtocolFailure>
+    ProtocolConnection::GetPeerBundle() const {
         std::lock_guard lock(*lock_);
-        auto disposed_check = CheckDisposed();
+        auto disposed_check = EnsureNotDisposed();
         if (disposed_check.IsErr()) {
-            return Result<LocalPublicKeyBundle, EcliptixProtocolFailure>::Err(
+            return Result<LocalPublicKeyBundle, ProtocolFailure>::Err(
                 disposed_check.UnwrapErr());
         }
         if (!peer_bundle_.has_value()) {
-            return Result<LocalPublicKeyBundle, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Peer bundle not set"));
+            return Result<LocalPublicKeyBundle, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Peer bundle not set"));
         }
-        return Result<LocalPublicKeyBundle, EcliptixProtocolFailure>::Ok(*peer_bundle_);
+        return Result<LocalPublicKeyBundle, ProtocolFailure>::Ok(*peer_bundle_);
     }
 
-    Result<Option<std::vector<uint8_t> >, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::GetCurrentPeerDhPublicKey() const {
+    Result<Option<std::vector<uint8_t> >, ProtocolFailure>
+    ProtocolConnection::GetCurrentPeerDhPublicKey() const {
         std::lock_guard lock(*lock_);
-        auto disposed_check = CheckDisposed();
+        auto disposed_check = EnsureNotDisposed();
         if (disposed_check.IsErr()) {
-            return Result<Option<std::vector<uint8_t> >, EcliptixProtocolFailure>::Err(
+            return Result<Option<std::vector<uint8_t> >, ProtocolFailure>::Err(
                 disposed_check.UnwrapErr());
         }
         if (!peer_dh_public_key_.has_value()) {
-            return Result<Option<std::vector<uint8_t> >, EcliptixProtocolFailure>::Ok(
+            return Result<Option<std::vector<uint8_t> >, ProtocolFailure>::Ok(
                 None<std::vector<uint8_t> >());
         }
-        return Result<Option<std::vector<uint8_t> >, EcliptixProtocolFailure>::Ok(
+        return Result<Option<std::vector<uint8_t> >, ProtocolFailure>::Ok(
             Some(*peer_dh_public_key_));
     }
 
-    Result<Option<std::vector<uint8_t> >, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::GetCurrentSenderDhPublicKey() const {
+    Result<Option<std::vector<uint8_t> >, ProtocolFailure>
+    ProtocolConnection::GetCurrentSenderDhPublicKey() const {
         std::lock_guard lock(*lock_);
-        if (auto disposed_check = CheckDisposed(); disposed_check.IsErr()) {
-            return Result<Option<std::vector<uint8_t> >, EcliptixProtocolFailure>::Err(
+        if (auto disposed_check = EnsureNotDisposed(); disposed_check.IsErr()) {
+            return Result<Option<std::vector<uint8_t> >, ProtocolFailure>::Err(
                 disposed_check.UnwrapErr());
         }
         if (current_sending_dh_public_.empty()) {
-            return Result<Option<std::vector<uint8_t> >, EcliptixProtocolFailure>::Ok(
+            return Result<Option<std::vector<uint8_t> >, ProtocolFailure>::Ok(
                 None<std::vector<uint8_t> >());
         }
-        return Result<Option<std::vector<uint8_t> >, EcliptixProtocolFailure>::Ok(
+        return Result<Option<std::vector<uint8_t> >, ProtocolFailure>::Ok(
             Some(current_sending_dh_public_));
     }
 
-    Result<std::vector<uint8_t>, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::GetMetadataEncryptionKey() const {
+    Result<std::vector<uint8_t>, ProtocolFailure>
+    ProtocolConnection::GetMetadataEncryptionKey() const {
         std::lock_guard lock(*lock_);
-        if (auto disposed_check = CheckDisposed(); disposed_check.IsErr()) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
+        if (auto disposed_check = EnsureNotDisposed(); disposed_check.IsErr()) {
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                 disposed_check.UnwrapErr());
         }
         if (!metadata_encryption_key_handle_.has_value()) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Metadata encryption key not initialized"));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Metadata encryption key not initialized"));
         }
         auto read_result = metadata_encryption_key_handle_->ReadBytes(Constants::AES_KEY_SIZE);
         if (read_result.IsErr()) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::FromSodiumFailure(read_result.UnwrapErr()));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(read_result.UnwrapErr()));
         }
-        return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Ok(read_result.Unwrap());
+        return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(read_result.Unwrap());
     }
 
-    Result<Option<std::vector<uint8_t> >, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::GetCurrentKyberCiphertext() const {
+    Result<Option<std::vector<uint8_t> >, ProtocolFailure>
+    ProtocolConnection::GetCurrentKyberCiphertext() const {
         std::lock_guard lock(*lock_);
-        if (auto disposed_check = CheckDisposed(); disposed_check.IsErr()) {
-            return Result<Option<std::vector<uint8_t> >, EcliptixProtocolFailure>::Err(
+        if (auto disposed_check = EnsureNotDisposed(); disposed_check.IsErr()) {
+            return Result<Option<std::vector<uint8_t> >, ProtocolFailure>::Err(
                 disposed_check.UnwrapErr());
         }
         if (!kyber_ciphertext_.has_value() || kyber_ciphertext_->empty()) {
-            return Result<Option<std::vector<uint8_t> >, EcliptixProtocolFailure>::Ok(
+            return Result<Option<std::vector<uint8_t> >, ProtocolFailure>::Ok(
                 None<std::vector<uint8_t> >());
         }
-        return Result<Option<std::vector<uint8_t> >, EcliptixProtocolFailure>::Ok(
+        return Result<Option<std::vector<uint8_t> >, ProtocolFailure>::Ok(
             Some(*kyber_ciphertext_));
     }
 
-    Result<Unit, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::SetLocalKyberKeyPair(
+    Result<Unit, ProtocolFailure>
+    ProtocolConnection::SetLocalKyberKeyPair(
         SecureMemoryHandle secret_key_handle,
         std::span<const uint8_t> public_key) {
         std::lock_guard lock(*lock_);
-        if (auto disposed_check = CheckDisposed(); disposed_check.IsErr()) {
+        if (auto disposed_check = EnsureNotDisposed(); disposed_check.IsErr()) {
             return disposed_check;
         }
         if (public_key.size() != KyberInterop::KYBER_768_PUBLIC_KEY_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput("Kyber public key must be 1184 bytes"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("Kyber public key must be 1184 bytes"));
         }
         auto validate = KyberInterop::ValidateSecretKey(secret_key_handle);
         if (validate.IsErr()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::FromSodiumFailure(validate.UnwrapErr()));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(validate.UnwrapErr()));
         }
         kyber_secret_key_handle_ = std::move(secret_key_handle);
         kyber_public_key_.assign(public_key.begin(), public_key.end());
-        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 
-    Result<Unit, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::SetHybridHandshakeSecrets(
+    Result<Unit, ProtocolFailure>
+    ProtocolConnection::SetHybridHandshakeSecrets(
         std::span<const uint8_t> kyber_ciphertext,
         std::span<const uint8_t> kyber_shared_secret) {
         std::lock_guard lock(*lock_);
-        if (auto disposed_check = CheckDisposed(); disposed_check.IsErr()) {
+        if (auto disposed_check = EnsureNotDisposed(); disposed_check.IsErr()) {
             return disposed_check;
         }
-        if (auto finalized_check = CheckIfNotFinalized(); finalized_check.IsErr()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Connection already finalized"));
+        if (auto finalized_check = EnsureNotFinalized(); finalized_check.IsErr()) {
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Connection already finalized"));
         }
         if (!kyber_ciphertext.empty()) {
             auto validate_ct = KyberInterop::ValidateCiphertext(kyber_ciphertext);
             if (validate_ct.IsErr()) {
-                return Result<Unit, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::FromSodiumFailure(validate_ct.UnwrapErr()));
+                return Result<Unit, ProtocolFailure>::Err(
+                    ProtocolFailure::FromSodiumFailure(validate_ct.UnwrapErr()));
             }
             kyber_ciphertext_ = std::vector(kyber_ciphertext.begin(), kyber_ciphertext.end());
         }
         if (kyber_shared_secret.size() != KyberInterop::KYBER_768_SHARED_SECRET_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput("Kyber shared secret must be 32 bytes"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("Kyber shared secret must be 32 bytes"));
         }
         kyber_shared_secret_ = std::vector(kyber_shared_secret.begin(), kyber_shared_secret.end());
-        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 
-    Result<Unit, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::DeriveKyberSharedSecretFromCiphertext(
+    Result<Unit, ProtocolFailure>
+    ProtocolConnection::DeriveKyberSharedSecretFromCiphertext(
         std::span<const uint8_t> kyber_ciphertext) {
         std::lock_guard lock(*lock_);
-        if (auto disposed_check = CheckDisposed(); disposed_check.IsErr()) {
+        if (auto disposed_check = EnsureNotDisposed(); disposed_check.IsErr()) {
             return disposed_check;
         }
-        if (auto finalized_check = CheckIfNotFinalized(); finalized_check.IsErr()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Connection already finalized"));
+        if (auto finalized_check = EnsureNotFinalized(); finalized_check.IsErr()) {
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Connection already finalized"));
         }
         auto ss_bytes_result = DecapsulateKyberCiphertext(kyber_ciphertext);
         if (ss_bytes_result.IsErr()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(ss_bytes_result.UnwrapErr());
+            return Result<Unit, ProtocolFailure>::Err(ss_bytes_result.UnwrapErr());
         }
         if (kyber_shared_secret_) {
             auto _wipe = SodiumInterop::SecureWipe(std::span(*kyber_shared_secret_));
@@ -1440,14 +1440,14 @@ namespace ecliptix::protocol::connection {
         }
         kyber_ciphertext_ = std::vector(kyber_ciphertext.begin(), kyber_ciphertext.end());
         kyber_shared_secret_ = ss_bytes_result.Unwrap();
-        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 
-    Result<Unit, EcliptixProtocolFailure> EcliptixProtocolConnection::UpdateKyberSecretFromCiphertext(
+    Result<Unit, ProtocolFailure> ProtocolConnection::UpdateKyberSecretFromCiphertext(
         std::span<const uint8_t> kyber_ct) {
         auto ss_bytes_result = DecapsulateKyberCiphertext(kyber_ct);
         if (ss_bytes_result.IsErr()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(ss_bytes_result.UnwrapErr());
+            return Result<Unit, ProtocolFailure>::Err(ss_bytes_result.UnwrapErr());
         }
         if (kyber_shared_secret_) {
             auto _wipe = SodiumInterop::SecureWipe(std::span(*kyber_shared_secret_));
@@ -1455,20 +1455,20 @@ namespace ecliptix::protocol::connection {
         }
         kyber_ciphertext_ = std::vector(kyber_ct.begin(), kyber_ct.end());
         kyber_shared_secret_ = ss_bytes_result.Unwrap();
-        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 
-    Result<std::vector<uint8_t>, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::DecapsulateKyberCiphertext(
+    Result<std::vector<uint8_t>, ProtocolFailure>
+    ProtocolConnection::DecapsulateKyberCiphertext(
         std::span<const uint8_t> kyber_ct) const {
         if (kyber_ct.size() != KyberInterop::KYBER_768_CIPHERTEXT_SIZE) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput("Kyber ciphertext must be 1088 bytes"));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("Kyber ciphertext must be 1088 bytes"));
         }
         auto validate_ct = KyberInterop::ValidateCiphertext(kyber_ct);
         if (validate_ct.IsErr()) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::FromSodiumFailure(validate_ct.UnwrapErr()));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(validate_ct.UnwrapErr()));
         }
         auto pk_hex = [](const std::vector<uint8_t> &data) -> std::string {
             std::string hex;
@@ -1483,28 +1483,28 @@ namespace ecliptix::protocol::connection {
                 pk_hex(kyber_public_key_).c_str());
         auto decap_result = KyberInterop::Decapsulate(kyber_ct, kyber_secret_key_handle_);
         if (decap_result.IsErr()) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::FromSodiumFailure(decap_result.UnwrapErr()));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(decap_result.UnwrapErr()));
         }
         auto ss_handle = std::move(decap_result).Unwrap();
         auto ss_bytes_result = ss_handle.ReadBytes(KyberInterop::KYBER_768_SHARED_SECRET_SIZE);
         if (ss_bytes_result.IsErr()) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::FromSodiumFailure(ss_bytes_result.UnwrapErr()));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(ss_bytes_result.UnwrapErr()));
         }
-        return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Ok(ss_bytes_result.Unwrap());
+        return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(ss_bytes_result.Unwrap());
     }
 
-    std::vector<uint8_t> EcliptixProtocolConnection::GetKyberPublicKeyCopy() const {
+    std::vector<uint8_t> ProtocolConnection::GetKyberPublicKeyCopy() const {
         std::lock_guard lock(*lock_);
-        if (auto disposed_check = CheckDisposed(); disposed_check.IsErr()) {
+        if (auto disposed_check = EnsureNotDisposed(); disposed_check.IsErr()) {
             return {};
         }
         return kyber_public_key_;
     }
 
 #ifdef ECLIPTIX_TEST_BUILD
-    std::vector<uint8_t> EcliptixProtocolConnection::DebugGetRootKey() const {
+    std::vector<uint8_t> ProtocolConnection::DebugGetRootKey() const {
         std::lock_guard lock(*lock_);
         if (!root_key_handle_.has_value()) {
             return {};
@@ -1516,7 +1516,7 @@ namespace ecliptix::protocol::connection {
         return read.Unwrap();
     }
 
-    std::vector<uint8_t> EcliptixProtocolConnection::DebugGetCurrentDhPrivate() const {
+    std::vector<uint8_t> ProtocolConnection::DebugGetCurrentDhPrivate() const {
         std::lock_guard lock(*lock_);
         if (!current_sending_dh_private_handle_.has_value()) {
             return {};
@@ -1528,7 +1528,7 @@ namespace ecliptix::protocol::connection {
         return read.Unwrap();
     }
 
-    std::vector<uint8_t> EcliptixProtocolConnection::DebugGetKyberSharedSecret() const {
+    std::vector<uint8_t> ProtocolConnection::DebugGetKyberSharedSecret() const {
         std::lock_guard lock(*lock_);
         if (!kyber_shared_secret_.has_value()) {
             return {};
@@ -1536,36 +1536,36 @@ namespace ecliptix::protocol::connection {
         return *kyber_shared_secret_;
     }
 
-    Result<Unit, EcliptixProtocolFailure> EcliptixProtocolConnection::DebugSetPeerKyberPublicKey(
+    Result<Unit, ProtocolFailure> ProtocolConnection::DebugSetPeerKyberPublicKey(
         std::span<const uint8_t> peer_kyber_public_key) {
         std::lock_guard lock(*lock_);
         if (peer_kyber_public_key.size() != KyberInterop::KYBER_768_PUBLIC_KEY_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput("Peer Kyber public key must be 1184 bytes"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("Peer Kyber public key must be 1184 bytes"));
         }
         peer_kyber_public_key_ = std::vector(peer_kyber_public_key.begin(), peer_kyber_public_key.end());
-        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 #endif
 
-    Result<Unit, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::SetPeerBundle(const LocalPublicKeyBundle &peer_bundle) {
+    Result<Unit, ProtocolFailure>
+    ProtocolConnection::SetPeerBundle(const LocalPublicKeyBundle &peer_bundle) {
         std::lock_guard lock(*lock_);
-        if (auto disposed_check = CheckDisposed(); disposed_check.IsErr()) {
+        if (auto disposed_check = EnsureNotDisposed(); disposed_check.IsErr()) {
             return disposed_check;
         }
-        if (auto finalized_check = CheckIfNotFinalized(); finalized_check.IsErr()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Cannot set peer bundle after connection finalized"));
+        if (auto finalized_check = EnsureNotFinalized(); finalized_check.IsErr()) {
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Cannot set peer bundle after connection finalized"));
         }
         if (!peer_bundle.HasKyberKey() || !peer_bundle.GetKyberPublicKey().has_value()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput("Peer Kyber public key required for PQ mode"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("Peer Kyber public key required for PQ mode"));
         }
         auto &kyber_pk = peer_bundle.GetKyberPublicKey().value();
         if (kyber_pk.size() != KyberInterop::KYBER_768_PUBLIC_KEY_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput("Peer Kyber public key must be 1184 bytes"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("Peer Kyber public key must be 1184 bytes"));
         }
         fprintf(
             stderr,
@@ -1591,44 +1591,44 @@ namespace ecliptix::protocol::connection {
         if (initial_peer_dh_public_.empty()) {
             initial_peer_dh_public_ = peer_dh_key;
         }
-        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 
-    Result<EcliptixProtocolConnection::ReceivingRatchetPreview, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::PrepareReceivingRatchet(
+    Result<ProtocolConnection::ReceivingRatchetPreview, ProtocolFailure>
+    ProtocolConnection::PrepareReceivingRatchet(
         std::span<const uint8_t> received_dh_public_key,
         std::span<const uint8_t> received_kyber_ciphertext) {
         std::lock_guard lock(*lock_);
-        if (auto disposed_check = CheckDisposed(); disposed_check.IsErr()) {
-            return Result<ReceivingRatchetPreview, EcliptixProtocolFailure>::Err(disposed_check.UnwrapErr());
+        if (auto disposed_check = EnsureNotDisposed(); disposed_check.IsErr()) {
+            return Result<ReceivingRatchetPreview, ProtocolFailure>::Err(disposed_check.UnwrapErr());
         }
-        if (auto finalized_check = CheckIfFinalized(); finalized_check.IsErr()) {
-            return Result<ReceivingRatchetPreview, EcliptixProtocolFailure>::Err(finalized_check.UnwrapErr());
+        if (auto finalized_check = IsFinalized(); finalized_check.IsErr()) {
+            return Result<ReceivingRatchetPreview, ProtocolFailure>::Err(finalized_check.UnwrapErr());
         }
         if (!receiving_step_.has_value()) {
-            return Result<ReceivingRatchetPreview, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Receiving chain step not initialized"));
+            return Result<ReceivingRatchetPreview, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Receiving chain step not initialized"));
         }
         if (received_dh_public_key.size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
-            return Result<ReceivingRatchetPreview, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput(
+            return Result<ReceivingRatchetPreview, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput(
                     compat::format("Received DH public key must be {} bytes, got {}",
                                              Constants::X_25519_PUBLIC_KEY_SIZE, received_dh_public_key.size())));
         }
         if (received_kyber_ciphertext.size() != KyberInterop::KYBER_768_CIPHERTEXT_SIZE) {
-            return Result<ReceivingRatchetPreview, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput(
+            return Result<ReceivingRatchetPreview, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput(
                     compat::format("Received Kyber ciphertext must be {} bytes, got {}",
                                              KyberInterop::KYBER_768_CIPHERTEXT_SIZE,
                                              received_kyber_ciphertext.size())));
         }
         if (auto validation_result = DhValidator::ValidateX25519PublicKey(received_dh_public_key); validation_result.
             IsErr()) {
-            return Result<ReceivingRatchetPreview, EcliptixProtocolFailure>::Err(validation_result.UnwrapErr());
+            return Result<ReceivingRatchetPreview, ProtocolFailure>::Err(validation_result.UnwrapErr());
         }
         if (!current_sending_dh_private_handle_.has_value()) {
-            return Result<ReceivingRatchetPreview, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Current sending DH private key not set"));
+            return Result<ReceivingRatchetPreview, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Current sending DH private key not set"));
         }
         std::vector<uint8_t> dh_secret;
         std::vector<uint8_t> our_priv_bytes;
@@ -1642,16 +1642,16 @@ namespace ecliptix::protocol::connection {
             auto our_priv_bytes_result = current_sending_dh_private_handle_->ReadBytes(
                 Constants::X_25519_PRIVATE_KEY_SIZE);
             if (our_priv_bytes_result.IsErr()) {
-                return Result<ReceivingRatchetPreview, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic("Failed to read current DH private key"));
+                return Result<ReceivingRatchetPreview, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic("Failed to read current DH private key"));
             }
             our_priv_bytes = our_priv_bytes_result.Unwrap();
             dh_secret.resize(Constants::X_25519_KEY_SIZE);
             if (crypto_scalarmult(dh_secret.data(), our_priv_bytes.data(), received_dh_public_key.data()) != 0) {
                 auto _wipe = SodiumInterop::SecureWipe(std::span(our_priv_bytes));
                 (void) _wipe;
-                return Result<ReceivingRatchetPreview, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::DeriveKey("Failed to compute receiver DH secret"));
+                return Result<ReceivingRatchetPreview, ProtocolFailure>::Err(
+                    ProtocolFailure::DeriveKey("Failed to compute receiver DH secret"));
             }
             auto kyber_ss_result = DecapsulateKyberCiphertext(received_kyber_ciphertext);
             if (kyber_ss_result.IsErr()) {
@@ -1659,7 +1659,7 @@ namespace ecliptix::protocol::connection {
                 (void) _wipe_priv;
                 auto _wipe_dh = SodiumInterop::SecureWipe(std::span(dh_secret));
                 (void) _wipe_dh;
-                return Result<ReceivingRatchetPreview, EcliptixProtocolFailure>::Err(kyber_ss_result.UnwrapErr());
+                return Result<ReceivingRatchetPreview, ProtocolFailure>::Err(kyber_ss_result.UnwrapErr());
             }
             kyber_shared_secret = std::move(kyber_ss_result).Unwrap();
             auto root_bytes_result = root_key_handle_->ReadBytes(Constants::X_25519_KEY_SIZE);
@@ -1675,8 +1675,8 @@ namespace ecliptix::protocol::connection {
                     auto _wipe = SodiumInterop::SecureWipe(std::span(*kyber_shared_secret));
                     (void) _wipe;
                 }
-                return Result<ReceivingRatchetPreview, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic("Failed to read root key"));
+                return Result<ReceivingRatchetPreview, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic("Failed to read root key"));
             }
             root_bytes = root_bytes_result.Unwrap();
             auto hybrid_result = DeriveHybridDhSecret(
@@ -1698,7 +1698,7 @@ namespace ecliptix::protocol::connection {
                     auto _wipe = SodiumInterop::SecureWipe(std::span(*kyber_shared_secret));
                     (void) _wipe;
                 }
-                return Result<ReceivingRatchetPreview, EcliptixProtocolFailure>::Err(
+                return Result<ReceivingRatchetPreview, ProtocolFailure>::Err(
                     hybrid_result.UnwrapErr());
             }
             hybrid_secret = hybrid_result.Unwrap();
@@ -1724,7 +1724,7 @@ namespace ecliptix::protocol::connection {
                     auto _wipe_kyber = SodiumInterop::SecureWipe(std::span(*kyber_shared_secret));
                     (void) _wipe_kyber;
                 }
-                return Result<ReceivingRatchetPreview, EcliptixProtocolFailure>::Err(
+                return Result<ReceivingRatchetPreview, ProtocolFailure>::Err(
                     hkdf_output_result.UnwrapErr());
             }
             hkdf_output = hkdf_output_result.Unwrap();
@@ -1749,11 +1749,11 @@ namespace ecliptix::protocol::connection {
                     auto _wipe = SodiumInterop::SecureWipe(std::span(*kyber_shared_secret));
                     (void) _wipe;
                 }
-                return Result<ReceivingRatchetPreview, EcliptixProtocolFailure>::Err(
+                return Result<ReceivingRatchetPreview, ProtocolFailure>::Err(
                     receiving_proto_result.UnwrapErr());
             }
-            auto receiving_clone_result = EcliptixProtocolChainStep::FromProtoState(
-                ChainStepType::RECEIVER,
+            auto receiving_clone_result = ChainStep::FromProtoState(
+                ChainStepType::Receiver,
                 receiving_proto_result.Unwrap());
             if (receiving_clone_result.IsErr()) {
                 {
@@ -1773,7 +1773,7 @@ namespace ecliptix::protocol::connection {
                     auto _wipe = SodiumInterop::SecureWipe(std::span(*kyber_shared_secret));
                     (void) _wipe;
                 }
-                return Result<ReceivingRatchetPreview, EcliptixProtocolFailure>::Err(
+                return Result<ReceivingRatchetPreview, ProtocolFailure>::Err(
                     receiving_clone_result.UnwrapErr());
             }
             auto clone = std::move(receiving_clone_result).Unwrap();
@@ -1796,7 +1796,7 @@ namespace ecliptix::protocol::connection {
                     auto _wipe = SodiumInterop::SecureWipe(std::span(*kyber_shared_secret));
                     (void) _wipe;
                 }
-                return Result<ReceivingRatchetPreview, EcliptixProtocolFailure>::Err(update_result.UnwrapErr());
+                return Result<ReceivingRatchetPreview, ProtocolFailure>::Err(update_result.UnwrapErr());
             }
             auto metadata_key_result = DeriveMetadataEncryptionKeyBytes(
                 new_root_key,
@@ -1821,7 +1821,7 @@ namespace ecliptix::protocol::connection {
                     auto _wipe = SodiumInterop::SecureWipe(std::span(*kyber_shared_secret));
                     (void) _wipe;
                 }
-                return Result<ReceivingRatchetPreview, EcliptixProtocolFailure>::Err(
+                return Result<ReceivingRatchetPreview, ProtocolFailure>::Err(
                     metadata_key_result.UnwrapErr());
             }
             ReceivingRatchetPreview preview{
@@ -1839,7 +1839,7 @@ namespace ecliptix::protocol::connection {
             (void) _wipe_hkdf;
             auto _wipe_chain = SodiumInterop::SecureWipe(std::span(new_chain_key));
             (void) _wipe_chain;
-            return Result<ReceivingRatchetPreview, EcliptixProtocolFailure>::Ok(std::move(preview));
+            return Result<ReceivingRatchetPreview, ProtocolFailure>::Ok(std::move(preview));
         } catch (const std::exception &ex) {
             auto _wipe_priv = SodiumInterop::SecureWipe(std::span(our_priv_bytes));
             (void) _wipe_priv;
@@ -1857,19 +1857,19 @@ namespace ecliptix::protocol::connection {
                 auto _wipe = SodiumInterop::SecureWipe(std::span(*kyber_shared_secret));
                 (void) _wipe;
             }
-            return Result<ReceivingRatchetPreview, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Exception during receiving ratchet preparation: " +
+            return Result<ReceivingRatchetPreview, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Exception during receiving ratchet preparation: " +
                                                  std::string(ex.what())));
         }
     }
 
-    Result<Unit, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::CommitReceivingRatchet(ReceivingRatchetPreview &&preview) {
+    Result<Unit, ProtocolFailure>
+    ProtocolConnection::CommitReceivingRatchet(ReceivingRatchetPreview &&preview) {
         std::lock_guard lock(*lock_);
-        if (auto disposed_check = CheckDisposed(); disposed_check.IsErr()) {
+        if (auto disposed_check = EnsureNotDisposed(); disposed_check.IsErr()) {
             return disposed_check;
         }
-        if (auto finalized_check = CheckIfFinalized(); finalized_check.IsErr()) {
+        if (auto finalized_check = IsFinalized(); finalized_check.IsErr()) {
             return finalized_check;
         }
         auto metadata_handle_result = SecureMemoryHandle::Allocate(Constants::AES_KEY_SIZE);
@@ -1880,8 +1880,8 @@ namespace ecliptix::protocol::connection {
             (void) _wipe_meta;
             auto _wipe_pq = SodiumInterop::SecureWipe(std::span(preview.kyber_shared_secret));
             (void) _wipe_pq;
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::FromSodiumFailure(metadata_handle_result.UnwrapErr()));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(metadata_handle_result.UnwrapErr()));
         }
         auto metadata_handle = std::move(metadata_handle_result).Unwrap();
         auto metadata_write = metadata_handle.Write(preview.metadata_key);
@@ -1892,8 +1892,8 @@ namespace ecliptix::protocol::connection {
             (void) _wipe_root;
             auto _wipe_pq = SodiumInterop::SecureWipe(std::span(preview.kyber_shared_secret));
             (void) _wipe_pq;
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::FromSodiumFailure(metadata_write.UnwrapErr()));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(metadata_write.UnwrapErr()));
         }
         auto write_root = root_key_handle_->Write(preview.new_root_key);
         if (write_root.IsErr()) {
@@ -1901,8 +1901,8 @@ namespace ecliptix::protocol::connection {
             (void) _wipe_root;
             auto _wipe_pq = SodiumInterop::SecureWipe(std::span(preview.kyber_shared_secret));
             (void) _wipe_pq;
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::FromSodiumFailure(write_root.UnwrapErr()));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(write_root.UnwrapErr()));
         }
         metadata_encryption_key_handle_ = std::move(metadata_handle);
         if (kyber_shared_secret_) {
@@ -1922,43 +1922,43 @@ namespace ecliptix::protocol::connection {
         if (event_handler_) {
             event_handler_->OnProtocolStateChanged(id_);
         }
-        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 
-    Result<Unit, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::PerformReceivingRatchet(
+    Result<Unit, ProtocolFailure>
+    ProtocolConnection::ExecuteReceivingRatchet(
         const std::span<const uint8_t> received_dh_public_key,
         const std::span<const uint8_t> received_kyber_ciphertext) {
         auto preview_result = PrepareReceivingRatchet(received_dh_public_key, received_kyber_ciphertext);
         if (preview_result.IsErr()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(preview_result.UnwrapErr());
+            return Result<Unit, ProtocolFailure>::Err(preview_result.UnwrapErr());
         }
         return CommitReceivingRatchet(std::move(preview_result.Unwrap()));
     }
 
-    void EcliptixProtocolConnection::NotifyRatchetRotation() {
+    void ProtocolConnection::NotifyRatchetRotation() {
         received_new_dh_key_.store(true);
     }
 
-    void EcliptixProtocolConnection::SetEventHandler(std::shared_ptr<IProtocolEventHandler> handler) {
+    void ProtocolConnection::SetEventHandler(std::shared_ptr<IProtocolEventHandler> handler) {
         std::lock_guard lock(*lock_);
         event_handler_ = std::move(handler);
     }
 
-    Result<Unit, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::SyncWithRemoteState(
+    Result<Unit, ProtocolFailure>
+    ProtocolConnection::SyncWithRemoteState(
         uint32_t remote_sending_chain_length,
         uint32_t remote_receiving_chain_length) {
         std::lock_guard lock(*lock_);
-        if (auto disposed_check = CheckDisposed(); disposed_check.IsErr()) {
+        if (auto disposed_check = EnsureNotDisposed(); disposed_check.IsErr()) {
             return disposed_check;
         }
-        if (auto finalized_check = CheckIfFinalized(); finalized_check.IsErr()) {
+        if (auto finalized_check = IsFinalized(); finalized_check.IsErr()) {
             return finalized_check;
         }
         if (!receiving_step_.has_value()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Receiving chain step not initialized"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Receiving chain step not initialized"));
         }
         if (auto receiving_skip_result = receiving_step_->SkipKeysUntil(remote_sending_chain_length);
             receiving_skip_result.IsErr()) {
@@ -1971,16 +1971,16 @@ namespace ecliptix::protocol::connection {
         if (event_handler_) {
             event_handler_->OnProtocolStateChanged(id_);
         }
-        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 
-    Result<std::vector<uint8_t>, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::GenerateNextNonce(const std::optional<uint32_t> message_index) {
+    Result<std::vector<uint8_t>, ProtocolFailure>
+    ProtocolConnection::GenerateNextNonce(const std::optional<uint32_t> message_index) {
         std::lock_guard lock(*lock_);
 
-        auto disposed_check = CheckDisposed();
+        auto disposed_check = EnsureNotDisposed();
         if (disposed_check.IsErr()) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(disposed_check.UnwrapErr());
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(disposed_check.UnwrapErr());
         }
         constexpr int64_t ONE_SECOND_NS = 1'000'000'000LL;
         const auto now = std::chrono::steady_clock::now();
@@ -1998,8 +1998,8 @@ namespace ecliptix::protocol::connection {
         constexpr uint32_t NONCE_RATE_LIMIT = ProtocolConstants::NONCE_RATE_LIMIT_PER_SECOND;
 #endif
         if (nonces_in_window >= NONCE_RATE_LIMIT) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     "Nonce generation rate limit exceeded (" +
                     std::to_string(NONCE_RATE_LIMIT) +
                     " nonces per second)"));
@@ -2019,8 +2019,8 @@ namespace ecliptix::protocol::connection {
                                     : static_cast<uint32_t>(counter));
         pending_send_index_.reset();
         if (counter > ProtocolConstants::MAX_NONCE_COUNTER) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     "Nonce counter overflow - must rotate keys (ratchet) before continuing"));
         }
         nonce_counter_.store(counter + 1, std::memory_order_seq_cst);
@@ -2043,40 +2043,40 @@ namespace ecliptix::protocol::connection {
             nonce[PREFIX_SIZE + COUNTER_SIZE + i] = static_cast<uint8_t>(
                 (index >> (i * ComparisonConstants::BIT_SHIFT_BYTE)) & ComparisonConstants::BYTE_MASK);
         }
-        return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Ok(nonce);
+        return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(nonce);
     }
 
-    Result<Unit, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::CheckReplayProtection(
+    Result<Unit, ProtocolFailure>
+    ProtocolConnection::ValidateNotReplayed(
         const std::span<const uint8_t> nonce,
         const uint64_t message_index) {
         const uint64_t chain_index = receiving_ratchet_epoch_.load(std::memory_order_acquire);
         return replay_protection_.CheckAndRecordMessage(nonce, message_index, chain_index);
     }
 
-    Result<std::pair<RatchetChainKey, bool>, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::PrepareNextSendMessage() {
+    Result<std::pair<ChainKey, bool>, ProtocolFailure>
+    ProtocolConnection::PrepareNextSendMessage() {
         std::lock_guard lock(*lock_);
 
         if (!root_key_handle_.has_value()) {
-            return Result<std::pair<RatchetChainKey, bool>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Connection not finalized - call FinalizeChainAndDhKeys() first"));
+            return Result<std::pair<ChainKey, bool>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Connection not finalized - call FinalizeChainAndDhKeys() first"));
         }
         if (disposed_.load()) {
-            return Result<std::pair<RatchetChainKey, bool>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::ObjectDisposed("EcliptixProtocolConnection"));
+            return Result<std::pair<ChainKey, bool>, ProtocolFailure>::Err(
+                ProtocolFailure::ObjectDisposed("ProtocolConnection"));
         }
         auto current_index_result = sending_step_.GetCurrentIndex();
         if (current_index_result.IsErr()) {
-            return Result<std::pair<RatchetChainKey, bool>, EcliptixProtocolFailure>::Err(
+            return Result<std::pair<ChainKey, bool>, ProtocolFailure>::Err(
                 current_index_result.UnwrapErr());
         }
         uint32_t next_index = current_index_result.Unwrap();
         bool should_ratchet = ratchet_config_.ShouldRatchet(next_index, received_new_dh_key_.load());
         bool include_dh_key = false;
         if (should_ratchet) {
-            if (auto ratchet_result = PerformDhRatchet(true, {}, {}); ratchet_result.IsErr()) {
-                return Result<std::pair<RatchetChainKey, bool>, EcliptixProtocolFailure>::Err(
+            if (auto ratchet_result = ExecuteDhRatchet(true, {}, {}); ratchet_result.IsErr()) {
+                return Result<std::pair<ChainKey, bool>, ProtocolFailure>::Err(
                     ratchet_result.UnwrapErr());
             }
             include_dh_key = true;
@@ -2084,14 +2084,14 @@ namespace ecliptix::protocol::connection {
 
             auto new_index_result = sending_step_.GetCurrentIndex();
             if (new_index_result.IsErr()) {
-                return Result<std::pair<RatchetChainKey, bool>, EcliptixProtocolFailure>::Err(
+                return Result<std::pair<ChainKey, bool>, ProtocolFailure>::Err(
                     new_index_result.UnwrapErr());
             }
             next_index = new_index_result.Unwrap();
         }
         auto derived_key_result = sending_step_.GetOrDeriveKeyFor(next_index);
         if (derived_key_result.IsErr()) {
-            return Result<std::pair<RatchetChainKey, bool>, EcliptixProtocolFailure>::Err(
+            return Result<std::pair<ChainKey, bool>, ProtocolFailure>::Err(
                 derived_key_result.UnwrapErr());
         }
         auto derived_key = derived_key_result.Unwrap();
@@ -2100,18 +2100,18 @@ namespace ecliptix::protocol::connection {
         if (event_handler_) {
             event_handler_->OnProtocolStateChanged(id_);
         }
-        return Result<std::pair<RatchetChainKey, bool>, EcliptixProtocolFailure>::Ok(
+        return Result<std::pair<ChainKey, bool>, ProtocolFailure>::Ok(
             std::make_pair(derived_key, include_dh_key));
     }
 
-    Result<Unit, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::PerformDhRatchet(
+    Result<Unit, ProtocolFailure>
+    ProtocolConnection::ExecuteDhRatchet(
         bool is_sender,
         std::span<const uint8_t> received_dh_public_key,
         std::span<const uint8_t> received_kyber_ciphertext) {
         if (!root_key_handle_.has_value()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Root key not initialized"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Root key not initialized"));
         }
 
         constexpr int64_t ONE_MINUTE_NS = 60'000'000'000LL;
@@ -2126,8 +2126,8 @@ namespace ecliptix::protocol::connection {
             1, std::memory_order_seq_cst);
 #ifndef ECLIPTIX_TEST_BUILD
         if (ratchets_in_window >= ProtocolConstants::MAX_DH_RATCHETS_PER_MINUTE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(compat::format(
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(compat::format(
                     "DH ratchet rate limit exceeded: {} ratchets per minute maximum (DoS protection)",
                     ProtocolConstants::MAX_DH_RATCHETS_PER_MINUTE)));
         }
@@ -2148,14 +2148,14 @@ namespace ecliptix::protocol::connection {
             if (is_sender) {
                 auto new_keypair_result = SodiumInterop::GenerateX25519KeyPair("Ratchet ephemeral DH key");
                 if (new_keypair_result.IsErr()) {
-                    return Result<Unit, EcliptixProtocolFailure>::Err(
+                    return Result<Unit, ProtocolFailure>::Err(
                         new_keypair_result.UnwrapErr());
                 }
                 auto [new_priv_handle, new_pub] = std::move(new_keypair_result).Unwrap();
                 auto priv_bytes_result = new_priv_handle.ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
                 if (priv_bytes_result.IsErr()) {
-                    return Result<Unit, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::Generic("Failed to read new DH private key"));
+                    return Result<Unit, ProtocolFailure>::Err(
+                        ProtocolFailure::Generic("Failed to read new DH private key"));
                 }
                 new_dh_private = priv_bytes_result.Unwrap();
                 new_dh_public = std::move(new_pub);
@@ -2164,8 +2164,8 @@ namespace ecliptix::protocol::connection {
                         auto _wipe = SodiumInterop::SecureWipe(std::span(new_dh_private));
                         (void) _wipe;
                     }
-                    return Result<Unit, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::Generic("Peer DH public key not set"));
+                    return Result<Unit, ProtocolFailure>::Err(
+                        ProtocolFailure::Generic("Peer DH public key not set"));
                 }
                 dh_secret.resize(Constants::X_25519_KEY_SIZE);
                 if (crypto_scalarmult(dh_secret.data(), new_dh_private.data(), peer_dh_public_key_->data()) != 0) {
@@ -2173,23 +2173,23 @@ namespace ecliptix::protocol::connection {
                         auto _wipe = SodiumInterop::SecureWipe(std::span(new_dh_private));
                         (void) _wipe;
                     }
-                    return Result<Unit, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::DeriveKey("Failed to compute sender DH secret"));
+                    return Result<Unit, ProtocolFailure>::Err(
+                        ProtocolFailure::DeriveKey("Failed to compute sender DH secret"));
                 }
             } else {
                 if (received_dh_public_key.empty()) {
-                    return Result<Unit, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::InvalidInput("Received DH public key required for receiver ratchet"));
+                    return Result<Unit, ProtocolFailure>::Err(
+                        ProtocolFailure::InvalidInput("Received DH public key required for receiver ratchet"));
                 }
                 if (!current_sending_dh_private_handle_.has_value()) {
-                    return Result<Unit, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::Generic("Current sending DH private key not set"));
+                    return Result<Unit, ProtocolFailure>::Err(
+                        ProtocolFailure::Generic("Current sending DH private key not set"));
                 }
                 auto our_priv_bytes_result = current_sending_dh_private_handle_->ReadBytes(
                     Constants::X_25519_PRIVATE_KEY_SIZE);
                 if (our_priv_bytes_result.IsErr()) {
-                    return Result<Unit, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::Generic("Failed to read current DH private key"));
+                    return Result<Unit, ProtocolFailure>::Err(
+                        ProtocolFailure::Generic("Failed to read current DH private key"));
                 }
                 auto our_priv_bytes = our_priv_bytes_result.Unwrap();
                 dh_secret.resize(Constants::X_25519_KEY_SIZE);
@@ -2198,8 +2198,8 @@ namespace ecliptix::protocol::connection {
                         auto _wipe = SodiumInterop::SecureWipe(std::span(our_priv_bytes));
                         (void) _wipe;
                     }
-                    return Result<Unit, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::DeriveKey("Failed to compute receiver DH secret"));
+                    return Result<Unit, ProtocolFailure>::Err(
+                        ProtocolFailure::DeriveKey("Failed to compute receiver DH secret"));
                 } {
                     auto _wipe = SodiumInterop::SecureWipe(std::span(our_priv_bytes));
                     (void) _wipe;
@@ -2213,8 +2213,8 @@ namespace ecliptix::protocol::connection {
                     (void) _wipe_priv;
                     auto _wipe_dh = SodiumInterop::SecureWipe(std::span(dh_secret));
                     (void) _wipe_dh;
-                    return Result<Unit, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::Generic("Peer Kyber public key missing for hybrid ratchet"));
+                    return Result<Unit, ProtocolFailure>::Err(
+                        ProtocolFailure::Generic("Peer Kyber public key missing for hybrid ratchet"));
                 }
                 auto pk_hex = [](const std::vector<uint8_t> &data) -> std::string {
                     std::string hex;
@@ -2233,8 +2233,8 @@ namespace ecliptix::protocol::connection {
                     (void) _wipe_priv;
                     auto _wipe_dh = SodiumInterop::SecureWipe(std::span(dh_secret));
                     (void) _wipe_dh;
-                    return Result<Unit, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::FromSodiumFailure(encap_result.UnwrapErr()));
+                    return Result<Unit, ProtocolFailure>::Err(
+                        ProtocolFailure::FromSodiumFailure(encap_result.UnwrapErr()));
                 }
                 auto [ct, ss_handle] = std::move(encap_result).Unwrap();
                 auto ss_bytes_result = ss_handle.ReadBytes(KyberInterop::KYBER_768_SHARED_SECRET_SIZE);
@@ -2243,8 +2243,8 @@ namespace ecliptix::protocol::connection {
                     (void) _wipe_priv;
                     auto _wipe_dh = SodiumInterop::SecureWipe(std::span(dh_secret));
                     (void) _wipe_dh;
-                    return Result<Unit, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::FromSodiumFailure(ss_bytes_result.UnwrapErr()));
+                    return Result<Unit, ProtocolFailure>::Err(
+                        ProtocolFailure::FromSodiumFailure(ss_bytes_result.UnwrapErr()));
                 }
                 kyber_ciphertext_ = std::move(ct);
                 kyber_shared_secret_ = ss_bytes_result.Unwrap();
@@ -2267,8 +2267,8 @@ namespace ecliptix::protocol::connection {
                     auto _wipe = SodiumInterop::SecureWipe(std::span(new_dh_private));
                     (void) _wipe;
                 }
-                return Result<Unit, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic("Failed to read root key"));
+                return Result<Unit, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic("Failed to read root key"));
             }
             auto root_bytes = root_bytes_result.Unwrap();
             auto hybrid_secret_result = DeriveHybridDhSecret(
@@ -2286,7 +2286,7 @@ namespace ecliptix::protocol::connection {
                     auto _wipe = SodiumInterop::SecureWipe(std::span(new_dh_private));
                     (void) _wipe;
                 }
-                return Result<Unit, EcliptixProtocolFailure>::Err(hybrid_secret_result.UnwrapErr());
+                return Result<Unit, ProtocolFailure>::Err(hybrid_secret_result.UnwrapErr());
             }
             hybrid_secret = hybrid_secret_result.Unwrap();
             auto hkdf_output_result = Hkdf::DeriveKeyBytes(
@@ -2309,7 +2309,7 @@ namespace ecliptix::protocol::connection {
                     auto _wipe = SodiumInterop::SecureWipe(std::span(new_dh_private));
                     (void) _wipe;
                 }
-                return Result<Unit, EcliptixProtocolFailure>::Err(
+                return Result<Unit, ProtocolFailure>::Err(
                     hkdf_output_result.UnwrapErr());
             }
             auto hkdf_output = hkdf_output_result.Unwrap();
@@ -2329,8 +2329,8 @@ namespace ecliptix::protocol::connection {
                     auto _wipe = SodiumInterop::SecureWipe(std::span(new_dh_private));
                     (void) _wipe;
                 }
-                return Result<Unit, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::FromSodiumFailure(write_result.UnwrapErr()));
+                return Result<Unit, ProtocolFailure>::Err(
+                    ProtocolFailure::FromSodiumFailure(write_result.UnwrapErr()));
             } {
                 auto _wipe = SodiumInterop::SecureWipe(std::span(new_root_key));
                 (void) _wipe;
@@ -2355,8 +2355,8 @@ namespace ecliptix::protocol::connection {
                         auto _wipe = SodiumInterop::SecureWipe(std::span(new_dh_private));
                         (void) _wipe;
                     }
-                    return Result<Unit, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::FromSodiumFailure(new_dh_handle_result.UnwrapErr()));
+                    return Result<Unit, ProtocolFailure>::Err(
+                        ProtocolFailure::FromSodiumFailure(new_dh_handle_result.UnwrapErr()));
                 }
                 auto new_dh_handle = std::move(new_dh_handle_result).Unwrap();
                 auto dh_write_result = new_dh_handle.Write(new_dh_private); {
@@ -2368,8 +2368,8 @@ namespace ecliptix::protocol::connection {
                         auto _wipe = SodiumInterop::SecureWipe(std::span(new_chain_key));
                         (void) _wipe;
                     }
-                    return Result<Unit, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::FromSodiumFailure(dh_write_result.UnwrapErr()));
+                    return Result<Unit, ProtocolFailure>::Err(
+                        ProtocolFailure::FromSodiumFailure(dh_write_result.UnwrapErr()));
                 }
                 current_sending_dh_private_handle_ = std::move(new_dh_handle);
                 current_sending_dh_public_ = std::move(new_dh_public);
@@ -2380,8 +2380,8 @@ namespace ecliptix::protocol::connection {
                         auto _wipe = SodiumInterop::SecureWipe(std::span(new_chain_key));
                         (void) _wipe;
                     }
-                    return Result<Unit, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::Generic("Receiving step not initialized"));
+                    return Result<Unit, ProtocolFailure>::Err(
+                        ProtocolFailure::Generic("Receiving step not initialized"));
                 }
                 if (auto update_result = receiving_step_->UpdateKeysAfterDhRatchet(new_chain_key); update_result.
                     IsErr()) {
@@ -2410,7 +2410,7 @@ namespace ecliptix::protocol::connection {
 
             replay_protection_.ResetMessageWindows();
 
-            return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+            return Result<Unit, ProtocolFailure>::Ok(Unit{});
         } catch (const std::exception &ex) {
             {
                 auto _wipe = SodiumInterop::SecureWipe(std::span(dh_secret));
@@ -2425,34 +2425,34 @@ namespace ecliptix::protocol::connection {
                 auto _wipe = SodiumInterop::SecureWipe(std::span(hybrid_secret));
                 (void) _wipe;
             }
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Exception during DH ratchet: " + std::string(ex.what())));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Exception during DH ratchet: " + std::string(ex.what())));
         }
     }
 
-    Result<RatchetChainKey, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::ProcessReceivedMessage(
+    Result<ChainKey, ProtocolFailure>
+    ProtocolConnection::ProcessReceivedMessage(
         uint32_t received_index,
         std::span<const uint8_t> nonce) {
         std::lock_guard lock(*lock_);
-        if (auto disposed_check = CheckDisposed(); disposed_check.IsErr()) {
-            return Result<RatchetChainKey, EcliptixProtocolFailure>::Err(
+        if (auto disposed_check = EnsureNotDisposed(); disposed_check.IsErr()) {
+            return Result<ChainKey, ProtocolFailure>::Err(
                 disposed_check.UnwrapErr());
         }
 
         if (!receiving_step_) {
-            return Result<RatchetChainKey, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Receiving step not initialized"));
+            return Result<ChainKey, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Receiving step not initialized"));
         }
         if (constexpr uint32_t INDEX_OVERFLOW_BUFFER = 1000;
             received_index > std::numeric_limits<uint32_t>::max() - INDEX_OVERFLOW_BUFFER) {
-            return Result<RatchetChainKey, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<ChainKey, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     "Received index too large: " + std::to_string(received_index)));
         }
         if (nonce.size() != Constants::AES_GCM_NONCE_SIZE) {
-            return Result<RatchetChainKey, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput(
+            return Result<ChainKey, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput(
                     compat::format("Nonce must be {} bytes, got {}", Constants::AES_GCM_NONCE_SIZE,
                                              nonce.size())));
         }
@@ -2464,100 +2464,100 @@ namespace ecliptix::protocol::connection {
             nonce_index |= static_cast<uint32_t>(nonce[INDEX_OFFSET + i]) << (i * 8);
         }
         if (nonce_index != received_index) {
-            return Result<RatchetChainKey, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Nonce/index binding failed"));
+            return Result<ChainKey, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Nonce/index binding failed"));
         }
-        if (auto replay_result = CheckReplayProtection(nonce, received_index); replay_result.IsErr()) {
-            return Result<RatchetChainKey, EcliptixProtocolFailure>::Err(replay_result.UnwrapErr());
+        if (auto replay_result = ValidateNotReplayed(nonce, received_index); replay_result.IsErr()) {
+            return Result<ChainKey, ProtocolFailure>::Err(replay_result.UnwrapErr());
         }
-        EcliptixProtocolChainStep &receiving_step = *receiving_step_;
+        ChainStep &receiving_step = *receiving_step_;
         auto derived_key_result = receiving_step.GetOrDeriveKeyFor(received_index);
         if (derived_key_result.IsErr()) {
-            return Result<RatchetChainKey, EcliptixProtocolFailure>::Err(
+            return Result<ChainKey, ProtocolFailure>::Err(
                 derived_key_result.UnwrapErr());
         }
-        RatchetChainKey derived_key = derived_key_result.Unwrap();
-        PerformCleanupIfNeeded(received_index);
-        return Result<RatchetChainKey, EcliptixProtocolFailure>::Ok(derived_key);
+        ChainKey derived_key = derived_key_result.Unwrap();
+        CleanupIfNeeded(received_index);
+        return Result<ChainKey, ProtocolFailure>::Ok(derived_key);
     }
 
-    void EcliptixProtocolConnection::PerformCleanupIfNeeded(const uint32_t received_index) {
+    void ProtocolConnection::CleanupIfNeeded(const uint32_t received_index) {
         (void) received_index;
         if (receiving_step_) {
             receiving_step_->PruneOldKeys();
         }
     }
 
-    Result<Unit, EcliptixProtocolFailure> EcliptixProtocolConnection::ValidateHybridPersistenceInvariants() const {
+    Result<Unit, ProtocolFailure> ProtocolConnection::ValidateHybridPersistenceInvariants() const {
         if (kyber_public_key_.size() != KyberInterop::KYBER_768_PUBLIC_KEY_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("PQ persistence invariant violated: kyber public key missing"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("PQ persistence invariant violated: kyber public key missing"));
         }
         if (!peer_kyber_public_key_ || peer_kyber_public_key_->size() != KyberInterop::KYBER_768_PUBLIC_KEY_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("PQ persistence invariant violated: peer kyber public key missing"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("PQ persistence invariant violated: peer kyber public key missing"));
         }
         if (!kyber_ciphertext_ || kyber_ciphertext_->size() != KyberInterop::KYBER_768_CIPHERTEXT_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("PQ persistence invariant violated: kyber ciphertext missing"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("PQ persistence invariant violated: kyber ciphertext missing"));
         }
         auto kyber_sk_bytes = kyber_secret_key_handle_.ReadBytes(KyberInterop::KYBER_768_SECRET_KEY_SIZE);
         if (kyber_sk_bytes.IsErr()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::FromSodiumFailure(kyber_sk_bytes.UnwrapErr()));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(kyber_sk_bytes.UnwrapErr()));
         }
         auto kyber_sk_plain = kyber_sk_bytes.Unwrap();
         if (kyber_sk_plain.size() != KyberInterop::KYBER_768_SECRET_KEY_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("PQ persistence invariant violated: kyber secret key size incorrect"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("PQ persistence invariant violated: kyber secret key size incorrect"));
         }
         auto _wipe = SodiumInterop::SecureWipe(std::span(kyber_sk_plain));
         (void) _wipe;
-        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 
-    Result<Unit, EcliptixProtocolFailure> EcliptixProtocolConnection::ValidateHybridPersistenceInvariants(
+    Result<Unit, ProtocolFailure> ProtocolConnection::ValidateHybridPersistenceInvariants(
         const proto::protocol::RatchetState &proto) {
         if (proto.kyber_public_key().size() != KyberInterop::KYBER_768_PUBLIC_KEY_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("PQ persistence invariant violated: kyber public key missing"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("PQ persistence invariant violated: kyber public key missing"));
         }
         if (proto.peer_kyber_public_key().size() != KyberInterop::KYBER_768_PUBLIC_KEY_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("PQ persistence invariant violated: peer kyber public key missing"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("PQ persistence invariant violated: peer kyber public key missing"));
         }
         if (proto.kyber_ciphertext().size() != KyberInterop::KYBER_768_CIPHERTEXT_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("PQ persistence invariant violated: kyber ciphertext missing"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("PQ persistence invariant violated: kyber ciphertext missing"));
         }
         constexpr size_t SEALED_KYBER_SK_SIZE =
                 KyberInterop::KYBER_768_SECRET_KEY_SIZE + Constants::AES_GCM_TAG_SIZE;
         if (proto.kyber_secret_key().size() != SEALED_KYBER_SK_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("PQ persistence invariant violated: kyber secret key missing"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("PQ persistence invariant violated: kyber secret key missing"));
         }
         if (proto.kyber_secret_key_nonce().size() != Constants::AES_GCM_NONCE_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("PQ persistence invariant violated: kyber secret key nonce missing"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("PQ persistence invariant violated: kyber secret key nonce missing"));
         }
-        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 
-    Result<proto::protocol::RatchetState, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::ToProtoState() const {
+    Result<proto::protocol::RatchetState, ProtocolFailure>
+    ProtocolConnection::ToProtoState() const {
         std::lock_guard lock(*lock_);
         if (disposed_) {
-            return Result<proto::protocol::RatchetState, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Cannot serialize disposed connection"));
+            return Result<proto::protocol::RatchetState, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Cannot serialize disposed connection"));
         }
-        if (exchange_type_ == PubKeyExchangeType::SERVER_STREAMING) {
-            return Result<proto::protocol::RatchetState, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Server streaming connections cannot be persisted"));
+        if (exchange_type_ == KeyExchangeType::ServerStreaming) {
+            return Result<proto::protocol::RatchetState, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Server streaming connections cannot be persisted"));
         }
         try {
             auto hybrid_check = ValidateHybridPersistenceInvariants();
             if (hybrid_check.IsErr()) {
-                return Result<proto::protocol::RatchetState, EcliptixProtocolFailure>::Err(
+                return Result<proto::protocol::RatchetState, ProtocolFailure>::Err(
                     hybrid_check.UnwrapErr());
             }
             proto::protocol::RatchetState proto;
@@ -2603,18 +2603,18 @@ namespace ecliptix::protocol::connection {
                 }
             }
             if (!peer_kyber_public_key_ || peer_kyber_public_key_->size() != KyberInterop::KYBER_768_PUBLIC_KEY_SIZE) {
-                return Result<proto::protocol::RatchetState, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic("Peer Kyber public key missing for state serialization"));
+                return Result<proto::protocol::RatchetState, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic("Peer Kyber public key missing for state serialization"));
             }
             proto.set_peer_kyber_public_key(peer_kyber_public_key_->data(), peer_kyber_public_key_->size());
             if (kyber_public_key_.size() != KyberInterop::KYBER_768_PUBLIC_KEY_SIZE) {
-                return Result<proto::protocol::RatchetState, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic("Kyber public key missing for state serialization"));
+                return Result<proto::protocol::RatchetState, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic("Kyber public key missing for state serialization"));
             }
             proto.set_kyber_public_key(kyber_public_key_.data(), kyber_public_key_.size());
             if (!kyber_ciphertext_ || kyber_ciphertext_->size() != KyberInterop::KYBER_768_CIPHERTEXT_SIZE) {
-                return Result<proto::protocol::RatchetState, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic("Kyber ciphertext missing for state serialization"));
+                return Result<proto::protocol::RatchetState, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic("Kyber ciphertext missing for state serialization"));
             }
             proto.set_kyber_ciphertext(kyber_ciphertext_->data(), kyber_ciphertext_->size());
             if (kyber_shared_secret_.has_value() && !kyber_shared_secret_->empty()) {
@@ -2624,19 +2624,19 @@ namespace ecliptix::protocol::connection {
             if (root_key_handle_) {
                 auto root_key_result = root_key_handle_->ReadBytes(Constants::X_25519_KEY_SIZE);
                 if (root_key_result.IsErr()) {
-                    return Result<proto::protocol::RatchetState, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::FromSodiumFailure(root_key_result.UnwrapErr()));
+                    return Result<proto::protocol::RatchetState, ProtocolFailure>::Err(
+                        ProtocolFailure::FromSodiumFailure(root_key_result.UnwrapErr()));
                 }
                 root_key_bytes = root_key_result.Unwrap();
                 proto.set_root_key(root_key_bytes.data(), root_key_bytes.size());
             } else {
-                return Result<proto::protocol::RatchetState, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic("Root key missing - cannot serialize state"));
+                return Result<proto::protocol::RatchetState, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic("Root key missing - cannot serialize state"));
             }
             auto kyber_secret_key_result = kyber_secret_key_handle_.ReadBytes(KyberInterop::KYBER_768_SECRET_KEY_SIZE);
             if (kyber_secret_key_result.IsErr()) {
-                return Result<proto::protocol::RatchetState, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::FromSodiumFailure(kyber_secret_key_result.UnwrapErr()));
+                return Result<proto::protocol::RatchetState, ProtocolFailure>::Err(
+                    ProtocolFailure::FromSodiumFailure(kyber_secret_key_result.UnwrapErr()));
             }
             auto wrap_key_result = DeriveKyberWrapKey(
                 root_key_bytes,
@@ -2646,7 +2646,7 @@ namespace ecliptix::protocol::connection {
                 *peer_kyber_public_key_,
                 *kyber_ciphertext_);
             if (wrap_key_result.IsErr()) {
-                return Result<proto::protocol::RatchetState, EcliptixProtocolFailure>::Err(wrap_key_result.UnwrapErr());
+                return Result<proto::protocol::RatchetState, ProtocolFailure>::Err(wrap_key_result.UnwrapErr());
             }
             auto wrap_key = wrap_key_result.Unwrap();
             auto wrap_nonce = SodiumInterop::GetRandomBytes(Constants::AES_GCM_NONCE_SIZE);
@@ -2666,7 +2666,7 @@ namespace ecliptix::protocol::connection {
             auto _wipe_plain_sk = SodiumInterop::SecureWipe(std::span(kyber_secret_key));
             (void) _wipe_plain_sk;
             if (wrap_result.IsErr()) {
-                return Result<proto::protocol::RatchetState, EcliptixProtocolFailure>::Err(wrap_result.UnwrapErr());
+                return Result<proto::protocol::RatchetState, ProtocolFailure>::Err(wrap_result.UnwrapErr());
             }
             auto sealed_sk = wrap_result.Unwrap();
             proto.set_kyber_secret_key(sealed_sk.data(), sealed_sk.size());
@@ -2683,14 +2683,14 @@ namespace ecliptix::protocol::connection {
             }
             auto sending_step_result = sending_step_.ToProtoState();
             if (sending_step_result.IsErr()) {
-                return Result<proto::protocol::RatchetState, EcliptixProtocolFailure>::Err(
+                return Result<proto::protocol::RatchetState, ProtocolFailure>::Err(
                     sending_step_result.UnwrapErr());
             }
             *proto.mutable_sending_step() = sending_step_result.Unwrap();
             if (receiving_step_) {
                 auto receiving_step_result = receiving_step_->ToProtoState();
                 if (receiving_step_result.IsErr()) {
-                    return Result<proto::protocol::RatchetState, EcliptixProtocolFailure>::Err(
+                    return Result<proto::protocol::RatchetState, ProtocolFailure>::Err(
                         receiving_step_result.UnwrapErr());
                 }
                 *proto.mutable_receiving_step() = receiving_step_result.Unwrap();
@@ -2715,64 +2715,64 @@ namespace ecliptix::protocol::connection {
             if (mac_key_result.IsErr()) {
                 auto _wipe = SodiumInterop::SecureWipe(std::span(root_key_bytes));
                 (void) _wipe;
-                return Result<proto::protocol::RatchetState, EcliptixProtocolFailure>::Err(
+                return Result<proto::protocol::RatchetState, ProtocolFailure>::Err(
                     mac_key_result.UnwrapErr());
             }
             auto mac_result = ComputeStateMac(proto, mac_key_result.Unwrap());
             auto _wipe_root = SodiumInterop::SecureWipe(std::span(root_key_bytes));
             (void) _wipe_root;
             if (mac_result.IsErr()) {
-                return Result<proto::protocol::RatchetState, EcliptixProtocolFailure>::Err(mac_result.UnwrapErr());
+                return Result<proto::protocol::RatchetState, ProtocolFailure>::Err(mac_result.UnwrapErr());
             }
             auto mac = mac_result.Unwrap();
             proto.set_state_mac(mac.data(), mac.size());
-            return Result<proto::protocol::RatchetState, EcliptixProtocolFailure>::Ok(std::move(proto));
+            return Result<proto::protocol::RatchetState, ProtocolFailure>::Ok(std::move(proto));
         } catch (const std::exception &ex) {
-            return Result<proto::protocol::RatchetState, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Failed to export proto state: " + std::string(ex.what())));
+            return Result<proto::protocol::RatchetState, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Failed to export proto state: " + std::string(ex.what())));
         }
     }
 
-    Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::FromProtoState(
+    Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>
+    ProtocolConnection::FromProtoState(
         uint32_t connection_id,
         const proto::protocol::RatchetState &proto,
         RatchetConfig ratchet_config,
-        PubKeyExchangeType exchange_type) {
+        KeyExchangeType exchange_type) {
         try {
             if (proto.root_key().size() != Constants::X_25519_KEY_SIZE) {
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic("Invalid root key size in stored state"));
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic("Invalid root key size in stored state"));
             }
             auto hybrid_check = ValidateHybridPersistenceInvariants(proto);
             if (hybrid_check.IsErr()) {
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
                     hybrid_check.UnwrapErr());
             }
             std::vector<uint8_t> root_key_bytes(proto.root_key().begin(), proto.root_key().end());
             if (proto.session_id().size() != 16) {
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic("Invalid session_id size in stored state"));
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic("Invalid session_id size in stored state"));
             }
             if (!proto.peer_dh_public_key().empty() &&
                 proto.peer_dh_public_key().size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic("Invalid peer DH public key size in stored state"));
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic("Invalid peer DH public key size in stored state"));
             }
             if (!proto.peer_kyber_public_key().empty() &&
                 proto.peer_kyber_public_key().size() != KyberInterop::KYBER_768_PUBLIC_KEY_SIZE) {
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic("Invalid peer Kyber public key size in stored state"));
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic("Invalid peer Kyber public key size in stored state"));
             }
             if (!proto.kyber_ciphertext().empty() &&
                 proto.kyber_ciphertext().size() != KyberInterop::KYBER_768_CIPHERTEXT_SIZE) {
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic("Invalid Kyber ciphertext size in stored state"));
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic("Invalid Kyber ciphertext size in stored state"));
             }
             if (proto.initial_sending_dh_public().empty() ||
                 proto.initial_sending_dh_public().size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic(
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic(
                         "Invalid or missing initial sending DH public key in stored state"));
             }
             std::vector<uint8_t> initial_sending_dh_public(
@@ -2781,8 +2781,8 @@ namespace ecliptix::protocol::connection {
             std::vector<uint8_t> current_sending_dh_public;
             if (!proto.current_sending_dh_public().empty()) {
                 if (proto.current_sending_dh_public().size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
-                    return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::Generic("Invalid current sending DH public key size in stored state"));
+                    return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                        ProtocolFailure::Generic("Invalid current sending DH public key size in stored state"));
                 }
                 current_sending_dh_public.assign(
                     proto.current_sending_dh_public().begin(),
@@ -2793,8 +2793,8 @@ namespace ecliptix::protocol::connection {
             std::vector<uint8_t> initial_peer_dh_public;
             if (!proto.initial_peer_dh_public().empty()) {
                 if (proto.initial_peer_dh_public().size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
-                    return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::Generic("Invalid initial peer DH public key size in stored state"));
+                    return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                        ProtocolFailure::Generic("Invalid initial peer DH public key size in stored state"));
                 }
                 initial_peer_dh_public.assign(
                     proto.initial_peer_dh_public().begin(),
@@ -2807,38 +2807,38 @@ namespace ecliptix::protocol::connection {
             uint32_t effective_connection_id = proto.connection_id();
             auto mac_verify_result = VerifyStateMac(proto, effective_connection_id);
             if (mac_verify_result.IsErr()) {
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
                     mac_verify_result.UnwrapErr());
             }
-            auto sending_step_result = EcliptixProtocolChainStep::FromProtoState(
-                ChainStepType::SENDER,
+            auto sending_step_result = ChainStep::FromProtoState(
+                ChainStepType::Sender,
                 proto.sending_step());
             if (sending_step_result.IsErr()) {
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
                     sending_step_result.UnwrapErr());
             }
-            EcliptixProtocolChainStep sending_step = std::move(sending_step_result.Unwrap());
-            std::optional<EcliptixProtocolChainStep> receiving_step;
+            ChainStep sending_step = std::move(sending_step_result.Unwrap());
+            std::optional<ChainStep> receiving_step;
             if (proto.has_receiving_step()) {
-                auto receiving_step_result = EcliptixProtocolChainStep::FromProtoState(
-                    ChainStepType::RECEIVER,
+                auto receiving_step_result = ChainStep::FromProtoState(
+                    ChainStepType::Receiver,
                     proto.receiving_step());
                 if (receiving_step_result.IsErr()) {
-                    return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                    return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
                         receiving_step_result.UnwrapErr());
                 }
                 receiving_step.emplace(std::move(receiving_step_result.Unwrap()));
             }
             auto root_key_alloc_result = SecureMemoryHandle::Allocate(root_key_bytes.size());
             if (root_key_alloc_result.IsErr()) {
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::FromSodiumFailure(root_key_alloc_result.UnwrapErr()));
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                    ProtocolFailure::FromSodiumFailure(root_key_alloc_result.UnwrapErr()));
             }
             auto root_key_handle = std::move(root_key_alloc_result.Unwrap());
             auto write_result = root_key_handle.Write(root_key_bytes);
             if (write_result.IsErr()) {
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::FromSodiumFailure(write_result.UnwrapErr()));
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                    ProtocolFailure::FromSodiumFailure(write_result.UnwrapErr()));
             }
             SecureMemoryHandle metadata_key_handle;
             auto total_nanos = std::chrono::nanoseconds(
@@ -2850,20 +2850,20 @@ namespace ecliptix::protocol::connection {
             if (!proto.session_id().empty()) {
                 session_id.assign(proto.session_id().begin(), proto.session_id().end());
                 if (session_id.size() != 16) {
-                    return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::Generic(
+                    return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                        ProtocolFailure::Generic(
                             "Invalid session_id size: " + std::to_string(session_id.size()) + " (expected 16 bytes)"));
                 }
             } else {
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic("Session restore attack detected: missing session_id"));
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic("Session restore attack detected: missing session_id"));
             }
 
             std::optional<LocalPublicKeyBundle> peer_bundle;
             if (proto.has_peer_bundle() && !proto.peer_bundle().identity_public_key().empty()) {
                 auto peer_bundle_result = ParsePeerBundle(proto.peer_bundle());
                 if (peer_bundle_result.IsErr()) {
-                    return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                    return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
                         peer_bundle_result.UnwrapErr());
                 }
                 peer_bundle.emplace(std::move(peer_bundle_result.Unwrap()));
@@ -2911,7 +2911,7 @@ namespace ecliptix::protocol::connection {
                 peer_kyber_pk,
                 kyber_ct);
             if (wrap_key_result.IsErr()) {
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
                     wrap_key_result.UnwrapErr());
             }
             auto wrap_key = wrap_key_result.Unwrap();
@@ -2929,68 +2929,68 @@ namespace ecliptix::protocol::connection {
                 std::span(wrap_key));
             (void) _wipe_wrap;
             if (unwrap_result.IsErr()) {
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
                     unwrap_result.UnwrapErr());
             }
             auto kyber_sk_plain = unwrap_result.Unwrap();
             if (kyber_sk_plain.size() != KyberInterop::KYBER_768_SECRET_KEY_SIZE) {
                 auto _wipe_plain = SodiumInterop::SecureWipe(std::span(kyber_sk_plain));
                 (void) _wipe_plain;
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic("Unwrapped Kyber secret key size invalid"));
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic("Unwrapped Kyber secret key size invalid"));
             }
             auto kyber_sk_alloc = SecureMemoryHandle::Allocate(kyber_sk_plain.size());
             if (kyber_sk_alloc.IsErr()) {
                 auto _wipe_plain = SodiumInterop::SecureWipe(std::span(kyber_sk_plain));
                 (void) _wipe_plain;
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::FromSodiumFailure(kyber_sk_alloc.UnwrapErr()));
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                    ProtocolFailure::FromSodiumFailure(kyber_sk_alloc.UnwrapErr()));
             }
             kyber_secret_key_handle = std::move(kyber_sk_alloc).Unwrap();
             auto kyber_sk_write = kyber_secret_key_handle.Write(kyber_sk_plain);
             auto _wipe_plain = SodiumInterop::SecureWipe(std::span(kyber_sk_plain));
             (void) _wipe_plain;
             if (kyber_sk_write.IsErr()) {
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::FromSodiumFailure(kyber_sk_write.UnwrapErr()));
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                    ProtocolFailure::FromSodiumFailure(kyber_sk_write.UnwrapErr()));
             }
 
             if (auto sender_dh_handle = sending_step.GetDhPrivateKeyHandle(); sender_dh_handle.has_value()) {
                 auto dh_bytes_result = (*sender_dh_handle)->ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
                 if (dh_bytes_result.IsErr()) {
-                    return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::FromSodiumFailure(dh_bytes_result.UnwrapErr()));
+                    return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                        ProtocolFailure::FromSodiumFailure(dh_bytes_result.UnwrapErr()));
                 }
                 auto dh_copy = std::move(dh_bytes_result).Unwrap();
                 auto alloc_priv = SecureMemoryHandle::Allocate(Constants::X_25519_PRIVATE_KEY_SIZE);
                 if (alloc_priv.IsErr()) {
                     SodiumInterop::SecureWipe(std::span(dh_copy));
-                    return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::FromSodiumFailure(alloc_priv.UnwrapErr()));
+                    return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                        ProtocolFailure::FromSodiumFailure(alloc_priv.UnwrapErr()));
                 }
                 auto alloc_initial = SecureMemoryHandle::Allocate(Constants::X_25519_PRIVATE_KEY_SIZE);
                 if (alloc_initial.IsErr()) {
                     SodiumInterop::SecureWipe(std::span(dh_copy));
-                    return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::FromSodiumFailure(alloc_initial.UnwrapErr()));
+                    return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                        ProtocolFailure::FromSodiumFailure(alloc_initial.UnwrapErr()));
                 }
                 current_sending_dh_private_handle = std::move(alloc_priv).Unwrap();
                 initial_sending_dh_private_handle = std::move(alloc_initial).Unwrap();
                 auto write_priv = current_sending_dh_private_handle.Write(dh_copy);
                 if (write_priv.IsErr()) {
                     SodiumInterop::SecureWipe(std::span(dh_copy));
-                    return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::FromSodiumFailure(write_priv.UnwrapErr()));
+                    return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                        ProtocolFailure::FromSodiumFailure(write_priv.UnwrapErr()));
                 }
                 auto write_initial = initial_sending_dh_private_handle.Write(dh_copy);
                 SodiumInterop::SecureWipe(std::span(dh_copy));
                 if (write_initial.IsErr()) {
-                    return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::FromSodiumFailure(write_initial.UnwrapErr()));
+                    return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                        ProtocolFailure::FromSodiumFailure(write_initial.UnwrapErr()));
                 }
             }
-            std::unique_ptr<EcliptixProtocolConnection> connection(
-                new EcliptixProtocolConnection(
+            std::unique_ptr<ProtocolConnection> connection(
+                new ProtocolConnection(
                     connection_id,
                     proto.is_initiator(),
                     ratchet_config,
@@ -3030,34 +3030,34 @@ namespace ecliptix::protocol::connection {
             if (!connection->kyber_shared_secret_.has_value() || connection->kyber_shared_secret_->empty()) {
                 if (auto kyber_update = connection->UpdateKyberSecretFromCiphertext(kyber_ct);
                     kyber_update.IsErr()) {
-                    return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                    return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
                         kyber_update.UnwrapErr());
                 }
             }
             auto metadata_result = connection->DeriveMetadataEncryptionKey();
             if (metadata_result.IsErr()) {
-                return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
+                return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
                     metadata_result.UnwrapErr());
             }
-            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Ok(
+            return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Ok(
                 std::move(connection));
         } catch (const std::exception &ex) {
-            return Result<std::unique_ptr<EcliptixProtocolConnection>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Failed to rehydrate from proto state: " + std::string(ex.what())));
+            return Result<std::unique_ptr<ProtocolConnection>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Failed to rehydrate from proto state: " + std::string(ex.what())));
         }
     }
 
-    Result<Unit, EcliptixProtocolFailure>
-    EcliptixProtocolConnection::FinalizeChainAndDhKeysWithRoot(
+    Result<Unit, ProtocolFailure>
+    ProtocolConnection::FinalizeChainAndDhKeysWithRoot(
         std::span<const uint8_t> initial_root_key) {
         std::lock_guard lock(*lock_);
         if (root_key_handle_.has_value()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Connection already finalized"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Connection already finalized"));
         }
         if (initial_root_key.size() != Constants::X_25519_KEY_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput(
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput(
                     compat::format("Initial root key must be {} bytes, got {}",
                                              Constants::X_25519_KEY_SIZE, initial_root_key.size())));
         }
@@ -3071,8 +3071,8 @@ namespace ecliptix::protocol::connection {
             auto private_key_result = initial_sending_dh_private_handle_.ReadBytes(
                 Constants::X_25519_PRIVATE_KEY_SIZE);
             if (private_key_result.IsErr()) {
-                return Result<Unit, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic("Failed to read initial DH private key"));
+                return Result<Unit, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic("Failed to read initial DH private key"));
             }
             persistent_private_bytes = private_key_result.Unwrap();
 
@@ -3086,7 +3086,7 @@ namespace ecliptix::protocol::connection {
             if (sender_chain_result.IsErr()) {
                 auto __wipe = SodiumInterop::SecureWipe(std::span(persistent_private_bytes));
                 (void) __wipe;
-                return Result<Unit, EcliptixProtocolFailure>::Err(sender_chain_result.UnwrapErr());
+                return Result<Unit, ProtocolFailure>::Err(sender_chain_result.UnwrapErr());
             }
 
             auto receiver_chain_result = Hkdf::DeriveKeyBytes(
@@ -3098,7 +3098,7 @@ namespace ecliptix::protocol::connection {
             if (receiver_chain_result.IsErr()) {
                 auto __wipe = SodiumInterop::SecureWipe(std::span(persistent_private_bytes));
                 (void) __wipe;
-                return Result<Unit, EcliptixProtocolFailure>::Err(receiver_chain_result.UnwrapErr());
+                return Result<Unit, ProtocolFailure>::Err(receiver_chain_result.UnwrapErr());
             }
 
             auto sender_derived = sender_chain_result.Unwrap();
@@ -3114,8 +3114,8 @@ namespace ecliptix::protocol::connection {
             }
 
 
-            auto sending_step_result = EcliptixProtocolChainStep::Create(
-                ChainStepType::SENDER,
+            auto sending_step_result = ChainStep::Create(
+                ChainStepType::Sender,
                 sender_chain_key,
                 persistent_private_bytes,
                 current_sending_dh_public_);
@@ -3126,7 +3126,7 @@ namespace ecliptix::protocol::connection {
                 (void) __wipe2;
                 auto __wipe3 = SodiumInterop::SecureWipe(std::span(receiver_chain_key));
                 (void) __wipe3;
-                return Result<Unit, EcliptixProtocolFailure>::Err(sending_step_result.UnwrapErr());
+                return Result<Unit, ProtocolFailure>::Err(sending_step_result.UnwrapErr());
             }
 
 
@@ -3144,8 +3144,8 @@ namespace ecliptix::protocol::connection {
             sending_step_ = std::move(sending_step);
 
 
-            auto receiving_step_result = EcliptixProtocolChainStep::Create(
-                ChainStepType::RECEIVER,
+            auto receiving_step_result = ChainStep::Create(
+                ChainStepType::Receiver,
                 receiver_chain_key,
                 persistent_private_bytes,
                 persistent_dh_public_); {
@@ -3159,20 +3159,20 @@ namespace ecliptix::protocol::connection {
                 (void) __wipe;
             }
             if (receiving_step_result.IsErr()) {
-                return Result<Unit, EcliptixProtocolFailure>::Err(receiving_step_result.UnwrapErr());
+                return Result<Unit, ProtocolFailure>::Err(receiving_step_result.UnwrapErr());
             }
 
 
             auto root_alloc = SecureMemoryHandle::Allocate(initial_root_key.size());
             if (root_alloc.IsErr()) {
-                return Result<Unit, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::FromSodiumFailure(root_alloc.UnwrapErr()));
+                return Result<Unit, ProtocolFailure>::Err(
+                    ProtocolFailure::FromSodiumFailure(root_alloc.UnwrapErr()));
             }
             auto root_handle = std::move(root_alloc).Unwrap();
             auto write_root = root_handle.Write(initial_root_key);
             if (write_root.IsErr()) {
-                return Result<Unit, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::FromSodiumFailure(write_root.UnwrapErr()));
+                return Result<Unit, ProtocolFailure>::Err(
+                    ProtocolFailure::FromSodiumFailure(write_root.UnwrapErr()));
             }
 
             root_key_handle_ = std::move(root_handle);
@@ -3188,12 +3188,12 @@ namespace ecliptix::protocol::connection {
             if (event_handler_) {
                 event_handler_->OnProtocolStateChanged(id_);
             }
-            return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+            return Result<Unit, ProtocolFailure>::Ok(Unit{});
         } catch (const std::exception &ex) {
             auto __wipe = SodiumInterop::SecureWipe(std::span(persistent_private_bytes));
             (void) __wipe;
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     "Exception in FinalizeChainAndDhKeysWithRoot: " + std::string(ex.what())));
         }
     }

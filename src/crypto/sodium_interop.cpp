@@ -96,15 +96,15 @@ namespace ecliptix::protocol::crypto {
         }
     }
 
-    Result<std::pair<SecureMemoryHandle, std::vector<uint8_t> >, EcliptixProtocolFailure>
+    Result<std::pair<SecureMemoryHandle, std::vector<uint8_t> >, ProtocolFailure>
     SodiumInterop::GenerateX25519KeyPair(std::string_view key_purpose) {
         try {
             auto sk_handle_result = SecureMemoryHandle::Allocate(
                 Constants::X_25519_PRIVATE_KEY_SIZE);
             if (sk_handle_result.IsErr()) {
                 return Result<std::pair<SecureMemoryHandle, std::vector<uint8_t> >,
-                    EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::FromSodiumFailure(
+                    ProtocolFailure>::Err(
+                    ProtocolFailure::FromSodiumFailure(
                         sk_handle_result.UnwrapErr()));
             }
             SecureMemoryHandle sk_handle = std::move(sk_handle_result).Unwrap();
@@ -113,46 +113,46 @@ namespace ecliptix::protocol::crypto {
             SecureWipe(std::span(sk_bytes));
             if (write_result.IsErr()) {
                 return Result<std::pair<SecureMemoryHandle, std::vector<uint8_t> >,
-                    EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::FromSodiumFailure(
+                    ProtocolFailure>::Err(
+                    ProtocolFailure::FromSodiumFailure(
                         write_result.UnwrapErr()));
             }
             std::vector<uint8_t> temp_sk(Constants::X_25519_PRIVATE_KEY_SIZE);
             if (auto read_result = sk_handle.Read(std::span(temp_sk)); read_result.IsErr()) {
                 SecureWipe(std::span(temp_sk));
                 return Result<std::pair<SecureMemoryHandle, std::vector<uint8_t> >,
-                    EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::FromSodiumFailure(
+                    ProtocolFailure>::Err(
+                    ProtocolFailure::FromSodiumFailure(
                         read_result.UnwrapErr()));
             }
             std::vector<uint8_t> pk_bytes(Constants::X_25519_PUBLIC_KEY_SIZE);
             if (crypto_scalarmult_base(pk_bytes.data(), temp_sk.data()) != SodiumConstants::SUCCESS) {
                 SecureWipe(std::span(temp_sk));
                 return Result<std::pair<SecureMemoryHandle, std::vector<uint8_t> >,
-                    EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::DeriveKey(
+                    ProtocolFailure>::Err(
+                    ProtocolFailure::DeriveKey(
                         "Failed to derive " + std::string(key_purpose) + " public key"));
             }
             SecureWipe(std::span(temp_sk));
             if (pk_bytes.size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
                 return Result<std::pair<SecureMemoryHandle, std::vector<uint8_t> >,
-                    EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::DeriveKey(
+                    ProtocolFailure>::Err(
+                    ProtocolFailure::DeriveKey(
                         "Derived " + std::string(key_purpose) + " public key has incorrect size"));
             }
             return Result<std::pair<SecureMemoryHandle, std::vector<uint8_t> >,
-                EcliptixProtocolFailure>::Ok(
+                ProtocolFailure>::Ok(
                 std::make_pair(std::move(sk_handle), std::move(pk_bytes)));
         } catch (const std::exception &ex) {
             return Result<std::pair<SecureMemoryHandle, std::vector<uint8_t> >,
-                EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::KeyGeneration(
+                ProtocolFailure>::Err(
+                ProtocolFailure::KeyGeneration(
                     "Unexpected error generating " + std::string(key_purpose) +
                     " key pair: " + ex.what()));
         }
     }
 
-    Result<std::pair<std::vector<uint8_t>, std::vector<uint8_t> >, EcliptixProtocolFailure>
+    Result<std::pair<std::vector<uint8_t>, std::vector<uint8_t> >, ProtocolFailure>
     SodiumInterop::GenerateEd25519KeyPair() {
         try {
             std::vector<uint8_t> pk(Constants::ED_25519_PUBLIC_KEY_SIZE);
@@ -160,17 +160,17 @@ namespace ecliptix::protocol::crypto {
             if (crypto_sign_keypair(pk.data(), sk.data()) != SodiumConstants::SUCCESS) {
                 SecureWipe(std::span(sk));
                 return Result<std::pair<std::vector<uint8_t>, std::vector<uint8_t> >,
-                    EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::KeyGeneration(
+                    ProtocolFailure>::Err(
+                    ProtocolFailure::KeyGeneration(
                         "Failed to generate Ed25519 key pair"));
             }
             return Result<std::pair<std::vector<uint8_t>, std::vector<uint8_t> >,
-                EcliptixProtocolFailure>::Ok(
+                ProtocolFailure>::Ok(
                 std::make_pair(std::move(sk), std::move(pk)));
         } catch (const std::exception &ex) {
             return Result<std::pair<std::vector<uint8_t>, std::vector<uint8_t> >,
-                EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::KeyGeneration(
+                ProtocolFailure>::Err(
+                ProtocolFailure::KeyGeneration(
                     "Unexpected error generating Ed25519 key pair: " +
                     std::string(ex.what())));
         }

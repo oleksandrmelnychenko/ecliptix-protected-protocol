@@ -4,14 +4,14 @@
 #include <optional>
 #include <span>
 namespace ecliptix::protocol::models {
-class OneTimePreKeyRecord {
+class OneTimePreKeyPublic {
 public:
-    OneTimePreKeyRecord(uint32_t pre_key_id, std::vector<uint8_t> public_key, std::optional<std::vector<uint8_t>> kyber_public_key = std::nullopt);
-    OneTimePreKeyRecord(const OneTimePreKeyRecord&) = default;
-    OneTimePreKeyRecord(OneTimePreKeyRecord&&) noexcept = default;
-    OneTimePreKeyRecord& operator=(const OneTimePreKeyRecord&) = default;
-    OneTimePreKeyRecord& operator=(OneTimePreKeyRecord&&) noexcept = default;
-    ~OneTimePreKeyRecord() = default;
+    OneTimePreKeyPublic(uint32_t pre_key_id, std::vector<uint8_t> public_key, std::optional<std::vector<uint8_t>> kyber_public_key = std::nullopt);
+    OneTimePreKeyPublic(const OneTimePreKeyPublic&) = default;
+    OneTimePreKeyPublic(OneTimePreKeyPublic&&) noexcept = default;
+    OneTimePreKeyPublic& operator=(const OneTimePreKeyPublic&) = default;
+    OneTimePreKeyPublic& operator=(OneTimePreKeyPublic&&) noexcept = default;
+    ~OneTimePreKeyPublic() = default;
     [[nodiscard]] uint32_t GetPreKeyId() const noexcept {
         return pre_key_id_;
     }

@@ -35,7 +35,7 @@ namespace ecliptix::protocol::utilities {
         return metadata;
     }
 
-    Result<std::vector<uint8_t>, EcliptixProtocolFailure>
+    Result<std::vector<uint8_t>, ProtocolFailure>
     EnvelopeBuilder::EncryptMetadata(
         const proto::common::EnvelopeMetadata &metadata,
         std::span<const uint8_t> header_encryption_key,
@@ -46,8 +46,8 @@ namespace ecliptix::protocol::utilities {
             size_t size = metadata.ByteSizeLong();
             metadata_bytes.resize(size);
             if (!metadata.SerializeToArray(metadata_bytes.data(), static_cast<int>(size))) {
-                return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Encode("Failed to serialize EnvelopeMetadata to protobuf"));
+                return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                    ProtocolFailure::Encode("Failed to serialize EnvelopeMetadata to protobuf"));
             }
             auto encrypt_result = AesGcm::Encrypt(
                 header_encryption_key,
@@ -58,8 +58,8 @@ namespace ecliptix::protocol::utilities {
                 (void) __wipe;
             }
             if (encrypt_result.IsErr()) {
-                return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic(
+                return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic(
                         ecliptix::compat::format("Failed to encrypt metadata: {}",
                                     encrypt_result.UnwrapErr().message)));
             }
@@ -71,13 +71,13 @@ namespace ecliptix::protocol::utilities {
                     (void) __wipe;
                 }
             }
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     ecliptix::compat::format("Exception during metadata encryption: {}", ex.what())));
         }
     }
 
-    Result<proto::common::EnvelopeMetadata, EcliptixProtocolFailure>
+    Result<proto::common::EnvelopeMetadata, ProtocolFailure>
     EnvelopeBuilder::DecryptMetadata(
         std::span<const uint8_t> encrypted_metadata,
         std::span<const uint8_t> header_encryption_key,
@@ -89,8 +89,8 @@ namespace ecliptix::protocol::utilities {
             encrypted_metadata,
             associated_data);
         if (decrypt_result.IsErr()) {
-            return Result<proto::common::EnvelopeMetadata, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<proto::common::EnvelopeMetadata, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     ecliptix::compat::format("Failed to decrypt metadata: {}",
                                 decrypt_result.UnwrapErr().message)));
         }
@@ -103,21 +103,21 @@ namespace ecliptix::protocol::utilities {
                     auto __wipe = crypto::SodiumInterop::SecureWipe(std::span(plaintext_metadata));
                     (void) __wipe;
                 }
-                return Result<proto::common::EnvelopeMetadata, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Decode("Failed to parse decrypted metadata as protobuf"));
+                return Result<proto::common::EnvelopeMetadata, ProtocolFailure>::Err(
+                    ProtocolFailure::Decode("Failed to parse decrypted metadata as protobuf"));
             } {
                 auto __wipe = crypto::SodiumInterop::SecureWipe(std::span(plaintext_metadata));
                 (void) __wipe;
             }
-            return Result<proto::common::EnvelopeMetadata, EcliptixProtocolFailure>::Ok(
+            return Result<proto::common::EnvelopeMetadata, ProtocolFailure>::Ok(
                 std::move(metadata));
         } catch (const std::exception &ex) {
             {
                 auto __wipe = crypto::SodiumInterop::SecureWipe(std::span(plaintext_metadata));
                 (void) __wipe;
             }
-            return Result<proto::common::EnvelopeMetadata, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<proto::common::EnvelopeMetadata, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     ecliptix::compat::format("Exception during metadata parsing: {}", ex.what())));
         }
     }

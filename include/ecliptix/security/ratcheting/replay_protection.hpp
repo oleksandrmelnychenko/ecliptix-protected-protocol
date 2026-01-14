@@ -27,7 +27,7 @@ public:
     ReplayProtection(ReplayProtection&&) = delete;
     ReplayProtection& operator=(ReplayProtection&&) = delete;
     ~ReplayProtection() = default;
-    Result<Unit, EcliptixProtocolFailure> CheckAndRecordMessage(
+    Result<Unit, ProtocolFailure> CheckAndRecordMessage(
         std::span<const uint8_t> nonce,
         uint64_t message_index,
         uint64_t chain_index = 0);
@@ -64,7 +64,7 @@ private:
             , last_used(std::chrono::steady_clock::now()) {}
     };
     bool ValidateInput(std::span<const uint8_t> nonce, uint64_t chain_index) const;
-    Result<Unit, EcliptixProtocolFailure> CheckMessageWindow(
+    Result<Unit, ProtocolFailure> CheckMessageWindow(
         uint64_t chain_index,
         uint64_t message_index);
     void UpdateMessageWindow(

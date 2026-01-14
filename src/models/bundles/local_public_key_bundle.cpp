@@ -7,7 +7,7 @@ namespace ecliptix::protocol::models {
         const uint32_t signed_pre_key_id,
         std::vector<uint8_t> signed_pre_key_public,
         std::vector<uint8_t> signed_pre_key_signature,
-        std::vector<OneTimePreKeyRecord> one_time_pre_keys,
+        std::vector<OneTimePreKeyPublic> one_time_pre_keys,
         std::optional<std::vector<uint8_t> > ephemeral_x25519_public,
         std::optional<std::vector<uint8_t> > kyber_public_key,
         std::optional<std::vector<uint8_t> > kyber_ciphertext,

@@ -3,15 +3,15 @@
 #include <vector>
 #include <cstdint>
 namespace ecliptix::protocol::models {
-class Ed25519KeyMaterial {
+class Ed25519KeyPair {
 public:
-    Ed25519KeyMaterial(
+    Ed25519KeyPair(
         crypto::SecureMemoryHandle secret_key_handle,
         std::vector<uint8_t> public_key);
-    Ed25519KeyMaterial(Ed25519KeyMaterial&&) noexcept = default;
-    Ed25519KeyMaterial& operator=(Ed25519KeyMaterial&&) noexcept = default;
-    Ed25519KeyMaterial(const Ed25519KeyMaterial&) = delete;
-    Ed25519KeyMaterial& operator=(const Ed25519KeyMaterial&) = delete;
+    Ed25519KeyPair(Ed25519KeyPair&&) noexcept = default;
+    Ed25519KeyPair& operator=(Ed25519KeyPair&&) noexcept = default;
+    Ed25519KeyPair(const Ed25519KeyPair&) = delete;
+    Ed25519KeyPair& operator=(const Ed25519KeyPair&) = delete;
     [[nodiscard]] const crypto::SecureMemoryHandle& GetSecretKeyHandle() const noexcept {
         return secret_key_handle_;
     }

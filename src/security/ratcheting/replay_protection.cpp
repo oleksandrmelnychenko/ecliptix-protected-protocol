@@ -49,14 +49,14 @@ namespace ecliptix::protocol::security {
           , last_cleanup_(std::chrono::steady_clock::now()) {
     }
 
-    Result<Unit, EcliptixProtocolFailure> ReplayProtection::CheckAndRecordMessage(
+    Result<Unit, ProtocolFailure> ReplayProtection::CheckAndRecordMessage(
         std::span<const uint8_t> nonce,
         const uint64_t message_index,
         const uint64_t chain_index) {
         std::lock_guard guard(lock_);
         if (!ValidateInput(nonce, chain_index)) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput("Invalid nonce or chain index"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("Invalid nonce or chain index"));
         }
         const NonceKey nonce_key{
             .nonce_bytes = std::vector(nonce.begin(), nonce.end()),
@@ -70,8 +70,8 @@ namespace ecliptix::protocol::security {
             }
         }
         if (const auto nonce_it = processed_nonces_.find(nonce_key); nonce_it != processed_nonces_.end()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     "Replay attack detected: nonce already processed"));
         }
 
@@ -90,34 +90,34 @@ namespace ecliptix::protocol::security {
             last_cleanup_ = now;
             CleanupExpiredNoncesInternal();
         }
-        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 
-    Result<Unit, EcliptixProtocolFailure> ReplayProtection::CheckMessageWindow(
+    Result<Unit, ProtocolFailure> ReplayProtection::CheckMessageWindow(
         const uint64_t chain_index,
         const uint64_t message_index) {
         const auto window_it = message_windows_.find(chain_index);
         if (window_it == message_windows_.end()) {
-            return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+            return Result<Unit, ProtocolFailure>::Ok(Unit{});
         }
         const MessageWindow &window = window_it->second;
         if (message_index < window.lowest_valid_index) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     "Message index too old (below valid window)"));
         }
         if (window.processed_indices.count(message_index) > ProtocolConstants::ZERO_VALUE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     "Message index already processed in this chain"));
         }
         if (const uint64_t max_valid_index = window.highest_index_seen + window.current_window_size;
             message_index > max_valid_index) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     "Message index too far ahead of current window"));
         }
-        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 
     bool ReplayProtection::ValidateInput(const std::span<const uint8_t> nonce, const uint64_t chain_index) const {

@@ -8,7 +8,7 @@
 namespace ecliptix::protocol::security {
 class DhValidator {
 public:
-    static Result<Unit, EcliptixProtocolFailure> ValidateX25519PublicKey(
+    static Result<Unit, ProtocolFailure> ValidateX25519PublicKey(
         std::span<const uint8_t> public_key);
 private:
     static constexpr std::array<std::array<uint8_t, 32>, 8> SMALL_ORDER_POINTS = {{

@@ -1,5 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
-#include "ecliptix/protocol/connection/ecliptix_protocol_connection.hpp"
+#include "ecliptix/protocol/connection/protocol_connection.hpp"
 #include "ecliptix/crypto/aes_gcm.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "helpers/hybrid_handshake.hpp"
@@ -77,7 +77,7 @@ TEST_CASE("Metadata Key Rotation - Basic Rotation on DH Ratchet", "[security][me
                 ratchet_occurred = true;
                 auto alice_new_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
                 auto alice_ct = GetKyberCiphertextForSender(alice);
-                auto ratchet_result = bob->PerformReceivingRatchet(alice_new_dh, alice_ct);
+                auto ratchet_result = bob->ExecuteReceivingRatchet(alice_new_dh, alice_ct);
                 if (ratchet_result.IsErr()) {
                     FAIL(ratchet_result.UnwrapErr().message);
                 }
@@ -132,7 +132,7 @@ TEST_CASE("Metadata Key Rotation - Forward Secrecy", "[security][metadata_rotati
                 if (include_dh) {
                     auto alice_new_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
                     auto alice_ct = GetKyberCiphertextForSender(alice);
-                    REQUIRE(bob->PerformReceivingRatchet(alice_new_dh, alice_ct).IsOk());
+                    REQUIRE(bob->ExecuteReceivingRatchet(alice_new_dh, alice_ct).IsOk());
                 }
                 REQUIRE(bob->ProcessReceivedMessage(alice_key.Index(), MakeMetaNonce(nonce_counter++, alice_key.Index())).IsOk());
             }
@@ -196,7 +196,7 @@ TEST_CASE("Metadata Key Rotation - Uniqueness Across Ratchets", "[security][meta
                 if (include_dh) {
                     auto alice_new_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
                     auto alice_ct = GetKyberCiphertextForSender(alice);
-                    REQUIRE(bob->PerformReceivingRatchet(alice_new_dh, alice_ct).IsOk());
+                    REQUIRE(bob->ExecuteReceivingRatchet(alice_new_dh, alice_ct).IsOk());
                 }
                 auto process = bob->ProcessReceivedMessage(alice_key.Index(), MakeMetaNonce(nonce_counter++, alice_key.Index()));
                 REQUIRE(process.IsOk());
@@ -257,7 +257,7 @@ TEST_CASE("Metadata Key Rotation - Decryption Window", "[security][metadata_rota
                 if (include_dh) {
                     auto alice_new_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
                     auto alice_ct = GetKyberCiphertextForSender(alice);
-                    REQUIRE(bob->PerformReceivingRatchet(alice_new_dh, alice_ct).IsOk());
+                    REQUIRE(bob->ExecuteReceivingRatchet(alice_new_dh, alice_ct).IsOk());
                 }
                 REQUIRE(bob->ProcessReceivedMessage(alice_key.Index(), MakeMetaNonce(nonce_counter++, alice_key.Index())).IsOk());
             }
@@ -315,7 +315,7 @@ TEST_CASE("Metadata Key Rotation - High-Frequency Ratchets", "[security][metadat
                 if (include_dh) {
                     auto alice_new_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
                     auto alice_ct = GetKyberCiphertextForSender(alice);
-                    REQUIRE(bob->PerformReceivingRatchet(alice_new_dh, alice_ct).IsOk());
+                    REQUIRE(bob->ExecuteReceivingRatchet(alice_new_dh, alice_ct).IsOk());
                 }
                 REQUIRE(bob->ProcessReceivedMessage(alice_key.Index(), MakeMetaNonce(nonce_counter++, alice_key.Index())).IsOk());
             }
@@ -360,7 +360,7 @@ TEST_CASE("Metadata Key Rotation - Bidirectional Ratchets", "[security][metadata
                 if (include_dh) {
                     auto alice_new_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
                     auto alice_ct = GetKyberCiphertextForSender(alice);
-                    REQUIRE(bob->PerformReceivingRatchet(alice_new_dh, alice_ct).IsOk());
+                    REQUIRE(bob->ExecuteReceivingRatchet(alice_new_dh, alice_ct).IsOk());
                 }
                 REQUIRE(bob->ProcessReceivedMessage(key.Index(), MakeMetaNonce(alice_nonce_counter++, key.Index())).IsOk());
             }
@@ -373,7 +373,7 @@ TEST_CASE("Metadata Key Rotation - Bidirectional Ratchets", "[security][metadata
                 if (include_dh) {
                     auto bob_new_dh = bob->GetCurrentSenderDhPublicKey().Unwrap().value();
                     auto bob_ct = GetKyberCiphertextForSender(bob);
-                    REQUIRE(alice->PerformReceivingRatchet(bob_new_dh, bob_ct).IsOk());
+                    REQUIRE(alice->ExecuteReceivingRatchet(bob_new_dh, bob_ct).IsOk());
                 }
                 REQUIRE(alice->ProcessReceivedMessage(key.Index(), MakeMetaNonce(bob_nonce_counter++, key.Index())).IsOk());
             }
@@ -431,7 +431,7 @@ TEST_CASE("Metadata Key Rotation - Key Derivation Independence", "[security][met
             std::vector<uint8_t> key_material;
             auto extract_result = key.WithKeyMaterial<std::vector<uint8_t>>(
                 [&](std::span<const uint8_t> k) {
-                    return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Ok(
+                    return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(
                         std::vector<uint8_t>(k.begin(), k.end()));
                 }
             );

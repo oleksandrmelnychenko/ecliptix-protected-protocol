@@ -348,23 +348,23 @@ namespace ecliptix::protocol::crypto {
         return Result<SecureMemoryHandle, SodiumFailure>::Ok(std::move(ss_handle));
     }
 
-    Result<SecureMemoryHandle, EcliptixProtocolFailure>
+    Result<SecureMemoryHandle, ProtocolFailure>
     KyberInterop::CombineHybridSecrets(
         std::span<const uint8_t> x25519_shared_secret,
         std::span<const uint8_t> kyber_shared_secret,
         std::string_view context
     ) {
         if (x25519_shared_secret.size() != 32) {
-            return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput(
+            return Result<SecureMemoryHandle, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput(
                     "X25519 shared secret must be 32 bytes"
                 )
             );
         }
 
         if (kyber_shared_secret.size() != 32) {
-            return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput(
+            return Result<SecureMemoryHandle, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput(
                     "Kyber shared secret must be 32 bytes"
                 )
             );
@@ -384,8 +384,8 @@ namespace ecliptix::protocol::crypto {
         (void) wipe_result;
 
         if (prk_result.IsErr()) {
-            return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<SecureMemoryHandle, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     "HKDF-Extract failed in hybrid key combination"
                 )
             );
@@ -401,14 +401,14 @@ namespace ecliptix::protocol::crypto {
             context_info);
 
         if (expand_result.IsErr()) {
-            return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("HKDF-Expand failed in hybrid key combination"));
+            return Result<SecureMemoryHandle, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("HKDF-Expand failed in hybrid key combination"));
         }
         auto handle_result = SecureMemoryHandle::Allocate(hybrid_vec.size());
         if (handle_result.IsErr()) {
             SodiumInterop::SecureWipe(std::span(hybrid_vec));
-            return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Failed to allocate secure memory for hybrid master secret"));
+            return Result<SecureMemoryHandle, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Failed to allocate secure memory for hybrid master secret"));
         }
 
         auto handle = std::move(handle_result).Unwrap();
@@ -416,14 +416,14 @@ namespace ecliptix::protocol::crypto {
         SodiumInterop::SecureWipe(std::span(hybrid_vec));
 
         if (write_result.IsErr()) {
-            return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<SecureMemoryHandle, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     "Failed to write hybrid master secret to secure memory"
                 )
             );
         }
 
-        return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Ok(std::move(handle));
+        return Result<SecureMemoryHandle, ProtocolFailure>::Ok(std::move(handle));
     }
 
     Result<Unit, SodiumFailure>

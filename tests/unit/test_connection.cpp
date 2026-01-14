@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_vector.hpp>
-#include "ecliptix/protocol/connection/ecliptix_protocol_connection.hpp"
+#include "ecliptix/protocol/connection/protocol_connection.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/crypto/kyber_interop.hpp"
 #include "ecliptix/core/constants.hpp"
@@ -38,32 +38,32 @@ static std::vector<uint8_t> MakeTestNonce(uint64_t idx) {
 }
 class MockEventHandler : public IProtocolEventHandler {
 public:
-    void OnProtocolStateChanged(uint32_t connect_id) override {
+    void OnProtocolStateChanged(uint32_t connection_id) override {
         call_count++;
-        last_connect_id = connect_id;
+        last_connection_id = connection_id;
     }
-    void OnRatchetRequired(uint32_t connect_id, const std::string& reason) override {
+    void OnRatchetRequired(uint32_t connection_id, const std::string& reason) override {
         ratchet_required_call_count++;
-        last_ratchet_connect_id = connect_id;
+        last_ratchet_connection_id = connection_id;
         last_ratchet_reason = reason;
     }
     int call_count = 0;
-    uint32_t last_connect_id = 0;
+    uint32_t last_connection_id = 0;
     int ratchet_required_call_count = 0;
-    uint32_t last_ratchet_connect_id = 0;
+    uint32_t last_ratchet_connection_id = 0;
     std::string last_ratchet_reason;
 };
-TEST_CASE("EcliptixProtocolConnection - Creation and initialization", "[connection]") {
+TEST_CASE("ProtocolConnection - Creation and initialization", "[connection]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Create initiator connection") {
         auto conn = CreatePreparedConnection(1, true);
         REQUIRE(conn->IsInitiator());
-        REQUIRE(conn->ExchangeType() == PubKeyExchangeType::X3DH);
+        REQUIRE(conn->ExchangeType() == KeyExchangeType::X3DH);
     }
     SECTION("Create responder connection") {
         auto conn = CreatePreparedConnection(2, false);
         REQUIRE_FALSE(conn->IsInitiator());
-        REQUIRE(conn->ExchangeType() == PubKeyExchangeType::X3DH);
+        REQUIRE(conn->ExchangeType() == KeyExchangeType::X3DH);
     }
     SECTION("Connection IDs are unique") {
         auto conn1 = CreatePreparedConnection(1, true);
@@ -72,7 +72,7 @@ TEST_CASE("EcliptixProtocolConnection - Creation and initialization", "[connecti
         (void) conn2;
     }
 }
-TEST_CASE("EcliptixProtocolConnection - SetPeerBundle", "[connection]") {
+TEST_CASE("ProtocolConnection - SetPeerBundle", "[connection]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Set peer bundle before finalization succeeds") {
         auto conn = CreatePreparedConnection(1, true);
@@ -130,7 +130,7 @@ TEST_CASE("EcliptixProtocolConnection - SetPeerBundle", "[connection]") {
         REQUIRE(set_result.IsErr());
     }
 }
-TEST_CASE("EcliptixProtocolConnection - Finalization", "[connection]") {
+TEST_CASE("ProtocolConnection - Finalization", "[connection]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Successful finalization") {
         auto conn = CreatePreparedConnection(1, true);
@@ -169,7 +169,7 @@ TEST_CASE("EcliptixProtocolConnection - Finalization", "[connection]") {
         REQUIRE(finalize_result.IsErr());
     }
 }
-TEST_CASE("EcliptixProtocolConnection - Nonce generation", "[connection]") {
+TEST_CASE("ProtocolConnection - Nonce generation", "[connection]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Generate valid nonce") {
         auto conn = CreatePreparedConnection(1, true);
@@ -206,22 +206,22 @@ TEST_CASE("EcliptixProtocolConnection - Nonce generation", "[connection]") {
         }
     }
 }
-TEST_CASE("EcliptixProtocolConnection - Replay protection", "[connection]") {
+TEST_CASE("ProtocolConnection - Replay protection", "[connection]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Valid nonce size passes") {
         auto conn = CreatePreparedConnection(1, true);
         std::vector<uint8_t> valid_nonce(12, 0x42);
-        auto check_result = conn->CheckReplayProtection(valid_nonce, 1);
+        auto check_result = conn->ValidateNotReplayed(valid_nonce, 1);
         REQUIRE(check_result.IsOk());
     }
     SECTION("Invalid nonce size fails") {
         auto conn = CreatePreparedConnection(1, true);
         std::vector<uint8_t> bad_nonce(8, 0x42);  
-        auto check_result = conn->CheckReplayProtection(bad_nonce, 1);
+        auto check_result = conn->ValidateNotReplayed(bad_nonce, 1);
         REQUIRE(check_result.IsErr());
     }
 }
-TEST_CASE("EcliptixProtocolConnection - Message preparation", "[connection]") {
+TEST_CASE("ProtocolConnection - Message preparation", "[connection]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Cannot prepare message before finalization") {
         auto conn = CreatePreparedConnection(1, true);
@@ -260,7 +260,7 @@ TEST_CASE("EcliptixProtocolConnection - Message preparation", "[connection]") {
         REQUIRE(msg3.Unwrap().first.Index() == 2);
     }
 }
-TEST_CASE("EcliptixProtocolConnection - Message processing", "[connection]") {
+TEST_CASE("ProtocolConnection - Message processing", "[connection]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Cannot process message before finalization") {
         auto conn = CreatePreparedConnection(1, false);
@@ -281,7 +281,7 @@ TEST_CASE("EcliptixProtocolConnection - Message processing", "[connection]") {
         REQUIRE(ratchet_key.Index() == 0);
     }
 }
-TEST_CASE("EcliptixProtocolConnection - DH ratchet operations", "[connection]") {
+TEST_CASE("ProtocolConnection - DH ratchet operations", "[connection]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Perform receiving ratchet with valid key") {
         auto conn = CreatePreparedConnection(1, false);
@@ -297,7 +297,7 @@ TEST_CASE("EcliptixProtocolConnection - DH ratchet operations", "[connection]") 
         auto kyber_encap = KyberInterop::Encapsulate(conn->GetKyberPublicKeyCopy());
         REQUIRE(kyber_encap.IsOk());
         auto [ct, ss_handle] = std::move(kyber_encap).Unwrap();
-        auto ratchet_result = conn->PerformReceivingRatchet(new_pk, ct);
+        auto ratchet_result = conn->ExecuteReceivingRatchet(new_pk, ct);
         REQUIRE(ratchet_result.IsOk());
     }
     SECTION("Reject invalid DH key size") {
@@ -312,7 +312,7 @@ TEST_CASE("EcliptixProtocolConnection - DH ratchet operations", "[connection]") 
         auto kyber_encap = KyberInterop::Encapsulate(conn->GetKyberPublicKeyCopy());
         REQUIRE(kyber_encap.IsOk());
         auto [ct, ss_handle] = std::move(kyber_encap).Unwrap();
-        auto ratchet_result = conn->PerformReceivingRatchet(bad_dh_key, ct);
+        auto ratchet_result = conn->ExecuteReceivingRatchet(bad_dh_key, ct);
         REQUIRE(ratchet_result.IsErr());
     }
     SECTION("NotifyRatchetRotation sets flag") {
@@ -320,7 +320,7 @@ TEST_CASE("EcliptixProtocolConnection - DH ratchet operations", "[connection]") 
         conn->NotifyRatchetRotation();
     }
 }
-TEST_CASE("EcliptixProtocolConnection - State queries", "[connection]") {
+TEST_CASE("ProtocolConnection - State queries", "[connection]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Get current sender DH public key") {
         auto conn = CreatePreparedConnection(1, true);
@@ -349,7 +349,7 @@ TEST_CASE("EcliptixProtocolConnection - State queries", "[connection]") {
         REQUIRE(key.size() == Constants::AES_KEY_SIZE);
     }
 }
-TEST_CASE("EcliptixProtocolConnection - SyncWithRemoteState", "[connection]") {
+TEST_CASE("ProtocolConnection - SyncWithRemoteState", "[connection]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Cannot sync before finalization") {
         auto conn = CreatePreparedConnection(1, true);
@@ -411,7 +411,7 @@ TEST_CASE("EcliptixProtocolConnection - SyncWithRemoteState", "[connection]") {
         REQUIRE(sync_result.IsErr());
     }
 }
-TEST_CASE("EcliptixProtocolConnection - Event Handler", "[connection]") {
+TEST_CASE("ProtocolConnection - Event Handler", "[connection]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Event handler is called on finalization") {
         auto handler = std::make_shared<MockEventHandler>();
@@ -425,7 +425,7 @@ TEST_CASE("EcliptixProtocolConnection - Event Handler", "[connection]") {
         auto finalize_result = conn->FinalizeChainAndDhKeys(root_key, peer_pk);
         REQUIRE(finalize_result.IsOk());
         REQUIRE(handler->call_count == 1);
-        REQUIRE(handler->last_connect_id == 42);
+        REQUIRE(handler->last_connection_id == 42);
     }
     SECTION("Event handler is called on message preparation") {
         auto handler = std::make_shared<MockEventHandler>();
@@ -441,7 +441,7 @@ TEST_CASE("EcliptixProtocolConnection - Event Handler", "[connection]") {
         auto msg_result = conn->PrepareNextSendMessage();
         REQUIRE(msg_result.IsOk());
         REQUIRE(handler->call_count == 2);
-        REQUIRE(handler->last_connect_id == 99);
+        REQUIRE(handler->last_connection_id == 99);
     }
     SECTION("Event handler can be set to nullptr") {
         auto handler = std::make_shared<MockEventHandler>();
@@ -477,13 +477,13 @@ TEST_CASE("EcliptixProtocolConnection - Event Handler", "[connection]") {
         REQUIRE(new_bob_keypair.IsOk());
         auto [new_bob_sk, new_bob_pk] = std::move(new_bob_keypair).Unwrap();
         auto kyber_ct = EncapsulateTo(alice->GetKyberPublicKeyCopy());
-        auto ratchet_result = alice->PerformReceivingRatchet(new_bob_pk, kyber_ct);
+        auto ratchet_result = alice->ExecuteReceivingRatchet(new_bob_pk, kyber_ct);
         REQUIRE(ratchet_result.IsOk());
         REQUIRE(handler->call_count > calls_after_finalize);
-        REQUIRE(handler->last_connect_id == 1);
+        REQUIRE(handler->last_connection_id == 1);
     }
 }
-TEST_CASE("EcliptixProtocolConnection - Nonce Counter Overflow Protection", "[connection][security]") {
+TEST_CASE("ProtocolConnection - Nonce Counter Overflow Protection", "[connection][security]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Nonce generation succeeds for reasonable message counts") {
         auto conn = CreatePreparedConnection(1, true);
@@ -495,7 +495,7 @@ TEST_CASE("EcliptixProtocolConnection - Nonce Counter Overflow Protection", "[co
         }
     }
 }
-TEST_CASE("EcliptixProtocolConnection - Reflection Attack Protection", "[connection][security]") {
+TEST_CASE("ProtocolConnection - Reflection Attack Protection", "[connection][security]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Detect reflection attack - peer echoes our DH key") {
         auto alice = CreatePreparedConnection(1, true);
@@ -520,7 +520,7 @@ TEST_CASE("EcliptixProtocolConnection - Reflection Attack Protection", "[connect
         REQUIRE(finalize_result.IsOk());
     }
 }
-TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: Nonce Counter Never Resets (CVE Fix)", "[connection][security][sprint1.5b]") {
+TEST_CASE("ProtocolConnection - Sprint 1.5B: Nonce Counter Never Resets (CVE Fix)", "[connection][security][sprint1.5b]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Nonce counter continues monotonically after DH ratchet (CVE-2024-XXXXX fix)") {
         auto conn = CreatePreparedConnection(1, true);
@@ -547,7 +547,7 @@ TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: Nonce Counter Never Resets 
         REQUIRE(new_peer_keypair.IsOk());
         auto [new_peer_sk, new_peer_pk] = std::move(new_peer_keypair).Unwrap();
         auto kyber_ct = EncapsulateTo(conn->GetKyberPublicKeyCopy());
-        auto ratchet_result = conn->PerformReceivingRatchet(new_peer_pk, kyber_ct);
+        auto ratchet_result = conn->ExecuteReceivingRatchet(new_peer_pk, kyber_ct);
         REQUIRE(ratchet_result.IsOk());
         auto nonce2 = conn->GenerateNextNonce();
         REQUIRE(nonce2.IsOk());
@@ -577,7 +577,7 @@ TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: Nonce Counter Never Resets 
         REQUIRE(handler->ratchet_required_call_count == 0);
     }
 }
-TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: Nonce Uniqueness Across Ratchet", "[connection][security][sprint1.5b]") {
+TEST_CASE("ProtocolConnection - Sprint 1.5B: Nonce Uniqueness Across Ratchet", "[connection][security][sprint1.5b]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("No nonce reuse across DH ratchet boundary") {
         auto conn = CreatePreparedConnection(1, true);
@@ -600,7 +600,7 @@ TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: Nonce Uniqueness Across Rat
         REQUIRE(new_peer_keypair.IsOk());
         auto [new_peer_sk, new_peer_pk] = std::move(new_peer_keypair).Unwrap();
         auto kyber_ct = EncapsulateTo(conn->GetKyberPublicKeyCopy());
-        auto ratchet_result = conn->PerformReceivingRatchet(new_peer_pk, kyber_ct);
+        auto ratchet_result = conn->ExecuteReceivingRatchet(new_peer_pk, kyber_ct);
         REQUIRE(ratchet_result.IsOk());
         for (int i = 0; i < 200; ++i) {
             auto nonce_result = conn->GenerateNextNonce();
@@ -613,7 +613,7 @@ TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: Nonce Uniqueness Across Rat
         REQUIRE(nonce_set.size() == 400);
     }
 }
-TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: Concurrent Send + Ratchet Stress Test", "[connection][security][sprint1.5b][stress]") {
+TEST_CASE("ProtocolConnection - Sprint 1.5B: Concurrent Send + Ratchet Stress Test", "[connection][security][sprint1.5b][stress]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("No nonce collisions under concurrent load") {
         auto conn = CreatePreparedConnection(1, true);
@@ -655,7 +655,7 @@ TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: Concurrent Send + Ratchet S
         REQUIRE(nonce_set.size() == THREAD_COUNT * NONCES_PER_THREAD);
     }
 }
-TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: MAX_CHAIN_LENGTH Enforcement", "[connection][security][sprint1.5b]") {
+TEST_CASE("ProtocolConnection - Sprint 1.5B: MAX_CHAIN_LENGTH Enforcement", "[connection][security][sprint1.5b]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Chain length enforcement triggers ratchet requirement") {
         RatchetConfig config(50000);
@@ -680,7 +680,7 @@ TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: MAX_CHAIN_LENGTH Enforcemen
         REQUIRE(chain_length_error_detected);
     }
 }
-TEST_CASE("EcliptixProtocolConnection - Sprint 1.5B: Ratchet Warning Reset", "[connection][security][sprint1.5b]") {
+TEST_CASE("ProtocolConnection - Sprint 1.5B: Ratchet Warning Reset", "[connection][security][sprint1.5b]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Ratchet warning can trigger again after reset") {
         auto handler = std::make_shared<MockEventHandler>();

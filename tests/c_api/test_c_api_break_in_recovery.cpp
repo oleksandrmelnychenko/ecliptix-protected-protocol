@@ -1,57 +1,57 @@
 #include <catch2/catch_test_macros.hpp>
-#include "ecliptix/c_api/ecliptix_c_api.h"
+#include "ecliptix/c_api/epp_api.h"
 #include "common/secure_envelope.pb.h"
 #include <cstring>
 #include <vector>
 #include <string>
 
 extern "C" {
-    EcliptixErrorCode ecliptix_protocol_server_system_create(
-        EcliptixIdentityKeysHandle* identity_keys,
-        EcliptixProtocolSystemHandle** out_handle,
-        EcliptixError* out_error);
+    EppErrorCode epp_server_create(
+        EppIdentityHandle* identity_keys,
+        ProtocolSystemHandle** out_handle,
+        EppError* out_error);
 
-    EcliptixErrorCode ecliptix_protocol_server_system_begin_handshake_with_peer_kyber(
-        EcliptixProtocolSystemHandle* handle,
+    EppErrorCode epp_server_begin_handshake_with_peer_kyber(
+        ProtocolSystemHandle* handle,
         uint32_t connection_id,
         uint8_t exchange_type,
         const uint8_t* peer_kyber_public_key,
         size_t peer_kyber_public_key_length,
-        EcliptixBuffer* out_handshake_message,
-        EcliptixError* out_error);
+        EppBuffer* out_handshake_message,
+        EppError* out_error);
 
-    EcliptixErrorCode ecliptix_protocol_server_system_complete_handshake_auto(
-        EcliptixProtocolSystemHandle* handle,
+    EppErrorCode epp_server_complete_handshake_auto(
+        ProtocolSystemHandle* handle,
         const uint8_t* peer_handshake_message,
         size_t peer_handshake_message_length,
-        EcliptixError* out_error);
+        EppError* out_error);
 
-    EcliptixErrorCode ecliptix_protocol_server_system_send_message(
-        EcliptixProtocolSystemHandle* handle,
+    EppErrorCode epp_server_encrypt(
+        ProtocolSystemHandle* handle,
         const uint8_t* plaintext,
         size_t plaintext_length,
-        EcliptixBuffer* out_encrypted_envelope,
-        EcliptixError* out_error);
+        EppBuffer* out_encrypted_envelope,
+        EppError* out_error);
 
-    EcliptixErrorCode ecliptix_protocol_server_system_receive_message(
-        EcliptixProtocolSystemHandle* handle,
+    EppErrorCode epp_server_decrypt(
+        ProtocolSystemHandle* handle,
         const uint8_t* encrypted_envelope,
         size_t encrypted_envelope_length,
-        EcliptixBuffer* out_plaintext,
-        EcliptixError* out_error);
+        EppBuffer* out_plaintext,
+        EppError* out_error);
 
-    EcliptixErrorCode ecliptix_protocol_server_system_export_state(
-        EcliptixProtocolSystemHandle* handle,
-        EcliptixBuffer* out_state,
-        EcliptixError* out_error);
+    EppErrorCode epp_server_serialize(
+        ProtocolSystemHandle* handle,
+        EppBuffer* out_state,
+        EppError* out_error);
 
-    void ecliptix_protocol_server_system_destroy(EcliptixProtocolSystemHandle* handle);
+    void epp_server_destroy(ProtocolSystemHandle* handle);
 }
 
 namespace {
     constexpr size_t KYBER_PUBLIC_KEY_SIZE = 1184;
 
-    void free_buffer_data(EcliptixBuffer* buffer) {
+    void free_buffer_data(EppBuffer* buffer) {
         if (buffer && buffer->data) {
             delete[] buffer->data;
             buffer->data = nullptr;
@@ -60,96 +60,96 @@ namespace {
     }
 
     struct IdentityKeysGuard {
-        EcliptixIdentityKeysHandle* handle = nullptr;
+        EppIdentityHandle* handle = nullptr;
         ~IdentityKeysGuard() {
-            if (handle) ecliptix_identity_keys_destroy(handle);
+            if (handle) epp_identity_destroy(handle);
         }
     };
 
     struct ClientSystemGuard {
-        EcliptixProtocolSystemHandle* handle = nullptr;
+        ProtocolSystemHandle* handle = nullptr;
         ~ClientSystemGuard() {
-            if (handle) ecliptix_protocol_system_destroy(handle);
+            if (handle) epp_session_destroy(handle);
         }
     };
 
     struct ServerSystemGuard {
-        EcliptixProtocolSystemHandle* handle = nullptr;
+        ProtocolSystemHandle* handle = nullptr;
         ~ServerSystemGuard() {
-            if (handle) ecliptix_protocol_server_system_destroy(handle);
+            if (handle) epp_server_destroy(handle);
         }
     };
 
     bool SetupHandshakedPair(
-        EcliptixIdentityKeysHandle* client_keys,
-        EcliptixIdentityKeysHandle* server_keys,
-        EcliptixProtocolSystemHandle** out_client,
-        EcliptixProtocolSystemHandle** out_server
+        EppIdentityHandle* client_keys,
+        EppIdentityHandle* server_keys,
+        ProtocolSystemHandle** out_client,
+        ProtocolSystemHandle** out_server
     ) {
         std::vector<uint8_t> server_kyber_pk(KYBER_PUBLIC_KEY_SIZE);
-        if (ecliptix_identity_keys_get_public_kyber(server_keys, server_kyber_pk.data(), server_kyber_pk.size(), nullptr) != ECLIPTIX_SUCCESS) {
+        if (epp_identity_get_kyber_public(server_keys, server_kyber_pk.data(), server_kyber_pk.size(), nullptr) != EPP_SUCCESS) {
             return false;
         }
 
         std::vector<uint8_t> client_kyber_pk(KYBER_PUBLIC_KEY_SIZE);
-        if (ecliptix_identity_keys_get_public_kyber(client_keys, client_kyber_pk.data(), client_kyber_pk.size(), nullptr) != ECLIPTIX_SUCCESS) {
+        if (epp_identity_get_kyber_public(client_keys, client_kyber_pk.data(), client_kyber_pk.size(), nullptr) != EPP_SUCCESS) {
             return false;
         }
 
-        if (ecliptix_protocol_system_create(client_keys, out_client, nullptr) != ECLIPTIX_SUCCESS) {
+        if (epp_session_create(client_keys, out_client, nullptr) != EPP_SUCCESS) {
             return false;
         }
 
-        if (ecliptix_protocol_server_system_create(server_keys, out_server, nullptr) != ECLIPTIX_SUCCESS) {
-            ecliptix_protocol_system_destroy(*out_client);
+        if (epp_server_create(server_keys, out_server, nullptr) != EPP_SUCCESS) {
+            epp_session_destroy(*out_client);
             *out_client = nullptr;
             return false;
         }
 
-        EcliptixBuffer client_handshake_msg{};
-        if (ecliptix_protocol_system_begin_handshake_with_peer_kyber(
+        EppBuffer client_handshake_msg{};
+        if (epp_session_begin_handshake(
             *out_client, 1, 0, server_kyber_pk.data(), server_kyber_pk.size(),
             &client_handshake_msg, nullptr
-        ) != ECLIPTIX_SUCCESS) {
-            ecliptix_protocol_system_destroy(*out_client);
-            ecliptix_protocol_server_system_destroy(*out_server);
+        ) != EPP_SUCCESS) {
+            epp_session_destroy(*out_client);
+            epp_server_destroy(*out_server);
             *out_client = nullptr;
             *out_server = nullptr;
             return false;
         }
 
-        EcliptixBuffer server_handshake_msg{};
-        if (ecliptix_protocol_server_system_begin_handshake_with_peer_kyber(
+        EppBuffer server_handshake_msg{};
+        if (epp_server_begin_handshake_with_peer_kyber(
             *out_server, 1, 0, client_kyber_pk.data(), client_kyber_pk.size(),
             &server_handshake_msg, nullptr
-        ) != ECLIPTIX_SUCCESS) {
+        ) != EPP_SUCCESS) {
             free_buffer_data(&client_handshake_msg);
-            ecliptix_protocol_system_destroy(*out_client);
-            ecliptix_protocol_server_system_destroy(*out_server);
+            epp_session_destroy(*out_client);
+            epp_server_destroy(*out_server);
             *out_client = nullptr;
             *out_server = nullptr;
             return false;
         }
 
-        if (ecliptix_protocol_server_system_complete_handshake_auto(
+        if (epp_server_complete_handshake_auto(
             *out_server, client_handshake_msg.data, client_handshake_msg.length, nullptr
-        ) != ECLIPTIX_SUCCESS) {
+        ) != EPP_SUCCESS) {
             free_buffer_data(&client_handshake_msg);
             free_buffer_data(&server_handshake_msg);
-            ecliptix_protocol_system_destroy(*out_client);
-            ecliptix_protocol_server_system_destroy(*out_server);
+            epp_session_destroy(*out_client);
+            epp_server_destroy(*out_server);
             *out_client = nullptr;
             *out_server = nullptr;
             return false;
         }
 
-        if (ecliptix_protocol_system_complete_handshake_auto(
+        if (epp_session_complete_handshake_auto(
             *out_client, server_handshake_msg.data, server_handshake_msg.length, nullptr
-        ) != ECLIPTIX_SUCCESS) {
+        ) != EPP_SUCCESS) {
             free_buffer_data(&client_handshake_msg);
             free_buffer_data(&server_handshake_msg);
-            ecliptix_protocol_system_destroy(*out_client);
-            ecliptix_protocol_server_system_destroy(*out_server);
+            epp_session_destroy(*out_client);
+            epp_server_destroy(*out_server);
             *out_client = nullptr;
             *out_server = nullptr;
             return false;
@@ -170,17 +170,17 @@ namespace {
 }
 
 TEST_CASE("C API Break-in Recovery - DH Ratchet on Reply", "[c_api][break-in-recovery][dh-ratchet]") {
-    REQUIRE(ecliptix_initialize() == ECLIPTIX_SUCCESS);
+    REQUIRE(epp_init() == EPP_SUCCESS);
 
     SECTION("Server reply triggers DH ratchet with new keys") {
         IdentityKeysGuard client_keys;
-        REQUIRE(ecliptix_identity_keys_create(&client_keys.handle, nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_identity_create(&client_keys.handle, nullptr) == EPP_SUCCESS);
 
         IdentityKeysGuard server_keys;
-        REQUIRE(ecliptix_identity_keys_create(&server_keys.handle, nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_identity_create(&server_keys.handle, nullptr) == EPP_SUCCESS);
 
-        EcliptixProtocolSystemHandle* client_raw = nullptr;
-        EcliptixProtocolSystemHandle* server_raw = nullptr;
+        ProtocolSystemHandle* client_raw = nullptr;
+        ProtocolSystemHandle* server_raw = nullptr;
         REQUIRE(SetupHandshakedPair(client_keys.handle, server_keys.handle, &client_raw, &server_raw));
 
         ClientSystemGuard client_system;
@@ -190,13 +190,13 @@ TEST_CASE("C API Break-in Recovery - DH Ratchet on Reply", "[c_api][break-in-rec
         server_system.handle = server_raw;
 
         const std::string client_msg1 = "Hello from client";
-        EcliptixBuffer client_envelope1{};
-        REQUIRE(ecliptix_protocol_system_send_message(
+        EppBuffer client_envelope1{};
+        REQUIRE(epp_session_encrypt(
             client_system.handle,
             reinterpret_cast<const uint8_t*>(client_msg1.data()),
             client_msg1.size(),
             &client_envelope1, nullptr
-        ) == ECLIPTIX_SUCCESS);
+        ) == EPP_SUCCESS);
 
         ecliptix::proto::common::SecureEnvelope parsed_client_env;
         REQUIRE(parsed_client_env.ParseFromArray(client_envelope1.data, static_cast<int>(client_envelope1.length)));
@@ -206,22 +206,22 @@ TEST_CASE("C API Break-in Recovery - DH Ratchet on Reply", "[c_api][break-in-rec
             client_dh_key = parsed_client_env.dh_public_key();
         }
 
-        EcliptixBuffer server_plaintext{};
-        REQUIRE(ecliptix_protocol_server_system_receive_message(
+        EppBuffer server_plaintext{};
+        REQUIRE(epp_server_decrypt(
             server_system.handle, client_envelope1.data, client_envelope1.length,
             &server_plaintext, nullptr
-        ) == ECLIPTIX_SUCCESS);
+        ) == EPP_SUCCESS);
         free_buffer_data(&client_envelope1);
         free_buffer_data(&server_plaintext);
 
         const std::string server_msg = "Reply from server";
-        EcliptixBuffer server_envelope{};
-        REQUIRE(ecliptix_protocol_server_system_send_message(
+        EppBuffer server_envelope{};
+        REQUIRE(epp_server_encrypt(
             server_system.handle,
             reinterpret_cast<const uint8_t*>(server_msg.data()),
             server_msg.size(),
             &server_envelope, nullptr
-        ) == ECLIPTIX_SUCCESS);
+        ) == EPP_SUCCESS);
 
         ecliptix::proto::common::SecureEnvelope parsed_server_env;
         REQUIRE(parsed_server_env.ParseFromArray(server_envelope.data, static_cast<int>(server_envelope.length)));
@@ -230,11 +230,11 @@ TEST_CASE("C API Break-in Recovery - DH Ratchet on Reply", "[c_api][break-in-rec
             REQUIRE(parsed_server_env.dh_public_key() != client_dh_key);
         }
 
-        EcliptixBuffer client_plaintext{};
-        REQUIRE(ecliptix_protocol_system_receive_message(
+        EppBuffer client_plaintext{};
+        REQUIRE(epp_session_decrypt(
             client_system.handle, server_envelope.data, server_envelope.length,
             &client_plaintext, nullptr
-        ) == ECLIPTIX_SUCCESS);
+        ) == EPP_SUCCESS);
         REQUIRE(client_plaintext.length == server_msg.size());
         REQUIRE(std::memcmp(client_plaintext.data, server_msg.data(), server_msg.size()) == 0);
 
@@ -242,21 +242,21 @@ TEST_CASE("C API Break-in Recovery - DH Ratchet on Reply", "[c_api][break-in-rec
         free_buffer_data(&client_plaintext);
     }
 
-    ecliptix_shutdown();
+    epp_shutdown();
 }
 
 TEST_CASE("C API Break-in Recovery - New DH Keys Per Direction Change", "[c_api][break-in-recovery][direction]") {
-    REQUIRE(ecliptix_initialize() == ECLIPTIX_SUCCESS);
+    REQUIRE(epp_init() == EPP_SUCCESS);
 
     SECTION("Each direction change introduces new DH keys") {
         IdentityKeysGuard client_keys;
-        REQUIRE(ecliptix_identity_keys_create(&client_keys.handle, nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_identity_create(&client_keys.handle, nullptr) == EPP_SUCCESS);
 
         IdentityKeysGuard server_keys;
-        REQUIRE(ecliptix_identity_keys_create(&server_keys.handle, nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_identity_create(&server_keys.handle, nullptr) == EPP_SUCCESS);
 
-        EcliptixProtocolSystemHandle* client_raw = nullptr;
-        EcliptixProtocolSystemHandle* server_raw = nullptr;
+        ProtocolSystemHandle* client_raw = nullptr;
+        ProtocolSystemHandle* server_raw = nullptr;
         REQUIRE(SetupHandshakedPair(client_keys.handle, server_keys.handle, &client_raw, &server_raw));
 
         ClientSystemGuard client_system;
@@ -269,13 +269,13 @@ TEST_CASE("C API Break-in Recovery - New DH Keys Per Direction Change", "[c_api]
 
         for (int round = 0; round < 5; ++round) {
             std::string client_msg = "Client msg " + std::to_string(round);
-            EcliptixBuffer c_env{};
-            REQUIRE(ecliptix_protocol_system_send_message(
+            EppBuffer c_env{};
+            REQUIRE(epp_session_encrypt(
                 client_system.handle,
                 reinterpret_cast<const uint8_t*>(client_msg.data()),
                 client_msg.size(),
                 &c_env, nullptr
-            ) == ECLIPTIX_SUCCESS);
+            ) == EPP_SUCCESS);
 
             ecliptix::proto::common::SecureEnvelope c_parsed;
             if (c_parsed.ParseFromArray(c_env.data, static_cast<int>(c_env.length))) {
@@ -284,21 +284,21 @@ TEST_CASE("C API Break-in Recovery - New DH Keys Per Direction Change", "[c_api]
                 }
             }
 
-            EcliptixBuffer s_pt{};
-            REQUIRE(ecliptix_protocol_server_system_receive_message(
+            EppBuffer s_pt{};
+            REQUIRE(epp_server_decrypt(
                 server_system.handle, c_env.data, c_env.length, &s_pt, nullptr
-            ) == ECLIPTIX_SUCCESS);
+            ) == EPP_SUCCESS);
             free_buffer_data(&c_env);
             free_buffer_data(&s_pt);
 
             std::string server_msg = "Server msg " + std::to_string(round);
-            EcliptixBuffer s_env{};
-            REQUIRE(ecliptix_protocol_server_system_send_message(
+            EppBuffer s_env{};
+            REQUIRE(epp_server_encrypt(
                 server_system.handle,
                 reinterpret_cast<const uint8_t*>(server_msg.data()),
                 server_msg.size(),
                 &s_env, nullptr
-            ) == ECLIPTIX_SUCCESS);
+            ) == EPP_SUCCESS);
 
             ecliptix::proto::common::SecureEnvelope s_parsed;
             if (s_parsed.ParseFromArray(s_env.data, static_cast<int>(s_env.length))) {
@@ -307,10 +307,10 @@ TEST_CASE("C API Break-in Recovery - New DH Keys Per Direction Change", "[c_api]
                 }
             }
 
-            EcliptixBuffer c_pt{};
-            REQUIRE(ecliptix_protocol_system_receive_message(
+            EppBuffer c_pt{};
+            REQUIRE(epp_session_decrypt(
                 client_system.handle, s_env.data, s_env.length, &c_pt, nullptr
-            ) == ECLIPTIX_SUCCESS);
+            ) == EPP_SUCCESS);
             free_buffer_data(&s_env);
             free_buffer_data(&c_pt);
         }
@@ -325,21 +325,21 @@ TEST_CASE("C API Break-in Recovery - New DH Keys Per Direction Change", "[c_api]
         }
     }
 
-    ecliptix_shutdown();
+    epp_shutdown();
 }
 
 TEST_CASE("C API Break-in Recovery - Consecutive Same-Direction Messages", "[c_api][break-in-recovery][chain]") {
-    REQUIRE(ecliptix_initialize() == ECLIPTIX_SUCCESS);
+    REQUIRE(epp_init() == EPP_SUCCESS);
 
     SECTION("Multiple messages in same direction don't ratchet until reply") {
         IdentityKeysGuard client_keys;
-        REQUIRE(ecliptix_identity_keys_create(&client_keys.handle, nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_identity_create(&client_keys.handle, nullptr) == EPP_SUCCESS);
 
         IdentityKeysGuard server_keys;
-        REQUIRE(ecliptix_identity_keys_create(&server_keys.handle, nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_identity_create(&server_keys.handle, nullptr) == EPP_SUCCESS);
 
-        EcliptixProtocolSystemHandle* client_raw = nullptr;
-        EcliptixProtocolSystemHandle* server_raw = nullptr;
+        ProtocolSystemHandle* client_raw = nullptr;
+        ProtocolSystemHandle* server_raw = nullptr;
         REQUIRE(SetupHandshakedPair(client_keys.handle, server_keys.handle, &client_raw, &server_raw));
 
         ClientSystemGuard client_system;
@@ -353,13 +353,13 @@ TEST_CASE("C API Break-in Recovery - Consecutive Same-Direction Messages", "[c_a
 
         for (int i = 0; i < 10; ++i) {
             std::string msg = "Message " + std::to_string(i);
-            EcliptixBuffer envelope{};
-            REQUIRE(ecliptix_protocol_system_send_message(
+            EppBuffer envelope{};
+            REQUIRE(epp_session_encrypt(
                 client_system.handle,
                 reinterpret_cast<const uint8_t*>(msg.data()),
                 msg.size(),
                 &envelope, nullptr
-            ) == ECLIPTIX_SUCCESS);
+            ) == EPP_SUCCESS);
 
             if (EnvelopeHasDHRatchet(envelope.data, envelope.length)) {
                 ecliptix::proto::common::SecureEnvelope parsed;
@@ -374,11 +374,11 @@ TEST_CASE("C API Break-in Recovery - Consecutive Same-Direction Messages", "[c_a
                 dh_ratchet_count++;
             }
 
-            EcliptixBuffer plaintext{};
-            REQUIRE(ecliptix_protocol_server_system_receive_message(
+            EppBuffer plaintext{};
+            REQUIRE(epp_server_decrypt(
                 server_system.handle, envelope.data, envelope.length,
                 &plaintext, nullptr
-            ) == ECLIPTIX_SUCCESS);
+            ) == EPP_SUCCESS);
             free_buffer_data(&envelope);
             free_buffer_data(&plaintext);
         }
@@ -386,21 +386,21 @@ TEST_CASE("C API Break-in Recovery - Consecutive Same-Direction Messages", "[c_a
         REQUIRE(dh_ratchet_count == 0);
     }
 
-    ecliptix_shutdown();
+    epp_shutdown();
 }
 
 TEST_CASE("C API Break-in Recovery - Hybrid Kyber in Ratchet", "[c_api][break-in-recovery][hybrid]") {
-    REQUIRE(ecliptix_initialize() == ECLIPTIX_SUCCESS);
+    REQUIRE(epp_init() == EPP_SUCCESS);
 
     SECTION("DH ratchet messages include Kyber ciphertext") {
         IdentityKeysGuard client_keys;
-        REQUIRE(ecliptix_identity_keys_create(&client_keys.handle, nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_identity_create(&client_keys.handle, nullptr) == EPP_SUCCESS);
 
         IdentityKeysGuard server_keys;
-        REQUIRE(ecliptix_identity_keys_create(&server_keys.handle, nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_identity_create(&server_keys.handle, nullptr) == EPP_SUCCESS);
 
-        EcliptixProtocolSystemHandle* client_raw = nullptr;
-        EcliptixProtocolSystemHandle* server_raw = nullptr;
+        ProtocolSystemHandle* client_raw = nullptr;
+        ProtocolSystemHandle* server_raw = nullptr;
         REQUIRE(SetupHandshakedPair(client_keys.handle, server_keys.handle, &client_raw, &server_raw));
 
         ClientSystemGuard client_system;
@@ -410,13 +410,13 @@ TEST_CASE("C API Break-in Recovery - Hybrid Kyber in Ratchet", "[c_api][break-in
         server_system.handle = server_raw;
 
         const std::string msg1 = "First message";
-        EcliptixBuffer env1{};
-        REQUIRE(ecliptix_protocol_system_send_message(
+        EppBuffer env1{};
+        REQUIRE(epp_session_encrypt(
             client_system.handle,
             reinterpret_cast<const uint8_t*>(msg1.data()),
             msg1.size(),
             &env1, nullptr
-        ) == ECLIPTIX_SUCCESS);
+        ) == EPP_SUCCESS);
 
         ecliptix::proto::common::SecureEnvelope parsed1;
         REQUIRE(parsed1.ParseFromArray(env1.data, static_cast<int>(env1.length)));
@@ -426,21 +426,21 @@ TEST_CASE("C API Break-in Recovery - Hybrid Kyber in Ratchet", "[c_api][break-in
             REQUIRE(parsed1.kyber_ciphertext().size() > 0);
         }
 
-        EcliptixBuffer pt1{};
-        REQUIRE(ecliptix_protocol_server_system_receive_message(
+        EppBuffer pt1{};
+        REQUIRE(epp_server_decrypt(
             server_system.handle, env1.data, env1.length, &pt1, nullptr
-        ) == ECLIPTIX_SUCCESS);
+        ) == EPP_SUCCESS);
         free_buffer_data(&env1);
         free_buffer_data(&pt1);
 
         const std::string msg2 = "Server reply";
-        EcliptixBuffer env2{};
-        REQUIRE(ecliptix_protocol_server_system_send_message(
+        EppBuffer env2{};
+        REQUIRE(epp_server_encrypt(
             server_system.handle,
             reinterpret_cast<const uint8_t*>(msg2.data()),
             msg2.size(),
             &env2, nullptr
-        ) == ECLIPTIX_SUCCESS);
+        ) == EPP_SUCCESS);
 
         ecliptix::proto::common::SecureEnvelope parsed2;
         REQUIRE(parsed2.ParseFromArray(env2.data, static_cast<int>(env2.length)));
@@ -450,29 +450,29 @@ TEST_CASE("C API Break-in Recovery - Hybrid Kyber in Ratchet", "[c_api][break-in
             REQUIRE(parsed2.kyber_ciphertext().size() > 0);
         }
 
-        EcliptixBuffer pt2{};
-        REQUIRE(ecliptix_protocol_system_receive_message(
+        EppBuffer pt2{};
+        REQUIRE(epp_session_decrypt(
             client_system.handle, env2.data, env2.length, &pt2, nullptr
-        ) == ECLIPTIX_SUCCESS);
+        ) == EPP_SUCCESS);
         free_buffer_data(&env2);
         free_buffer_data(&pt2);
     }
 
-    ecliptix_shutdown();
+    epp_shutdown();
 }
 
 TEST_CASE("C API Break-in Recovery - Verify Keys Change After Ratchet", "[c_api][break-in-recovery][state]") {
-    REQUIRE(ecliptix_initialize() == ECLIPTIX_SUCCESS);
+    REQUIRE(epp_init() == EPP_SUCCESS);
 
     SECTION("Exported state differs before and after DH ratchet") {
         IdentityKeysGuard client_keys;
-        REQUIRE(ecliptix_identity_keys_create(&client_keys.handle, nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_identity_create(&client_keys.handle, nullptr) == EPP_SUCCESS);
 
         IdentityKeysGuard server_keys;
-        REQUIRE(ecliptix_identity_keys_create(&server_keys.handle, nullptr) == ECLIPTIX_SUCCESS);
+        REQUIRE(epp_identity_create(&server_keys.handle, nullptr) == EPP_SUCCESS);
 
-        EcliptixProtocolSystemHandle* client_raw = nullptr;
-        EcliptixProtocolSystemHandle* server_raw = nullptr;
+        ProtocolSystemHandle* client_raw = nullptr;
+        ProtocolSystemHandle* server_raw = nullptr;
         REQUIRE(SetupHandshakedPair(client_keys.handle, server_keys.handle, &client_raw, &server_raw));
 
         ClientSystemGuard client_system;
@@ -482,48 +482,48 @@ TEST_CASE("C API Break-in Recovery - Verify Keys Change After Ratchet", "[c_api]
         server_system.handle = server_raw;
 
         const std::string msg1 = "First";
-        EcliptixBuffer env1{};
-        REQUIRE(ecliptix_protocol_system_send_message(
+        EppBuffer env1{};
+        REQUIRE(epp_session_encrypt(
             client_system.handle,
             reinterpret_cast<const uint8_t*>(msg1.data()),
             msg1.size(),
             &env1, nullptr
-        ) == ECLIPTIX_SUCCESS);
+        ) == EPP_SUCCESS);
 
-        EcliptixBuffer pt1{};
-        REQUIRE(ecliptix_protocol_server_system_receive_message(
+        EppBuffer pt1{};
+        REQUIRE(epp_server_decrypt(
             server_system.handle, env1.data, env1.length, &pt1, nullptr
-        ) == ECLIPTIX_SUCCESS);
+        ) == EPP_SUCCESS);
         free_buffer_data(&env1);
         free_buffer_data(&pt1);
 
-        EcliptixBuffer state_before{};
-        REQUIRE(ecliptix_protocol_server_system_export_state(
+        EppBuffer state_before{};
+        REQUIRE(epp_server_serialize(
             server_system.handle, &state_before, nullptr
-        ) == ECLIPTIX_SUCCESS);
+        ) == EPP_SUCCESS);
         std::vector<uint8_t> state_before_vec(state_before.data, state_before.data + state_before.length);
         free_buffer_data(&state_before);
 
         const std::string msg2 = "Reply";
-        EcliptixBuffer env2{};
-        REQUIRE(ecliptix_protocol_server_system_send_message(
+        EppBuffer env2{};
+        REQUIRE(epp_server_encrypt(
             server_system.handle,
             reinterpret_cast<const uint8_t*>(msg2.data()),
             msg2.size(),
             &env2, nullptr
-        ) == ECLIPTIX_SUCCESS);
+        ) == EPP_SUCCESS);
 
-        EcliptixBuffer pt2{};
-        REQUIRE(ecliptix_protocol_system_receive_message(
+        EppBuffer pt2{};
+        REQUIRE(epp_session_decrypt(
             client_system.handle, env2.data, env2.length, &pt2, nullptr
-        ) == ECLIPTIX_SUCCESS);
+        ) == EPP_SUCCESS);
         free_buffer_data(&env2);
         free_buffer_data(&pt2);
 
-        EcliptixBuffer state_after{};
-        REQUIRE(ecliptix_protocol_server_system_export_state(
+        EppBuffer state_after{};
+        REQUIRE(epp_server_serialize(
             server_system.handle, &state_after, nullptr
-        ) == ECLIPTIX_SUCCESS);
+        ) == EPP_SUCCESS);
         std::vector<uint8_t> state_after_vec(state_after.data, state_after.data + state_after.length);
         free_buffer_data(&state_after);
 
@@ -532,5 +532,5 @@ TEST_CASE("C API Break-in Recovery - Verify Keys Change After Ratchet", "[c_api]
         REQUIRE(states_differ);
     }
 
-    ecliptix_shutdown();
+    epp_shutdown();
 }

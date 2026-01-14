@@ -20,9 +20,9 @@ public:
     static Result<bool, SodiumFailure> ConstantTimeEquals(
         std::span<const uint8_t> a,
         std::span<const uint8_t> b);
-    static Result<std::pair<SecureMemoryHandle, std::vector<uint8_t>>, EcliptixProtocolFailure>
+    static Result<std::pair<SecureMemoryHandle, std::vector<uint8_t>>, ProtocolFailure>
     GenerateX25519KeyPair(std::string_view key_purpose);
-    static Result<std::pair<std::vector<uint8_t>, std::vector<uint8_t>>, EcliptixProtocolFailure>
+    static Result<std::pair<std::vector<uint8_t>, std::vector<uint8_t>>, ProtocolFailure>
     GenerateEd25519KeyPair();
     static std::vector<uint8_t> GetRandomBytes(size_t size);
     static uint32_t GenerateRandomUInt32(bool ensure_non_zero = false);

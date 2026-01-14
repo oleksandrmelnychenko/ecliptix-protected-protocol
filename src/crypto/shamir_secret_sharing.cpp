@@ -81,32 +81,32 @@ struct ParsedShare {
     std::span<const uint8_t> auth_input;
 };
 
-Result<Unit, EcliptixProtocolFailure> ValidateAuthKey(std::span<const uint8_t> auth_key) {
+Result<Unit, ProtocolFailure> ValidateAuthKey(std::span<const uint8_t> auth_key) {
     if (auth_key.empty()) {
-        return Result<Unit, EcliptixProtocolFailure>::Ok(unit);
+        return Result<Unit, ProtocolFailure>::Ok(unit);
     }
     if (auth_key.size() != kAuthKeySize) {
-        return Result<Unit, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::InvalidInput(
+        return Result<Unit, ProtocolFailure>::Err(
+            ProtocolFailure::InvalidInput(
                 "Auth key must be 32 bytes for HMAC-SHA256"));
     }
-    return Result<Unit, EcliptixProtocolFailure>::Ok(unit);
+    return Result<Unit, ProtocolFailure>::Ok(unit);
 }
 
-Result<ParsedShare, EcliptixProtocolFailure> ParseShare(
+Result<ParsedShare, ProtocolFailure> ParseShare(
     std::span<const uint8_t> share,
     std::span<const uint8_t> auth_key) {
     if (share.size() < ShamirSecretSharing::HEADER_SIZE) {
-        return Result<ParsedShare, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::InvalidInput("Share is too small for header"));
+        return Result<ParsedShare, ProtocolFailure>::Err(
+            ProtocolFailure::InvalidInput("Share is too small for header"));
     }
 
     if (!std::equal(
             ShamirSecretSharing::MAGIC.begin(),
             ShamirSecretSharing::MAGIC.end(),
             share.begin())) {
-        return Result<ParsedShare, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::InvalidInput("Share magic mismatch"));
+        return Result<ParsedShare, ProtocolFailure>::Err(
+            ProtocolFailure::InvalidInput("Share magic mismatch"));
     }
 
     ParsedShare parsed{
@@ -121,42 +121,42 @@ Result<ParsedShare, EcliptixProtocolFailure> ParseShare(
     };
 
     if (parsed.threshold < ShamirSecretSharing::MIN_SHARES) {
-        return Result<ParsedShare, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::InvalidInput("Share threshold is invalid"));
+        return Result<ParsedShare, ProtocolFailure>::Err(
+            ProtocolFailure::InvalidInput("Share threshold is invalid"));
     }
 
     if (parsed.share_count < ShamirSecretSharing::MIN_SHARES ||
         parsed.share_count > ShamirSecretSharing::MAX_SHARES) {
-        return Result<ParsedShare, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::InvalidInput("Share count is invalid"));
+        return Result<ParsedShare, ProtocolFailure>::Err(
+            ProtocolFailure::InvalidInput("Share count is invalid"));
     }
 
     if (parsed.index == 0 || parsed.index > parsed.share_count) {
-        return Result<ParsedShare, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::InvalidInput("Share index is invalid"));
+        return Result<ParsedShare, ProtocolFailure>::Err(
+            ProtocolFailure::InvalidInput("Share index is invalid"));
     }
 
     if (parsed.secret_length == 0 || parsed.secret_length > ShamirSecretSharing::MAX_SECRET_LENGTH) {
-        return Result<ParsedShare, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::InvalidInput("Secret length is invalid"));
+        return Result<ParsedShare, ProtocolFailure>::Err(
+            ProtocolFailure::InvalidInput("Secret length is invalid"));
     }
 
     const size_t expected_length = ShamirSecretSharing::HEADER_SIZE +
                                    parsed.secret_length +
                                    (parsed.has_auth ? ShamirSecretSharing::AUTH_TAG_SIZE : 0);
     if (share.size() != expected_length) {
-        return Result<ParsedShare, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::InvalidInput("Share length does not match header"));
+        return Result<ParsedShare, ProtocolFailure>::Err(
+            ProtocolFailure::InvalidInput("Share length does not match header"));
     }
 
     if (parsed.has_auth && auth_key.empty()) {
-        return Result<ParsedShare, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::InvalidInput("Auth key required for authenticated shares"));
+        return Result<ParsedShare, ProtocolFailure>::Err(
+            ProtocolFailure::InvalidInput("Auth key required for authenticated shares"));
     }
 
     if (!parsed.has_auth && !auth_key.empty()) {
-        return Result<ParsedShare, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::InvalidInput("Auth key provided for unauthenticated shares"));
+        return Result<ParsedShare, ProtocolFailure>::Err(
+            ProtocolFailure::InvalidInput("Auth key provided for unauthenticated shares"));
     }
 
     parsed.share_data = share.subspan(ShamirSecretSharing::HEADER_SIZE, parsed.secret_length);
@@ -178,25 +178,25 @@ Result<ParsedShare, EcliptixProtocolFailure> ParseShare(
             expected,
             parsed.auth_tag);
         if (cmp_result.IsErr() || !cmp_result.Unwrap()) {
-            return Result<ParsedShare, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput("Share authentication failed"));
+            return Result<ParsedShare, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("Share authentication failed"));
         }
     }
 
-    return Result<ParsedShare, EcliptixProtocolFailure>::Ok(parsed);
+    return Result<ParsedShare, ProtocolFailure>::Ok(parsed);
 }
 
-Result<std::vector<uint8_t>, EcliptixProtocolFailure> ReconstructFromShares(
+Result<std::vector<uint8_t>, ProtocolFailure> ReconstructFromShares(
     const std::vector<std::span<const uint8_t>>& shares,
     std::span<const uint8_t> auth_key) {
     if (shares.size() < ShamirSecretSharing::MIN_SHARES) {
-        return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::InvalidInput("Insufficient shares for reconstruction"));
+        return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+            ProtocolFailure::InvalidInput("Insufficient shares for reconstruction"));
     }
 
     auto auth_key_result = ValidateAuthKey(auth_key);
     if (auth_key_result.IsErr()) {
-        return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(auth_key_result.UnwrapErr());
+        return Result<std::vector<uint8_t>, ProtocolFailure>::Err(auth_key_result.UnwrapErr());
     }
 
     std::vector<ParsedShare> parsed_shares;
@@ -205,7 +205,7 @@ Result<std::vector<uint8_t>, EcliptixProtocolFailure> ReconstructFromShares(
     for (const auto& share : shares) {
         auto parsed_result = ParseShare(share, auth_key);
         if (parsed_result.IsErr()) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                 parsed_result.UnwrapErr());
         }
         parsed_shares.push_back(parsed_result.Unwrap());
@@ -213,8 +213,8 @@ Result<std::vector<uint8_t>, EcliptixProtocolFailure> ReconstructFromShares(
 
     const uint8_t threshold = parsed_shares.front().threshold;
     if (shares.size() < threshold) {
-        return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::InvalidInput("Not enough shares for threshold"));
+        return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+            ProtocolFailure::InvalidInput("Not enough shares for threshold"));
     }
 
     const uint32_t secret_length = parsed_shares.front().secret_length;
@@ -227,12 +227,12 @@ Result<std::vector<uint8_t>, EcliptixProtocolFailure> ReconstructFromShares(
             share.share_count != share_count ||
             share.secret_length != secret_length ||
             share.has_auth != has_auth) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput("Share metadata mismatch"));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("Share metadata mismatch"));
         }
         if (seen_indices[share.index]) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput("Duplicate share index"));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("Duplicate share index"));
         }
         seen_indices[share.index] = true;
     }
@@ -255,8 +255,8 @@ Result<std::vector<uint8_t>, EcliptixProtocolFailure> ReconstructFromShares(
             denominator = Gf256Mul(denominator, static_cast<uint8_t>(x_values[j] ^ x_values[i]));
         }
         if (denominator == 0) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput("Share indices are invalid"));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("Share indices are invalid"));
         }
         lagrange_coeffs[i] = Gf256Mul(numerator, Gf256Inv(denominator));
     }
@@ -271,44 +271,44 @@ Result<std::vector<uint8_t>, EcliptixProtocolFailure> ReconstructFromShares(
         secret[byte_index] = value;
     }
 
-    return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Ok(std::move(secret));
+    return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(std::move(secret));
 }
 } 
 
-Result<std::vector<std::vector<uint8_t>>, EcliptixProtocolFailure> ShamirSecretSharing::Split(
+Result<std::vector<std::vector<uint8_t>>, ProtocolFailure> ShamirSecretSharing::Split(
     std::span<const uint8_t> secret,
     const uint8_t threshold,
     const uint8_t share_count,
     std::span<const uint8_t> auth_key) {
     if (secret.empty()) {
-        return Result<std::vector<std::vector<uint8_t>>, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::InvalidInput("Secret must not be empty"));
+        return Result<std::vector<std::vector<uint8_t>>, ProtocolFailure>::Err(
+            ProtocolFailure::InvalidInput("Secret must not be empty"));
     }
 
     if (secret.size() > MAX_SECRET_LENGTH) {
-        return Result<std::vector<std::vector<uint8_t>>, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::InvalidInput("Secret exceeds maximum length"));
+        return Result<std::vector<std::vector<uint8_t>>, ProtocolFailure>::Err(
+            ProtocolFailure::InvalidInput("Secret exceeds maximum length"));
     }
 
     if (threshold < MIN_SHARES || threshold > share_count) {
-        return Result<std::vector<std::vector<uint8_t>>, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::InvalidInput("Threshold is invalid"));
+        return Result<std::vector<std::vector<uint8_t>>, ProtocolFailure>::Err(
+            ProtocolFailure::InvalidInput("Threshold is invalid"));
     }
 
     if (share_count < MIN_SHARES || share_count > MAX_SHARES) {
-        return Result<std::vector<std::vector<uint8_t>>, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::InvalidInput("Share count is invalid"));
+        return Result<std::vector<std::vector<uint8_t>>, ProtocolFailure>::Err(
+            ProtocolFailure::InvalidInput("Share count is invalid"));
     }
 
     auto auth_key_result = ValidateAuthKey(auth_key);
     if (auth_key_result.IsErr()) {
-        return Result<std::vector<std::vector<uint8_t>>, EcliptixProtocolFailure>::Err(
+        return Result<std::vector<std::vector<uint8_t>>, ProtocolFailure>::Err(
             auth_key_result.UnwrapErr());
     }
 
     if (SodiumInterop::Initialize().IsErr()) {
-        return Result<std::vector<std::vector<uint8_t>>, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::Generic("Failed to initialize libsodium"));
+        return Result<std::vector<std::vector<uint8_t>>, ProtocolFailure>::Err(
+            ProtocolFailure::Generic("Failed to initialize libsodium"));
     }
 
     const bool has_auth = !auth_key.empty();
@@ -350,20 +350,20 @@ Result<std::vector<std::vector<uint8_t>>, EcliptixProtocolFailure> ShamirSecretS
         }
     }
 
-    return Result<std::vector<std::vector<uint8_t>>, EcliptixProtocolFailure>::Ok(std::move(shares));
+    return Result<std::vector<std::vector<uint8_t>>, ProtocolFailure>::Ok(std::move(shares));
 }
 
-Result<std::vector<uint8_t>, EcliptixProtocolFailure> ShamirSecretSharing::Reconstruct(
+Result<std::vector<uint8_t>, ProtocolFailure> ShamirSecretSharing::Reconstruct(
     std::span<const std::vector<uint8_t>> shares,
     std::span<const uint8_t> auth_key) {
     if (shares.empty()) {
-        return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::InvalidInput("No shares provided"));
+        return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+            ProtocolFailure::InvalidInput("No shares provided"));
     }
 
     if (SodiumInterop::Initialize().IsErr()) {
-        return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::Generic("Failed to initialize libsodium"));
+        return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+            ProtocolFailure::Generic("Failed to initialize libsodium"));
     }
 
     std::vector<std::span<const uint8_t>> share_spans;
@@ -375,24 +375,24 @@ Result<std::vector<uint8_t>, EcliptixProtocolFailure> ShamirSecretSharing::Recon
     return ReconstructFromShares(share_spans, auth_key);
 }
 
-Result<std::vector<uint8_t>, EcliptixProtocolFailure> ShamirSecretSharing::ReconstructSerialized(
+Result<std::vector<uint8_t>, ProtocolFailure> ShamirSecretSharing::ReconstructSerialized(
     std::span<const uint8_t> shares_blob,
     const size_t share_length,
     const size_t share_count,
     std::span<const uint8_t> auth_key) {
     if (share_length == 0 || share_count == 0) {
-        return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::InvalidInput("Share length or count is invalid"));
+        return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+            ProtocolFailure::InvalidInput("Share length or count is invalid"));
     }
 
     if (shares_blob.size() != share_length * share_count) {
-        return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::InvalidInput("Share buffer length mismatch"));
+        return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+            ProtocolFailure::InvalidInput("Share buffer length mismatch"));
     }
 
     if (SodiumInterop::Initialize().IsErr()) {
-        return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-            EcliptixProtocolFailure::Generic("Failed to initialize libsodium"));
+        return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+            ProtocolFailure::Generic("Failed to initialize libsodium"));
     }
 
     std::vector<std::span<const uint8_t>> share_spans;

@@ -17,7 +17,7 @@ enum class SodiumFailureType {
     ComparisonFailed,
     InvalidOperation
 };
-enum class EcliptixProtocolFailureType {
+enum class ProtocolFailureType {
     Generic,
     KeyGeneration,
     DeriveKey,
@@ -72,52 +72,52 @@ public:
         return {SodiumFailureType::InvalidOperation, std::move(msg)};
     }
 };
-class EcliptixProtocolFailure {
+class ProtocolFailure {
 public:
-    EcliptixProtocolFailureType type;
+    ProtocolFailureType type;
     std::string message;
-    EcliptixProtocolFailure(const EcliptixProtocolFailureType t, std::string msg)
+    ProtocolFailure(const ProtocolFailureType t, std::string msg)
         : type(t), message(std::move(msg)) {}
-    static EcliptixProtocolFailure Generic(std::string msg) {
-        return {EcliptixProtocolFailureType::Generic, std::move(msg)};
+    static ProtocolFailure Generic(std::string msg) {
+        return {ProtocolFailureType::Generic, std::move(msg)};
     }
-    static EcliptixProtocolFailure KeyGeneration(std::string msg) {
-        return {EcliptixProtocolFailureType::KeyGeneration, std::move(msg)};
+    static ProtocolFailure KeyGeneration(std::string msg) {
+        return {ProtocolFailureType::KeyGeneration, std::move(msg)};
     }
-    static EcliptixProtocolFailure DeriveKey(std::string msg) {
-        return {EcliptixProtocolFailureType::DeriveKey, std::move(msg)};
+    static ProtocolFailure DeriveKey(std::string msg) {
+        return {ProtocolFailureType::DeriveKey, std::move(msg)};
     }
-    static EcliptixProtocolFailure InvalidInput(std::string msg) {
-        return {EcliptixProtocolFailureType::InvalidInput, std::move(msg)};
+    static ProtocolFailure InvalidInput(std::string msg) {
+        return {ProtocolFailureType::InvalidInput, std::move(msg)};
     }
-    static EcliptixProtocolFailure PrepareLocal(std::string msg) {
-        return {EcliptixProtocolFailureType::PrepareLocal, std::move(msg)};
+    static ProtocolFailure PrepareLocal(std::string msg) {
+        return {ProtocolFailureType::PrepareLocal, std::move(msg)};
     }
-    static EcliptixProtocolFailure PeerPubKey(std::string msg) {
-        return {EcliptixProtocolFailureType::PeerPubKey, std::move(msg)};
+    static ProtocolFailure PeerPubKey(std::string msg) {
+        return {ProtocolFailureType::PeerPubKey, std::move(msg)};
     }
-    static EcliptixProtocolFailure Handshake(std::string msg) {
-        return {EcliptixProtocolFailureType::Handshake, std::move(msg)};
+    static ProtocolFailure Handshake(std::string msg) {
+        return {ProtocolFailureType::Handshake, std::move(msg)};
     }
-    static EcliptixProtocolFailure Decode(std::string msg) {
-        return {EcliptixProtocolFailureType::Decode, std::move(msg)};
+    static ProtocolFailure Decode(std::string msg) {
+        return {ProtocolFailureType::Decode, std::move(msg)};
     }
-    static EcliptixProtocolFailure Encode(std::string msg) {
-        return {EcliptixProtocolFailureType::Encode, std::move(msg)};
+    static ProtocolFailure Encode(std::string msg) {
+        return {ProtocolFailureType::Encode, std::move(msg)};
     }
-    static EcliptixProtocolFailure BufferTooSmall(std::string msg) {
-        return {EcliptixProtocolFailureType::BufferTooSmall, std::move(msg)};
+    static ProtocolFailure BufferTooSmall(std::string msg) {
+        return {ProtocolFailureType::BufferTooSmall, std::move(msg)};
     }
-    static EcliptixProtocolFailure ObjectDisposed(std::string msg) {
-        return {EcliptixProtocolFailureType::ObjectDisposed, std::move(msg)};
+    static ProtocolFailure ObjectDisposed(std::string msg) {
+        return {ProtocolFailureType::ObjectDisposed, std::move(msg)};
     }
-    static EcliptixProtocolFailure InvalidState(std::string msg) {
-        return {EcliptixProtocolFailureType::InvalidState, std::move(msg)};
+    static ProtocolFailure InvalidState(std::string msg) {
+        return {ProtocolFailureType::InvalidState, std::move(msg)};
     }
-    static EcliptixProtocolFailure NullPointer(std::string msg) {
-        return {EcliptixProtocolFailureType::NullPointer, std::move(msg)};
+    static ProtocolFailure NullPointer(std::string msg) {
+        return {ProtocolFailureType::NullPointer, std::move(msg)};
     }
-    static EcliptixProtocolFailure FromSodiumFailure(const SodiumFailure& sf) {
+    static ProtocolFailure FromSodiumFailure(const SodiumFailure& sf) {
         return Generic(sf.message);
     }
 };

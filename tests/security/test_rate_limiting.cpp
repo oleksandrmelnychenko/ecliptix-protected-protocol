@@ -1,5 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
-#include "ecliptix/protocol/connection/ecliptix_protocol_connection.hpp"
+#include "ecliptix/protocol/connection/protocol_connection.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "helpers/hybrid_handshake.hpp"
 #include "ecliptix/core/constants.hpp"

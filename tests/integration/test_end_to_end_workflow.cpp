@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
-#include "ecliptix/protocol/connection/ecliptix_protocol_connection.hpp"
-#include "ecliptix/identity/ecliptix_system_identity_keys.hpp"
+#include "ecliptix/protocol/connection/protocol_connection.hpp"
+#include "ecliptix/identity/identity_keys.hpp"
 #include "ecliptix/crypto/aes_gcm.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/utilities/envelope_builder.hpp"
@@ -24,32 +24,32 @@ using namespace ecliptix::proto::common;
 using namespace ecliptix::protocol::test_helpers;
 
 struct EndToEndTestContext {
-    std::unique_ptr<EcliptixSystemIdentityKeys> alice_identity;
-    std::unique_ptr<EcliptixSystemIdentityKeys> bob_identity;
-    std::unique_ptr<EcliptixProtocolConnection> alice_connection;
-    std::unique_ptr<EcliptixProtocolConnection> bob_connection;
+    std::unique_ptr<IdentityKeys> alice_identity;
+    std::unique_ptr<IdentityKeys> bob_identity;
+    std::unique_ptr<ProtocolConnection> alice_connection;
+    std::unique_ptr<ProtocolConnection> bob_connection;
     std::vector<uint8_t> shared_root_key;
 
-    [[nodiscard]] static Result<EndToEndTestContext, EcliptixProtocolFailure> Create() {
+    [[nodiscard]] static Result<EndToEndTestContext, ProtocolFailure> Create() {
         EndToEndTestContext ctx;
 
-        auto alice_id_result = EcliptixSystemIdentityKeys::Create(5);
+        auto alice_id_result = IdentityKeys::Create(5);
         if (alice_id_result.IsErr()) {
-            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+            return Result<EndToEndTestContext, ProtocolFailure>::Err(
                 std::move(alice_id_result).UnwrapErr());
         }
-        ctx.alice_identity = std::make_unique<EcliptixSystemIdentityKeys>(std::move(alice_id_result).Unwrap());
+        ctx.alice_identity = std::make_unique<IdentityKeys>(std::move(alice_id_result).Unwrap());
 
-        auto bob_id_result = EcliptixSystemIdentityKeys::Create(5);
+        auto bob_id_result = IdentityKeys::Create(5);
         if (bob_id_result.IsErr()) {
-            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+            return Result<EndToEndTestContext, ProtocolFailure>::Err(
                 std::move(bob_id_result).UnwrapErr());
         }
-        ctx.bob_identity = std::make_unique<EcliptixSystemIdentityKeys>(std::move(bob_id_result).Unwrap());
+        ctx.bob_identity = std::make_unique<IdentityKeys>(std::move(bob_id_result).Unwrap());
 
         auto bob_bundle_result = ctx.bob_identity->CreatePublicBundle();
         if (bob_bundle_result.IsErr()) {
-            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+            return Result<EndToEndTestContext, ProtocolFailure>::Err(
                 std::move(bob_bundle_result).UnwrapErr());
         }
         auto bob_bundle = std::move(bob_bundle_result).Unwrap();
@@ -58,7 +58,7 @@ struct EndToEndTestContext {
 
         auto alice_bundle_result = ctx.alice_identity->CreatePublicBundle();
         if (alice_bundle_result.IsErr()) {
-            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+            return Result<EndToEndTestContext, ProtocolFailure>::Err(
                 std::move(alice_bundle_result).UnwrapErr());
         }
         auto alice_bundle = std::move(alice_bundle_result).Unwrap();
@@ -69,32 +69,32 @@ struct EndToEndTestContext {
 
         auto shared_secret_result = ctx.alice_identity->X3dhDeriveSharedSecret(bob_bundle, info, true);
         if (shared_secret_result.IsErr()) {
-            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+            return Result<EndToEndTestContext, ProtocolFailure>::Err(
                 std::move(shared_secret_result).UnwrapErr());
         }
         auto shared_secret = std::move(shared_secret_result).Unwrap();
         auto root_key_result = shared_secret.ReadBytes(shared_secret.Size());
         if (root_key_result.IsErr()) {
-            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<EndToEndTestContext, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     std::format("Failed to read shared secret: {}",
                         root_key_result.UnwrapErr().message)));
         }
         ctx.shared_root_key = std::move(root_key_result).Unwrap();
         auto kyber_artifacts_result = ctx.alice_identity->ConsumePendingKyberHandshake();
         if (kyber_artifacts_result.IsErr()) {
-            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+            return Result<EndToEndTestContext, ProtocolFailure>::Err(
                 kyber_artifacts_result.UnwrapErr());
         }
         auto kyber_artifacts = std::move(kyber_artifacts_result).Unwrap();
         auto bob_identity_decap = ctx.bob_identity->DecapsulateKyberCiphertext(kyber_artifacts.kyber_ciphertext);
         if (bob_identity_decap.IsErr()) {
-            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+            return Result<EndToEndTestContext, ProtocolFailure>::Err(
                 bob_identity_decap.UnwrapErr());
         }
         if (bob_identity_decap.Unwrap().kyber_shared_secret != kyber_artifacts.kyber_shared_secret) {
-            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Kyber shared secret mismatch between initiator/responder"));
+            return Result<EndToEndTestContext, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Kyber shared secret mismatch between initiator/responder"));
         }
 
         RatchetConfig no_dh_ratchet_config(100000);
@@ -105,37 +105,37 @@ struct EndToEndTestContext {
 
         auto alice_kyber_clone = ctx.alice_identity->CloneKyberSecretKey();
         if (alice_kyber_clone.IsErr()) {
-            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+            return Result<EndToEndTestContext, ProtocolFailure>::Err(
                 alice_kyber_clone.UnwrapErr());
         }
         auto alice_kyber_set = ctx.alice_connection->SetLocalKyberKeyPair(
             std::move(alice_kyber_clone).Unwrap(),
             ctx.alice_identity->GetKyberPublicKeyCopy());
         if (alice_kyber_set.IsErr()) {
-            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+            return Result<EndToEndTestContext, ProtocolFailure>::Err(
                 alice_kyber_set.UnwrapErr());
         }
         auto bob_kyber_clone = ctx.bob_identity->CloneKyberSecretKey();
         if (bob_kyber_clone.IsErr()) {
-            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+            return Result<EndToEndTestContext, ProtocolFailure>::Err(
                 bob_kyber_clone.UnwrapErr());
         }
         auto bob_kyber_set = ctx.bob_connection->SetLocalKyberKeyPair(
             std::move(bob_kyber_clone).Unwrap(),
             ctx.bob_identity->GetKyberPublicKeyCopy());
         if (bob_kyber_set.IsErr()) {
-            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+            return Result<EndToEndTestContext, ProtocolFailure>::Err(
                 bob_kyber_set.UnwrapErr());
         }
 
         auto alice_peer_result = ctx.alice_connection->SetPeerBundle(bob_bundle);
         if (alice_peer_result.IsErr()) {
-            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+            return Result<EndToEndTestContext, ProtocolFailure>::Err(
                 alice_peer_result.UnwrapErr());
         }
         auto bob_peer_result = ctx.bob_connection->SetPeerBundle(alice_bundle);
         if (bob_peer_result.IsErr()) {
-            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+            return Result<EndToEndTestContext, ProtocolFailure>::Err(
                 bob_peer_result.UnwrapErr());
         }
 
@@ -143,70 +143,70 @@ struct EndToEndTestContext {
             kyber_artifacts.kyber_ciphertext,
             kyber_artifacts.kyber_shared_secret);
         if (set_kyber_handshake.IsErr()) {
-            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+            return Result<EndToEndTestContext, ProtocolFailure>::Err(
                 set_kyber_handshake.UnwrapErr());
         }
         auto set_bob_handshake = ctx.bob_connection->SetHybridHandshakeSecrets(
             kyber_artifacts.kyber_ciphertext,
             kyber_artifacts.kyber_shared_secret);
         if (set_bob_handshake.IsErr()) {
-            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+            return Result<EndToEndTestContext, ProtocolFailure>::Err(
                 set_bob_handshake.UnwrapErr());
         }
 
         auto alice_dh_result = ctx.alice_connection->GetCurrentSenderDhPublicKey();
         if (alice_dh_result.IsErr()) {
-            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+            return Result<EndToEndTestContext, ProtocolFailure>::Err(
                 std::move(alice_dh_result).UnwrapErr());
         }
         auto alice_dh_opt = std::move(alice_dh_result).Unwrap();
         if (!alice_dh_opt.has_value()) {
-            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Alice DH key not available"));
+            return Result<EndToEndTestContext, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Alice DH key not available"));
         }
         auto alice_dh = std::move(alice_dh_opt).value();
 
         auto bob_dh_result = ctx.bob_connection->GetCurrentSenderDhPublicKey();
         if (bob_dh_result.IsErr()) {
-            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+            return Result<EndToEndTestContext, ProtocolFailure>::Err(
                 std::move(bob_dh_result).UnwrapErr());
         }
         auto bob_dh_opt = std::move(bob_dh_result).Unwrap();
         if (!bob_dh_opt.has_value()) {
-            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Bob DH key not available"));
+            return Result<EndToEndTestContext, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Bob DH key not available"));
         }
         auto bob_dh = std::move(bob_dh_opt).value();
 
         auto alice_finalize_result = ctx.alice_connection->FinalizeChainAndDhKeys(
             ctx.shared_root_key, bob_dh);
         if (alice_finalize_result.IsErr()) {
-            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+            return Result<EndToEndTestContext, ProtocolFailure>::Err(
                 std::move(alice_finalize_result).UnwrapErr());
         }
 
         auto bob_finalize_result = ctx.bob_connection->FinalizeChainAndDhKeys(
             ctx.shared_root_key, alice_dh);
         if (bob_finalize_result.IsErr()) {
-            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+            return Result<EndToEndTestContext, ProtocolFailure>::Err(
                 std::move(bob_finalize_result).UnwrapErr());
         }
         auto alice_metadata_key_check = ctx.alice_connection->GetMetadataEncryptionKey();
         if (alice_metadata_key_check.IsErr()) {
-            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+            return Result<EndToEndTestContext, ProtocolFailure>::Err(
                 alice_metadata_key_check.UnwrapErr());
         }
         auto bob_metadata_key_check = ctx.bob_connection->GetMetadataEncryptionKey();
         if (bob_metadata_key_check.IsErr()) {
-            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
+            return Result<EndToEndTestContext, ProtocolFailure>::Err(
                 bob_metadata_key_check.UnwrapErr());
         }
         if (alice_metadata_key_check.Unwrap() != bob_metadata_key_check.Unwrap()) {
-            return Result<EndToEndTestContext, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Metadata keys diverged immediately after finalize"));
+            return Result<EndToEndTestContext, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Metadata keys diverged immediately after finalize"));
         }
 
-        return Result<EndToEndTestContext, EcliptixProtocolFailure>::Ok(std::move(ctx));
+        return Result<EndToEndTestContext, ProtocolFailure>::Ok(std::move(ctx));
     }
 };
 
@@ -412,7 +412,7 @@ TEST_CASE("Integration - Bidirectional Communication with DH Ratcheting", "[inte
                 REQUIRE(alice_ct.IsOk());
                 auto alice_ct_opt = alice_ct.Unwrap();
                 REQUIRE(alice_ct_opt.has_value());
-                REQUIRE(bob_connection->PerformReceivingRatchet(*alice_pub_opt, alice_ct_opt.value()).IsOk());
+                REQUIRE(bob_connection->ExecuteReceivingRatchet(*alice_pub_opt, alice_ct_opt.value()).IsOk());
             }
 
             auto alice_nonce = alice_connection->GenerateNextNonce();
@@ -459,7 +459,7 @@ TEST_CASE("Integration - Bidirectional Communication with DH Ratcheting", "[inte
                 REQUIRE(bob_ct.IsOk());
                 auto bob_ct_opt = bob_ct.Unwrap();
                 REQUIRE(bob_ct_opt.has_value());
-                REQUIRE(alice_connection->PerformReceivingRatchet(*bob_pub_opt, bob_ct_opt.value()).IsOk());
+                REQUIRE(alice_connection->ExecuteReceivingRatchet(*bob_pub_opt, bob_ct_opt.value()).IsOk());
             }
 
             auto bob_nonce = bob_connection->GenerateNextNonce();

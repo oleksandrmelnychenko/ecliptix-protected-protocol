@@ -6,17 +6,17 @@
 #include <span>
 namespace ecliptix::protocol::crypto {
 using protocol::Result;
-using protocol::EcliptixProtocolFailure;
+using protocol::ProtocolFailure;
 
 class AesGcm {
 public:
-    [[nodiscard]] static Result<std::vector<uint8_t>, EcliptixProtocolFailure>
+    [[nodiscard]] static Result<std::vector<uint8_t>, ProtocolFailure>
     Encrypt(
         std::span<const uint8_t> key,
         std::span<const uint8_t> nonce,
         std::span<const uint8_t> plaintext,
         std::span<const uint8_t> associated_data = {});
-    [[nodiscard]] static Result<std::vector<uint8_t>, EcliptixProtocolFailure>
+    [[nodiscard]] static Result<std::vector<uint8_t>, ProtocolFailure>
     Decrypt(
         std::span<const uint8_t> key,
         std::span<const uint8_t> nonce,

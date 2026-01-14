@@ -1,5 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
-#include "ecliptix/protocol/connection/ecliptix_protocol_connection.hpp"
+#include "ecliptix/protocol/connection/protocol_connection.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "helpers/hybrid_handshake.hpp"
 #include "ecliptix/core/constants.hpp"
@@ -42,13 +42,13 @@ TEST_CASE("Session Lifecycle - GetSessionAgeSeconds Returns Correct Age", "[secu
         REQUIRE(conn->FinalizeChainAndDhKeys(root_key, peer_pk).IsOk());
 
         auto age_before = conn->GetSessionAgeSeconds();
-        REQUIRE(age_before < 2);  // Should be nearly 0
+        REQUIRE(age_before < 2);
 
         std::this_thread::sleep_for(std::chrono::seconds(2));
 
         auto age_after = conn->GetSessionAgeSeconds();
         REQUIRE(age_after >= 2);
-        REQUIRE(age_after < 5);  // Allow some slack for test execution
+        REQUIRE(age_after < 5);
     }
 }
 
@@ -66,7 +66,7 @@ TEST_CASE("Session Lifecycle - GetSessionAgeSeconds for New Connection", "[secur
         REQUIRE(conn->FinalizeChainAndDhKeys(root_key, peer_pk).IsOk());
 
         auto age = conn->GetSessionAgeSeconds();
-        REQUIRE(age < 2);  // Should be nearly 0
+        REQUIRE(age < 2);
     }
 }
 

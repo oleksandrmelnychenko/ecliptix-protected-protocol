@@ -345,7 +345,7 @@ TEST_CASE("KyberInterop - CombineHybridSecrets produces valid output", "[kyber][
 }
 
 TEST_CASE("KyberInterop - CombineHybridSecrets rejects wrong X25519 size", "[kyber][hybrid][errors]") {
-    std::vector<uint8_t> invalid_x(16, 0xAA);  // Too small
+    std::vector<uint8_t> invalid_x(16, 0xAA);
     std::vector<uint8_t> kyber_ss(32, 0xBB);
 
     auto result = KyberInterop::CombineHybridSecrets(invalid_x, kyber_ss, "test");
@@ -354,7 +354,7 @@ TEST_CASE("KyberInterop - CombineHybridSecrets rejects wrong X25519 size", "[kyb
 
 TEST_CASE("KyberInterop - CombineHybridSecrets rejects wrong Kyber size", "[kyber][hybrid][errors]") {
     std::vector<uint8_t> x25519_ss(32, 0xAA);
-    std::vector<uint8_t> invalid_k(16, 0xBB);  // Too small
+    std::vector<uint8_t> invalid_k(16, 0xBB);
 
     auto result = KyberInterop::CombineHybridSecrets(x25519_ss, invalid_k, "test");
     REQUIRE(result.IsErr());
@@ -383,9 +383,9 @@ TEST_CASE("KyberInterop - CombineHybridSecrets different if either input changes
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     std::vector<uint8_t> x_ss1(32, 0xAA);
-    std::vector<uint8_t> x_ss2(32, 0xAB);  // One byte different
+    std::vector<uint8_t> x_ss2(32, 0xAB);
     std::vector<uint8_t> k_ss1(32, 0xBB);
-    std::vector<uint8_t> k_ss2(32, 0xBC);  // One byte different
+    std::vector<uint8_t> k_ss2(32, 0xBC);
 
     auto h_baseline = KyberInterop::CombineHybridSecrets(x_ss1, k_ss1, "ctx").Unwrap();
     auto h_x_change = KyberInterop::CombineHybridSecrets(x_ss2, k_ss1, "ctx").Unwrap();

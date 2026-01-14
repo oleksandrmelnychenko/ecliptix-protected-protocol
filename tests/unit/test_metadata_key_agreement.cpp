@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
-#include "ecliptix/protocol/connection/ecliptix_protocol_connection.hpp"
-#include "ecliptix/identity/ecliptix_system_identity_keys.hpp"
+#include "ecliptix/protocol/connection/protocol_connection.hpp"
+#include "ecliptix/identity/identity_keys.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/crypto/kyber_interop.hpp"
 #include "ecliptix/core/constants.hpp"
@@ -16,11 +16,11 @@ using namespace ecliptix::protocol::crypto;
 TEST_CASE("Metadata key agreement - correct DH key selection", "[metadata][x3dh][handshake]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
-    auto client_identity_result = EcliptixSystemIdentityKeys::Create(5);
+    auto client_identity_result = IdentityKeys::Create(5);
     REQUIRE(client_identity_result.IsOk());
     auto client_identity = std::move(client_identity_result).Unwrap();
 
-    auto server_identity_result = EcliptixSystemIdentityKeys::Create(5);
+    auto server_identity_result = IdentityKeys::Create(5);
     REQUIRE(server_identity_result.IsOk());
     auto server_identity = std::move(server_identity_result).Unwrap();
 
@@ -96,7 +96,7 @@ TEST_CASE("Metadata key agreement - correct DH key selection", "[metadata][x3dh]
             << (int)server_spk[0] << (int)server_spk[1]
             << (int)server_spk[2] << (int)server_spk[3]);
 
-        auto client_conn_result = EcliptixProtocolConnection::FromRootAndPeerBundle(
+        auto client_conn_result = ProtocolConnection::FromRootAndPeerBundle(
             0,
             root_key,
             server_proto_bundle,
@@ -108,7 +108,7 @@ TEST_CASE("Metadata key agreement - correct DH key selection", "[metadata][x3dh]
         REQUIRE(client_conn_result.IsOk());
         auto client_conn = std::move(client_conn_result).Unwrap();
 
-        auto server_conn_result = EcliptixProtocolConnection::FromRootAndPeerBundle(
+        auto server_conn_result = ProtocolConnection::FromRootAndPeerBundle(
             0,
             root_key,
             client_proto_bundle,
@@ -143,7 +143,7 @@ TEST_CASE("Metadata key agreement - correct DH key selection", "[metadata][x3dh]
     }
 
     SECTION("Verify sender_dh is correctly set") {
-        auto client_conn_result = EcliptixProtocolConnection::FromRootAndPeerBundle(
+        auto client_conn_result = ProtocolConnection::FromRootAndPeerBundle(
             0,
             root_key,
             server_proto_bundle,
@@ -155,8 +155,8 @@ TEST_CASE("Metadata key agreement - correct DH key selection", "[metadata][x3dh]
         REQUIRE(client_conn_result.IsOk());
         auto client_conn = std::move(client_conn_result).Unwrap();
 
-        auto server_conn_result = EcliptixProtocolConnection::FromRootAndPeerBundle(
-            0,  // connection_id
+        auto server_conn_result = ProtocolConnection::FromRootAndPeerBundle(
+            0,
             root_key,
             client_proto_bundle,
             false,
@@ -181,7 +181,7 @@ TEST_CASE("Metadata key agreement - correct DH key selection", "[metadata][x3dh]
     }
 
     SECTION("Verify peer_dh is correctly set") {
-        auto client_conn_result = EcliptixProtocolConnection::FromRootAndPeerBundle(
+        auto client_conn_result = ProtocolConnection::FromRootAndPeerBundle(
             0,
             root_key,
             server_proto_bundle,
@@ -193,8 +193,8 @@ TEST_CASE("Metadata key agreement - correct DH key selection", "[metadata][x3dh]
         REQUIRE(client_conn_result.IsOk());
         auto client_conn = std::move(client_conn_result).Unwrap();
 
-        auto server_conn_result = EcliptixProtocolConnection::FromRootAndPeerBundle(
-            0,  // connection_id
+        auto server_conn_result = ProtocolConnection::FromRootAndPeerBundle(
+            0,
             root_key,
             client_proto_bundle,
             false,
@@ -244,7 +244,7 @@ TEST_CASE("Metadata key canonical ordering", "[metadata][ordering]") {
     randombytes_buf(kyber_ciphertext.data(), kyber_ciphertext.size());
     randombytes_buf(kyber_shared_secret.data(), kyber_shared_secret.size());
 
-    auto identity_result = EcliptixSystemIdentityKeys::Create(5);
+    auto identity_result = IdentityKeys::Create(5);
     REQUIRE(identity_result.IsOk());
     auto identity = std::move(identity_result).Unwrap();
     identity.GenerateEphemeralKeyPair();
@@ -268,7 +268,7 @@ TEST_CASE("Metadata key canonical ordering", "[metadata][ordering]") {
         proto_bundle.set_kyber_public_key(kyber->data(), kyber->size());
     }
 
-    auto conn1_result = EcliptixProtocolConnection::FromRootAndPeerBundle(
+    auto conn1_result = ProtocolConnection::FromRootAndPeerBundle(
         0,
         root_key,
         proto_bundle,
@@ -280,7 +280,7 @@ TEST_CASE("Metadata key canonical ordering", "[metadata][ordering]") {
     REQUIRE(conn1_result.IsOk());
     auto conn1 = std::move(conn1_result).Unwrap();
 
-    auto conn2_result = EcliptixProtocolConnection::FromRootAndPeerBundle(
+    auto conn2_result = ProtocolConnection::FromRootAndPeerBundle(
         0,
         root_key,
         proto_bundle,

@@ -1,7 +1,7 @@
-#include "ecliptix/models/key_materials/signed_pre_key_material.hpp"
+#include "ecliptix/models/key_materials/signed_pre_key_pair.hpp"
 
 namespace ecliptix::protocol::models {
-    SignedPreKeyMaterial::SignedPreKeyMaterial(
+    SignedPreKeyPair::SignedPreKeyPair(
         const uint32_t id,
         crypto::SecureMemoryHandle secret_key_handle,
         std::vector<uint8_t> public_key,

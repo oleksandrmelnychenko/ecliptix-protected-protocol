@@ -1,7 +1,7 @@
 #pragma once
 
 #include <catch2/catch_test_macros.hpp>
-#include "ecliptix/protocol/connection/ecliptix_protocol_connection.hpp"
+#include "ecliptix/protocol/connection/protocol_connection.hpp"
 #include "ecliptix/crypto/kyber_interop.hpp"
 #include "ecliptix/configuration/ratchet_config.hpp"
 #include <optional>
@@ -9,8 +9,8 @@
 
 namespace ecliptix::protocol::test_helpers {
     inline void PrepareHybridHandshake(
-        std::unique_ptr<protocol::connection::EcliptixProtocolConnection>& initiator,
-        std::unique_ptr<protocol::connection::EcliptixProtocolConnection>& responder) {
+        std::unique_ptr<protocol::connection::ProtocolConnection>& initiator,
+        std::unique_ptr<protocol::connection::ProtocolConnection>& responder) {
         using protocol::crypto::KyberInterop;
         auto encap = KyberInterop::Encapsulate(responder->GetKyberPublicKeyCopy());
         REQUIRE(encap.IsOk());
@@ -24,7 +24,7 @@ namespace ecliptix::protocol::test_helpers {
     }
 
     inline void PrepareStandaloneHybridHandshake(
-        std::unique_ptr<protocol::connection::EcliptixProtocolConnection>& conn) {
+        std::unique_ptr<protocol::connection::ProtocolConnection>& conn) {
         using protocol::crypto::KyberInterop;
         auto peer_pair = KyberInterop::GenerateKyber768KeyPair("test-peer-kyber");
         REQUIRE(peer_pair.IsOk());
@@ -38,22 +38,22 @@ namespace ecliptix::protocol::test_helpers {
         REQUIRE(conn->DebugSetPeerKyberPublicKey(peer_pk).IsOk());
     }
 
-    inline std::unique_ptr<protocol::connection::EcliptixProtocolConnection> CreatePreparedConnection(
+    inline std::unique_ptr<protocol::connection::ProtocolConnection> CreatePreparedConnection(
         uint32_t id,
         bool is_initiator,
         std::optional<protocol::configuration::RatchetConfig> config = std::nullopt) {
-        using protocol::connection::EcliptixProtocolConnection;
+        using protocol::connection::ProtocolConnection;
         auto result = config.has_value()
-                          ? EcliptixProtocolConnection::Create(id, is_initiator, *config)
-                          : EcliptixProtocolConnection::Create(id, is_initiator);
+                          ? ProtocolConnection::Create(id, is_initiator, *config)
+                          : ProtocolConnection::Create(id, is_initiator);
         REQUIRE(result.IsOk());
         auto conn = std::move(result).Unwrap();
         PrepareStandaloneHybridHandshake(conn);
         return conn;
     }
 
-    inline std::pair<std::unique_ptr<protocol::connection::EcliptixProtocolConnection>,
-                     std::unique_ptr<protocol::connection::EcliptixProtocolConnection>>
+    inline std::pair<std::unique_ptr<protocol::connection::ProtocolConnection>,
+                     std::unique_ptr<protocol::connection::ProtocolConnection>>
     CreatePreparedPair(uint32_t initiator_id, uint32_t responder_id) {
         auto initiator = CreatePreparedConnection(initiator_id, true);
         auto responder = CreatePreparedConnection(responder_id, false);
@@ -62,7 +62,7 @@ namespace ecliptix::protocol::test_helpers {
     }
 
     inline std::vector<uint8_t> GetKyberCiphertextForSender(
-        const std::unique_ptr<protocol::connection::EcliptixProtocolConnection>& sender) {
+        const std::unique_ptr<protocol::connection::ProtocolConnection>& sender) {
         auto ct_result = sender->GetCurrentKyberCiphertext();
         REQUIRE(ct_result.IsOk());
         auto ct_opt = std::move(ct_result).Unwrap();

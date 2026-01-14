@@ -28,7 +28,7 @@ TEST_CASE("Replay Attacks - Classic Replay Detection", "[attacks][replay][critic
         REQUIRE(replay_result.IsErr());
 
         auto err = std::move(replay_result).UnwrapErr();
-        REQUIRE(err.type == EcliptixProtocolFailureType::Generic);
+        REQUIRE(err.type == ProtocolFailureType::Generic);
     }
 
     SECTION("Replay with different index but same nonce must fail") {

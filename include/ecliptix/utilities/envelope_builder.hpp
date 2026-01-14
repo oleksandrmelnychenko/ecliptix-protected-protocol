@@ -11,7 +11,7 @@ namespace ecliptix::proto::common {
 }
 namespace ecliptix::protocol::utilities {
 using protocol::Result;
-using protocol::EcliptixProtocolFailure;
+using protocol::ProtocolFailure;
 class EnvelopeBuilder {
 public:
     [[nodiscard]] static proto::common::EnvelopeMetadata
@@ -23,13 +23,13 @@ public:
         proto::common::EnvelopeType envelope_type =
             static_cast<proto::common::EnvelopeType>(0),
         const std::string& correlation_id = "");
-    [[nodiscard]] static Result<std::vector<uint8_t>, EcliptixProtocolFailure>
+    [[nodiscard]] static Result<std::vector<uint8_t>, ProtocolFailure>
     EncryptMetadata(
         const proto::common::EnvelopeMetadata& metadata,
         std::span<const uint8_t> header_encryption_key,
         std::span<const uint8_t> header_nonce,
         std::span<const uint8_t> associated_data);
-    [[nodiscard]] static Result<proto::common::EnvelopeMetadata, EcliptixProtocolFailure>
+    [[nodiscard]] static Result<proto::common::EnvelopeMetadata, ProtocolFailure>
     DecryptMetadata(
         std::span<const uint8_t> encrypted_metadata,
         std::span<const uint8_t> header_encryption_key,

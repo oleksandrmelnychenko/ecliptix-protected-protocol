@@ -1,4 +1,4 @@
-#include "ecliptix/identity/ecliptix_system_identity_keys.hpp"
+#include "ecliptix/identity/identity_keys.hpp"
 #include "ecliptix/core/constants.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/crypto/hkdf.hpp"
@@ -16,10 +16,10 @@ namespace ecliptix::protocol::identity {
     using crypto::MasterKeyDerivation;
     using crypto::Hkdf;
     using crypto::KyberInterop;
-    using models::SignedPreKeyMaterial;
-    using models::OneTimePreKeyRecord;
+    using models::SignedPreKeyPair;
+    using models::OneTimePreKeyPublic;
 
-    EcliptixSystemIdentityKeys::EcliptixSystemIdentityKeys(IdentityKeysMaterial material)
+    IdentityKeys::IdentityKeys(IdentityKeyBundle material)
         : ed25519_secret_key_handle_(std::move(material.ed25519).TakeSecretKeyHandle())
           , ed25519_public_key_(std::move(material.ed25519).TakePublicKey())
           , identity_x25519_secret_key_handle_(std::move(material.identity_x25519).TakeSecretKeyHandle())
@@ -38,149 +38,149 @@ namespace ecliptix::protocol::identity {
           , lock_(std::make_unique<std::shared_mutex>()) {
     }
 
-    std::vector<uint8_t> EcliptixSystemIdentityKeys::GetIdentityX25519PublicKeyCopy() const {
+    std::vector<uint8_t> IdentityKeys::GetIdentityX25519PublicKeyCopy() const {
         std::shared_lock lock(*lock_);
         return identity_x25519_public_key_;
     }
 
-    std::vector<uint8_t> EcliptixSystemIdentityKeys::GetIdentityEd25519PublicKeyCopy() const {
+    std::vector<uint8_t> IdentityKeys::GetIdentityEd25519PublicKeyCopy() const {
         std::shared_lock lock(*lock_);
         return ed25519_public_key_;
     }
 
-    std::vector<uint8_t> EcliptixSystemIdentityKeys::GetKyberPublicKeyCopy() const {
+    std::vector<uint8_t> IdentityKeys::GetKyberPublicKeyCopy() const {
         std::shared_lock lock(*lock_);
         return kyber_public_key_;
     }
 
-    Result<SecureMemoryHandle, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::CloneKyberSecretKey() const {
+    Result<SecureMemoryHandle, ProtocolFailure> IdentityKeys::CloneKyberSecretKey() const {
         std::shared_lock lock(*lock_);
         auto read_result = kyber_secret_key_handle_.ReadBytes(KyberInterop::KYBER_768_SECRET_KEY_SIZE);
         if (read_result.IsErr()) {
-            return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::FromSodiumFailure(read_result.UnwrapErr()));
+            return Result<SecureMemoryHandle, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(read_result.UnwrapErr()));
         }
         auto secret_bytes = read_result.Unwrap();
         auto copy_alloc = SecureMemoryHandle::Allocate(KyberInterop::KYBER_768_SECRET_KEY_SIZE);
         if (copy_alloc.IsErr()) {
-            return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::FromSodiumFailure(copy_alloc.UnwrapErr()));
+            return Result<SecureMemoryHandle, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(copy_alloc.UnwrapErr()));
         }
         auto copy_handle = std::move(copy_alloc).Unwrap();
         if (auto write_result = copy_handle.Write(secret_bytes); write_result.IsErr()) {
-            return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::FromSodiumFailure(write_result.UnwrapErr()));
+            return Result<SecureMemoryHandle, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(write_result.UnwrapErr()));
         }
         auto _wipe = SodiumInterop::SecureWipe(std::span(secret_bytes));
         (void) _wipe;
-        return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Ok(std::move(copy_handle));
+        return Result<SecureMemoryHandle, ProtocolFailure>::Ok(std::move(copy_handle));
     }
 
-    Result<std::vector<uint8_t>, EcliptixProtocolFailure>
-    EcliptixSystemIdentityKeys::GetEphemeralX25519PrivateKeyCopy() const {
+    Result<std::vector<uint8_t>, ProtocolFailure>
+    IdentityKeys::GetEphemeralX25519PrivateKeyCopy() const {
         std::shared_lock lock(*lock_);
         if (!ephemeral_secret_key_handle_.has_value()) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Ephemeral key has not been generated"));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Ephemeral key has not been generated"));
         }
         auto read_result = ephemeral_secret_key_handle_->ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
         if (read_result.IsErr()) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::FromSodiumFailure(read_result.UnwrapErr()));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(read_result.UnwrapErr()));
         }
-        return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Ok(read_result.Unwrap());
+        return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(read_result.Unwrap());
     }
 
-    Result<std::vector<uint8_t>, EcliptixProtocolFailure>
-    EcliptixSystemIdentityKeys::GetSignedPreKeyPrivateCopy() const {
+    Result<std::vector<uint8_t>, ProtocolFailure>
+    IdentityKeys::GetSignedPreKeyPrivateCopy() const {
         std::shared_lock lock(*lock_);
         auto read_result = signed_pre_key_secret_key_handle_.ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
         if (read_result.IsErr()) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::FromSodiumFailure(read_result.UnwrapErr()));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(read_result.UnwrapErr()));
         }
-        return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Ok(read_result.Unwrap());
+        return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(read_result.Unwrap());
     }
 
     std::optional<std::vector<uint8_t>>
-    EcliptixSystemIdentityKeys::GetEphemeralX25519PublicKeyCopy() const {
+    IdentityKeys::GetEphemeralX25519PublicKeyCopy() const {
         std::shared_lock lock(*lock_);
         return ephemeral_x25519_public_key_;
     }
 
     std::vector<uint8_t>
-    EcliptixSystemIdentityKeys::GetSignedPreKeyPublicCopy() const {
+    IdentityKeys::GetSignedPreKeyPublicCopy() const {
         std::shared_lock lock(*lock_);
         return signed_pre_key_public_;
     }
 
-    std::optional<uint32_t> EcliptixSystemIdentityKeys::GetSelectedOpkId() const {
+    std::optional<uint32_t> IdentityKeys::GetSelectedOpkId() const {
         std::shared_lock lock(*lock_);
         return selected_opk_id_;
     }
 
-    void EcliptixSystemIdentityKeys::SetSelectedOpkId(uint32_t opk_id) {
+    void IdentityKeys::SetSelectedOpkId(uint32_t opk_id) {
         std::unique_lock lock(*lock_);
         selected_opk_id_ = opk_id;
     }
 
-    void EcliptixSystemIdentityKeys::ClearSelectedOpkId() {
+    void IdentityKeys::ClearSelectedOpkId() {
         std::unique_lock lock(*lock_);
         selected_opk_id_.reset();
     }
 
-    Result<Ed25519KeyMaterial, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::GenerateEd25519Keys() {
+    Result<Ed25519KeyPair, ProtocolFailure> IdentityKeys::GenerateEd25519Keys() {
         std::vector<uint8_t> public_key(crypto_sign_PUBLICKEYBYTES);
         std::vector<uint8_t> secret_key(crypto_sign_SECRETKEYBYTES);
         if (crypto_sign_keypair(public_key.data(), secret_key.data()) != 0) {
             SodiumInterop::SecureWipe(std::span(secret_key));
-            return Result<Ed25519KeyMaterial, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::KeyGeneration("Failed to generate Ed25519 keypair"));
+            return Result<Ed25519KeyPair, ProtocolFailure>::Err(
+                ProtocolFailure::KeyGeneration("Failed to generate Ed25519 keypair"));
         }
         auto handle_result = SecureMemoryHandle::Allocate(Constants::ED_25519_SECRET_KEY_SIZE);
         if (handle_result.IsErr()) {
             SodiumInterop::SecureWipe(std::span(secret_key));
-            return Result<Ed25519KeyMaterial, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(handle_result.UnwrapErr().message));
+            return Result<Ed25519KeyPair, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(handle_result.UnwrapErr().message));
         }
         auto handle = std::move(handle_result).Unwrap();
         auto write_result = handle.Write(std::span<const uint8_t>(secret_key));
         SodiumInterop::SecureWipe(std::span(secret_key));
         if (write_result.IsErr()) {
-            return Result<Ed25519KeyMaterial, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(write_result.UnwrapErr().message));
+            return Result<Ed25519KeyPair, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(write_result.UnwrapErr().message));
         }
-        return Result<Ed25519KeyMaterial, EcliptixProtocolFailure>::Ok(
-            Ed25519KeyMaterial(std::move(handle), std::move(public_key)));
+        return Result<Ed25519KeyPair, ProtocolFailure>::Ok(
+            Ed25519KeyPair(std::move(handle), std::move(public_key)));
     }
 
-    Result<X25519KeyMaterial, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::GenerateX25519IdentityKeys() {
+    Result<X25519KeyPair, ProtocolFailure> IdentityKeys::GenerateX25519IdentityKeys() {
         auto result = SodiumInterop::GenerateX25519KeyPair("identity-x25519");
         if (result.IsErr()) {
-            return Result<X25519KeyMaterial, EcliptixProtocolFailure>::Err(result.UnwrapErr());
+            return Result<X25519KeyPair, ProtocolFailure>::Err(result.UnwrapErr());
         }
         auto [handle, public_key] = std::move(result).Unwrap();
-        return Result<X25519KeyMaterial, EcliptixProtocolFailure>::Ok(
-            X25519KeyMaterial(std::move(handle), std::move(public_key)));
+        return Result<X25519KeyPair, ProtocolFailure>::Ok(
+            X25519KeyPair(std::move(handle), std::move(public_key)));
     }
 
-    Result<X25519KeyMaterial, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::GenerateX25519SignedPreKey() {
+    Result<X25519KeyPair, ProtocolFailure> IdentityKeys::GenerateX25519SignedPreKey() {
         auto result = SodiumInterop::GenerateX25519KeyPair("signed-pre-key");
         if (result.IsErr()) {
-            return Result<X25519KeyMaterial, EcliptixProtocolFailure>::Err(result.UnwrapErr());
+            return Result<X25519KeyPair, ProtocolFailure>::Err(result.UnwrapErr());
         }
         auto [handle, public_key] = std::move(result).Unwrap();
-        return Result<X25519KeyMaterial, EcliptixProtocolFailure>::Ok(
-            X25519KeyMaterial(std::move(handle), std::move(public_key)));
+        return Result<X25519KeyPair, ProtocolFailure>::Ok(
+            X25519KeyPair(std::move(handle), std::move(public_key)));
     }
 
-    Result<std::vector<uint8_t>, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::SignSignedPreKey(
+    Result<std::vector<uint8_t>, ProtocolFailure> IdentityKeys::SignSignedPreKey(
         const SecureMemoryHandle &ed_secret_key_handle,
         const std::span<const uint8_t> spk_public) {
         auto read_result = ed_secret_key_handle.ReadBytes(Constants::ED_25519_SECRET_KEY_SIZE);
         if (read_result.IsErr()) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(read_result.UnwrapErr().message));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(read_result.UnwrapErr().message));
         }
         auto secret_key = std::move(read_result).Unwrap();
         std::vector<uint8_t> signature(crypto_sign_BYTES);
@@ -193,23 +193,23 @@ namespace ecliptix::protocol::identity {
             secret_key.data());
         SodiumInterop::SecureWipe(std::span(secret_key));
         if (result != SodiumConstants::SUCCESS) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Failed to sign signed pre-key public key"));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Failed to sign signed pre-key public key"));
         }
         if (sig_len != Constants::ED_25519_SIGNATURE_SIZE) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Generated signature has incorrect size"));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Generated signature has incorrect size"));
         }
-        return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Ok(std::move(signature));
+        return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(std::move(signature));
     }
 
-    Result<std::vector<OneTimePreKeyLocal>, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::GenerateOneTimePreKeys(
+    Result<std::vector<OneTimePreKey>, ProtocolFailure> IdentityKeys::GenerateOneTimePreKeys(
         const uint32_t count) {
         if (count == ProtocolConstants::ZERO_VALUE) {
-            return Result<std::vector<OneTimePreKeyLocal>, EcliptixProtocolFailure>::Ok(
-                std::vector<OneTimePreKeyLocal>{});
+            return Result<std::vector<OneTimePreKey>, ProtocolFailure>::Ok(
+                std::vector<OneTimePreKey>{});
         }
-        std::vector<OneTimePreKeyLocal> opks;
+        std::vector<OneTimePreKey> opks;
         opks.reserve(count);
         std::unordered_set<uint32_t> used_ids;
         used_ids.reserve(count);
@@ -221,27 +221,27 @@ namespace ecliptix::protocol::identity {
                 std::memcpy(&id, random_bytes.data(), sizeof(uint32_t));
             }
             used_ids.insert(id);
-            auto opk_result = OneTimePreKeyLocal::Generate(id);
+            auto opk_result = OneTimePreKey::Generate(id);
             if (opk_result.IsErr()) {
-                return Result<std::vector<OneTimePreKeyLocal>, EcliptixProtocolFailure>::Err(
+                return Result<std::vector<OneTimePreKey>, ProtocolFailure>::Err(
                     opk_result.UnwrapErr());
             }
             opks.push_back(std::move(opk_result).Unwrap());
         }
-        return Result<std::vector<OneTimePreKeyLocal>, EcliptixProtocolFailure>::Ok(std::move(opks));
+        return Result<std::vector<OneTimePreKey>, ProtocolFailure>::Ok(std::move(opks));
     }
 
-    Result<EcliptixSystemIdentityKeys, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::Create(
+    Result<IdentityKeys, ProtocolFailure> IdentityKeys::Create(
         uint32_t one_time_key_count) {
         auto ed_result = GenerateEd25519Keys();
         if (ed_result.IsErr()) {
-            return Result<EcliptixSystemIdentityKeys, EcliptixProtocolFailure>::Err(
+            return Result<IdentityKeys, ProtocolFailure>::Err(
                 ed_result.UnwrapErr());
         }
         auto ed_keys = std::move(ed_result).Unwrap();
         auto id_x_result = GenerateX25519IdentityKeys();
         if (id_x_result.IsErr()) {
-            return Result<EcliptixSystemIdentityKeys, EcliptixProtocolFailure>::Err(
+            return Result<IdentityKeys, ProtocolFailure>::Err(
                 id_x_result.UnwrapErr());
         }
         auto id_x_keys = std::move(id_x_result).Unwrap();
@@ -250,46 +250,46 @@ namespace ecliptix::protocol::identity {
         std::memcpy(&spk_id, random_id.data(), sizeof(uint32_t));
         auto spk_result = GenerateX25519SignedPreKey();
         if (spk_result.IsErr()) {
-            return Result<EcliptixSystemIdentityKeys, EcliptixProtocolFailure>::Err(
+            return Result<IdentityKeys, ProtocolFailure>::Err(
                 spk_result.UnwrapErr());
         }
         auto spk_keys = std::move(spk_result).Unwrap();
         auto spk_public = spk_keys.GetPublicKeyCopy();
         auto signature_result = SignSignedPreKey(ed_keys.GetSecretKeyHandle(), spk_public);
         if (signature_result.IsErr()) {
-            return Result<EcliptixSystemIdentityKeys, EcliptixProtocolFailure>::Err(
+            return Result<IdentityKeys, ProtocolFailure>::Err(
                 signature_result.UnwrapErr());
         }
         auto spk_signature = std::move(signature_result).Unwrap();
         auto opks_result = GenerateOneTimePreKeys(one_time_key_count);
         if (opks_result.IsErr()) {
-            return Result<EcliptixSystemIdentityKeys, EcliptixProtocolFailure>::Err(
+            return Result<IdentityKeys, ProtocolFailure>::Err(
                 opks_result.UnwrapErr());
         }
         auto opks = std::move(opks_result).Unwrap();
         auto kyber_result = KyberInterop::GenerateKyber768KeyPair("identity-kyber");
         if (kyber_result.IsErr()) {
-            return Result<EcliptixSystemIdentityKeys, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::FromSodiumFailure(kyber_result.UnwrapErr()));
+            return Result<IdentityKeys, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(kyber_result.UnwrapErr()));
         }
         auto [kyber_secret, kyber_public] = std::move(kyber_result).Unwrap();
-        auto spk_material = SignedPreKeyMaterial(
+        auto spk_material = SignedPreKeyPair(
             spk_id,
             std::move(spk_keys).TakeSecretKeyHandle(),
             std::move(spk_keys).TakePublicKey(),
             std::move(spk_signature));
-        IdentityKeysMaterial material(
+        IdentityKeyBundle material(
             std::move(ed_keys),
             std::move(id_x_keys),
             std::move(spk_material),
             std::move(opks),
             std::move(kyber_secret),
             std::move(kyber_public));
-        return Result<EcliptixSystemIdentityKeys, EcliptixProtocolFailure>::Ok(
-            EcliptixSystemIdentityKeys(std::move(material)));
+        return Result<IdentityKeys, ProtocolFailure>::Ok(
+            IdentityKeys(std::move(material)));
     }
 
-    Result<EcliptixSystemIdentityKeys, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::CreateFromMasterKey(
+    Result<IdentityKeys, ProtocolFailure> IdentityKeys::CreateFromMasterKey(
         std::span<const uint8_t> master_key,
         std::string_view membership_id,
         uint32_t one_time_key_count) {
@@ -299,24 +299,24 @@ namespace ecliptix::protocol::identity {
         if (crypto_sign_seed_keypair(ed_public.data(), ed_secret.data(), ed_seed.data()) != 0) {
             SodiumInterop::SecureWipe(std::span(ed_seed));
             SodiumInterop::SecureWipe(std::span(ed_secret));
-            return Result<EcliptixSystemIdentityKeys, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::KeyGeneration("Failed to generate Ed25519 keypair from seed"));
+            return Result<IdentityKeys, ProtocolFailure>::Err(
+                ProtocolFailure::KeyGeneration("Failed to generate Ed25519 keypair from seed"));
         }
         SodiumInterop::SecureWipe(std::span(ed_seed));
         auto ed_handle_result = SecureMemoryHandle::Allocate(Constants::ED_25519_SECRET_KEY_SIZE);
         if (ed_handle_result.IsErr()) {
             SodiumInterop::SecureWipe(std::span(ed_secret));
-            return Result<EcliptixSystemIdentityKeys, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(ed_handle_result.UnwrapErr().message));
+            return Result<IdentityKeys, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(ed_handle_result.UnwrapErr().message));
         }
         auto ed_handle = std::move(ed_handle_result).Unwrap();
         auto ed_write_result = ed_handle.Write(std::span<const uint8_t>(ed_secret));
         SodiumInterop::SecureWipe(std::span(ed_secret));
         if (ed_write_result.IsErr()) {
-            return Result<EcliptixSystemIdentityKeys, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(ed_write_result.UnwrapErr().message));
+            return Result<IdentityKeys, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(ed_write_result.UnwrapErr().message));
         }
-        auto ed_material = Ed25519KeyMaterial(std::move(ed_handle), std::move(ed_public));
+        auto ed_material = Ed25519KeyPair(std::move(ed_handle), std::move(ed_public));
         auto x_seed = MasterKeyDerivation::DeriveX25519Seed(master_key, membership_id);
         x_seed[0] &= 248;
         x_seed[31] &= 127;
@@ -324,23 +324,23 @@ namespace ecliptix::protocol::identity {
         std::vector<uint8_t> x_public(crypto_scalarmult_BYTES);
         if (crypto_scalarmult_base(x_public.data(), x_seed.data()) != 0) {
             SodiumInterop::SecureWipe(std::span(x_seed));
-            return Result<EcliptixSystemIdentityKeys, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::KeyGeneration("Failed to derive X25519 public key"));
+            return Result<IdentityKeys, ProtocolFailure>::Err(
+                ProtocolFailure::KeyGeneration("Failed to derive X25519 public key"));
         }
         auto x_handle_result = SecureMemoryHandle::Allocate(Constants::X_25519_PRIVATE_KEY_SIZE);
         if (x_handle_result.IsErr()) {
             SodiumInterop::SecureWipe(std::span(x_seed));
-            return Result<EcliptixSystemIdentityKeys, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(x_handle_result.UnwrapErr().message));
+            return Result<IdentityKeys, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(x_handle_result.UnwrapErr().message));
         }
         auto x_handle = std::move(x_handle_result).Unwrap();
         auto x_write_result = x_handle.Write(std::span<const uint8_t>(x_seed));
         SodiumInterop::SecureWipe(std::span(x_seed));
         if (x_write_result.IsErr()) {
-            return Result<EcliptixSystemIdentityKeys, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(x_write_result.UnwrapErr().message));
+            return Result<IdentityKeys, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(x_write_result.UnwrapErr().message));
         }
-        auto x_material = X25519KeyMaterial(std::move(x_handle), std::move(x_public));
+        auto x_material = X25519KeyPair(std::move(x_handle), std::move(x_public));
         auto spk_seed = MasterKeyDerivation::DeriveSignedPreKeySeed(master_key, membership_id);
         uint32_t spk_id;
         std::memcpy(&spk_id, spk_seed.data(), sizeof(uint32_t));
@@ -353,36 +353,36 @@ namespace ecliptix::protocol::identity {
         std::vector<uint8_t> spk_public(crypto_scalarmult_BYTES);
         if (crypto_scalarmult_base(spk_public.data(), spk_secret.data()) != 0) {
             SodiumInterop::SecureWipe(std::span(spk_secret));
-            return Result<EcliptixSystemIdentityKeys, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::KeyGeneration("Failed to derive signed pre-key public key"));
+            return Result<IdentityKeys, ProtocolFailure>::Err(
+                ProtocolFailure::KeyGeneration("Failed to derive signed pre-key public key"));
         }
         auto spk_handle_result = SecureMemoryHandle::Allocate(Constants::X_25519_PRIVATE_KEY_SIZE);
         if (spk_handle_result.IsErr()) {
             SodiumInterop::SecureWipe(std::span(spk_secret));
-            return Result<EcliptixSystemIdentityKeys, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(spk_handle_result.UnwrapErr().message));
+            return Result<IdentityKeys, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(spk_handle_result.UnwrapErr().message));
         }
         auto spk_handle = std::move(spk_handle_result).Unwrap();
         auto spk_write_result = spk_handle.Write(std::span<const uint8_t>(spk_secret));
         SodiumInterop::SecureWipe(std::span(spk_secret));
         if (spk_write_result.IsErr()) {
-            return Result<EcliptixSystemIdentityKeys, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(spk_write_result.UnwrapErr().message));
+            return Result<IdentityKeys, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(spk_write_result.UnwrapErr().message));
         }
         auto signature_result = SignSignedPreKey(ed_material.GetSecretKeyHandle(), spk_public);
         if (signature_result.IsErr()) {
-            return Result<EcliptixSystemIdentityKeys, EcliptixProtocolFailure>::Err(
+            return Result<IdentityKeys, ProtocolFailure>::Err(
                 signature_result.UnwrapErr());
         }
         auto spk_signature = std::move(signature_result).Unwrap();
-        auto spk_material = SignedPreKeyMaterial(
+        auto spk_material = SignedPreKeyPair(
             spk_id,
             std::move(spk_handle),
             std::move(spk_public),
             std::move(spk_signature));
         auto opks_result = GenerateOneTimePreKeys(one_time_key_count);
         if (opks_result.IsErr()) {
-            return Result<EcliptixSystemIdentityKeys, EcliptixProtocolFailure>::Err(
+            return Result<IdentityKeys, ProtocolFailure>::Err(
                 opks_result.UnwrapErr());
         }
         auto opks = std::move(opks_result).Unwrap();
@@ -390,24 +390,24 @@ namespace ecliptix::protocol::identity {
         auto kyber_result = KyberInterop::GenerateKyber768KeyPairFromSeed(kyber_seed, "identity-kyber");
         SodiumInterop::SecureWipe(std::span(kyber_seed));
         if (kyber_result.IsErr()) {
-            return Result<EcliptixSystemIdentityKeys, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::FromSodiumFailure(kyber_result.UnwrapErr()));
+            return Result<IdentityKeys, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(kyber_result.UnwrapErr()));
         }
         auto [kyber_secret, kyber_public] = std::move(kyber_result).Unwrap();
-        IdentityKeysMaterial material(
+        IdentityKeyBundle material(
             std::move(ed_material),
             std::move(x_material),
             std::move(spk_material),
             std::move(opks),
             std::move(kyber_secret),
             std::move(kyber_public));
-        return Result<EcliptixSystemIdentityKeys, EcliptixProtocolFailure>::Ok(
-            EcliptixSystemIdentityKeys(std::move(material)));
+        return Result<IdentityKeys, ProtocolFailure>::Ok(
+            IdentityKeys(std::move(material)));
     }
 
-    Result<LocalPublicKeyBundle, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::CreatePublicBundle() const {
+    Result<LocalPublicKeyBundle, ProtocolFailure> IdentityKeys::CreatePublicBundle() const {
         std::shared_lock lock(*lock_);
-        std::vector<OneTimePreKeyRecord> opk_records;
+        std::vector<OneTimePreKeyPublic> opk_records;
         opk_records.reserve(one_time_pre_keys_.size());
         for (const auto &opk: one_time_pre_keys_) {
             opk_records.emplace_back(opk.GetPreKeyId(), opk.GetPublicKeyCopy());
@@ -421,10 +421,10 @@ namespace ecliptix::protocol::identity {
             std::move(opk_records),
             ephemeral_x25519_public_key_,
             kyber_public_key_);
-        return Result<LocalPublicKeyBundle, EcliptixProtocolFailure>::Ok(std::move(bundle));
+        return Result<LocalPublicKeyBundle, ProtocolFailure>::Ok(std::move(bundle));
     }
 
-    void EcliptixSystemIdentityKeys::GenerateEphemeralKeyPair() {
+    void IdentityKeys::GenerateEphemeralKeyPair() {
         std::unique_lock lock(*lock_);
         
         if (ephemeral_secret_key_handle_.has_value() && ephemeral_x25519_public_key_.has_value()) {
@@ -443,12 +443,12 @@ namespace ecliptix::protocol::identity {
         }
     }
 
-    void EcliptixSystemIdentityKeys::ClearEphemeralKeyPair() {
+    void IdentityKeys::ClearEphemeralKeyPair() {
         std::unique_lock lock(*lock_);
         ClearEphemeralKeyPairLocked();
     }
 
-    void EcliptixSystemIdentityKeys::ClearEphemeralKeyPairLocked() {
+    void IdentityKeys::ClearEphemeralKeyPairLocked() {
         
         
         if (ephemeral_secret_key_handle_.has_value()) {
@@ -460,15 +460,15 @@ namespace ecliptix::protocol::identity {
         }
     }
 
-    Result<bool, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::VerifyRemoteSpkSignature(
+    Result<bool, ProtocolFailure> IdentityKeys::VerifyRemoteSpkSignature(
         const std::span<const uint8_t> remote_identity_ed25519,
         const std::span<const uint8_t> remote_spk_public,
         const std::span<const uint8_t> remote_spk_signature) {
         if (remote_identity_ed25519.size() != Constants::ED_25519_PUBLIC_KEY_SIZE ||
             remote_spk_public.size() != Constants::X_25519_PUBLIC_KEY_SIZE ||
             remote_spk_signature.size() != Constants::ED_25519_SIGNATURE_SIZE) {
-            return Result<bool, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput("Invalid key or signature length for SPK verification"));
+            return Result<bool, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("Invalid key or signature length for SPK verification"));
         }
         const int result = crypto_sign_verify_detached(
             remote_spk_signature.data(),
@@ -476,73 +476,73 @@ namespace ecliptix::protocol::identity {
             remote_spk_public.size(),
             remote_identity_ed25519.data());
         if (result != SodiumConstants::SUCCESS) {
-            return Result<bool, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Handshake("Remote SPK signature verification failed"));
+            return Result<bool, ProtocolFailure>::Err(
+                ProtocolFailure::Handshake("Remote SPK signature verification failed"));
         }
-        return Result<bool, EcliptixProtocolFailure>::Ok(true);
+        return Result<bool, ProtocolFailure>::Ok(true);
     }
 
-    Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateHkdfInfo(
+    Result<Unit, ProtocolFailure> IdentityKeys::ValidateHkdfInfo(
         const std::span<const uint8_t> info) {
         if (info.empty()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::DeriveKey("HKDF info cannot be empty"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::DeriveKey("HKDF info cannot be empty"));
         }
-        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 
-Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemoteBundle(
+Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
     const LocalPublicKeyBundle &remote_bundle) {
         if (remote_bundle.GetEd25519Public().size() != Constants::ED_25519_PUBLIC_KEY_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::PeerPubKey("Invalid remote Ed25519 identity key"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::PeerPubKey("Invalid remote Ed25519 identity key"));
         }
         if (remote_bundle.GetIdentityX25519().size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::PeerPubKey("Invalid remote identity X25519 key"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::PeerPubKey("Invalid remote identity X25519 key"));
         }
         if (remote_bundle.GetSignedPreKeyPublic().size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::PeerPubKey("Invalid remote signed pre-key public key"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::PeerPubKey("Invalid remote signed pre-key public key"));
         }
         auto verify_result = VerifyRemoteSpkSignature(
             remote_bundle.GetEd25519Public(),
             remote_bundle.GetSignedPreKeyPublic(),
             remote_bundle.GetSignedPreKeySignature());
         if (verify_result.IsErr()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(verify_result.UnwrapErr());
+            return Result<Unit, ProtocolFailure>::Err(verify_result.UnwrapErr());
         }
         if (!remote_bundle.HasKyberKey() || !remote_bundle.GetKyberPublicKey().has_value() ||
             remote_bundle.GetKyberPublicKey()->size() != KyberInterop::KYBER_768_PUBLIC_KEY_SIZE) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::PeerPubKey("Invalid remote Kyber-768 public key"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::PeerPubKey("Invalid remote Kyber-768 public key"));
         }
-        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 
-    Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::EnsureLocalKeysValid() const {
+    Result<Unit, ProtocolFailure> IdentityKeys::EnsureLocalKeysValid() const {
         if (!ephemeral_secret_key_handle_.has_value() ||
             ephemeral_secret_key_handle_.value().IsInvalid()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::PrepareLocal("Local ephemeral key missing or invalid"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::PrepareLocal("Local ephemeral key missing or invalid"));
         }
         if (identity_x25519_secret_key_handle_.IsInvalid()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::PrepareLocal("Local identity key missing or invalid"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::PrepareLocal("Local identity key missing or invalid"));
         }
-        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 
-    Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateX3dhPrerequisites(
+    Result<Unit, ProtocolFailure> IdentityKeys::ValidateX3dhPrerequisites(
         const LocalPublicKeyBundle &remote_bundle,
         const std::span<const uint8_t> info) const {
         TRY(ValidateHkdfInfo(info));
         TRY(ValidateRemoteBundle(remote_bundle));
         TRY(EnsureLocalKeysValid());
-        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 
-    const OneTimePreKeyLocal* EcliptixSystemIdentityKeys::FindOneTimePreKeyByIdLocked(const uint32_t opk_id) const {
+    const OneTimePreKey* IdentityKeys::FindOneTimePreKeyByIdLocked(const uint32_t opk_id) const {
         for (const auto& opk : one_time_pre_keys_) {
             if (opk.GetPreKeyId() == opk_id) {
                 return &opk;
@@ -551,26 +551,26 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
         return nullptr;
     }
 
-    Result<Unit, EcliptixProtocolFailure>
-    EcliptixSystemIdentityKeys::ConsumeOneTimePreKeyByIdLocked(uint32_t opk_id) {
+    Result<Unit, ProtocolFailure>
+    IdentityKeys::ConsumeOneTimePreKeyByIdLocked(uint32_t opk_id) {
         auto it = std::find_if(one_time_pre_keys_.begin(), one_time_pre_keys_.end(),
-                               [opk_id](const OneTimePreKeyLocal &opk) {
+                               [opk_id](const OneTimePreKey &opk) {
                                    return opk.GetPreKeyId() == opk_id;
                                });
         if (it == one_time_pre_keys_.end()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput("OPK with requested ID not found"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("OPK with requested ID not found"));
         }
         one_time_pre_keys_.erase(it);
-        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 
-    const OneTimePreKeyLocal* EcliptixSystemIdentityKeys::FindOneTimePreKeyById(const uint32_t opk_id) const {
+    const OneTimePreKey* IdentityKeys::FindOneTimePreKeyById(const uint32_t opk_id) const {
         std::shared_lock lock(*lock_);
         return FindOneTimePreKeyByIdLocked(opk_id);
     }
 
-    Result<size_t, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::PerformX3dhDiffieHellmanAsInitiator(
+    Result<size_t, ProtocolFailure> IdentityKeys::PerformX3dhDiffieHellmanAsInitiator(
         const std::span<const uint8_t> ephemeral_secret,
         const std::span<const uint8_t> identity_secret,
         const LocalPublicKeyBundle &remote_bundle,
@@ -598,8 +598,8 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
                 dh1.data(),
                 identity_secret.data(),
                 remote_bundle.GetSignedPreKeyPublic().data()) != 0) {
-            return Result<size_t, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("DH1 computation failed"));
+            return Result<size_t, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("DH1 computation failed"));
         }
         fprintf(stderr, "[X3DH-INITIATOR] DH1 = IK × peer.SPK = %02x%02x%02x%02x%02x%02x%02x%02x\n",
             dh1[0], dh1[1], dh1[2], dh1[3], dh1[4], dh1[5], dh1[6], dh1[7]);
@@ -611,8 +611,8 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
                 dh2.data(),
                 ephemeral_secret.data(),
                 remote_bundle.GetIdentityX25519().data()) != 0) {
-            return Result<size_t, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("DH2 computation failed"));
+            return Result<size_t, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("DH2 computation failed"));
         }
         fprintf(stderr, "[X3DH-INITIATOR] DH2 = EK × peer.IK = %02x%02x%02x%02x%02x%02x%02x%02x\n",
             dh2[0], dh2[1], dh2[2], dh2[3], dh2[4], dh2[5], dh2[6], dh2[7]);
@@ -624,8 +624,8 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
                 dh3.data(),
                 ephemeral_secret.data(),
                 remote_bundle.GetSignedPreKeyPublic().data()) != 0) {
-            return Result<size_t, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("DH3 computation failed"));
+            return Result<size_t, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("DH3 computation failed"));
         }
         fprintf(stderr, "[X3DH-INITIATOR] DH3 = EK × peer.SPK = %02x%02x%02x%02x%02x%02x%02x%02x\n",
             dh3[0], dh3[1], dh3[2], dh3[3], dh3[4], dh3[5], dh3[6], dh3[7]);
@@ -635,7 +635,7 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
         
         if (opk_id.has_value() && remote_bundle.HasOneTimePreKeys()) {
             
-            const OneTimePreKeyRecord* target_opk = nullptr;
+            const OneTimePreKeyPublic* target_opk = nullptr;
             for (const auto& opk : remote_bundle.GetOneTimePreKeys()) {
                 if (opk.GetPreKeyId() == opk_id.value()) {
                     target_opk = &opk;
@@ -652,8 +652,8 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
                         dh4.data(),
                         ephemeral_secret.data(),
                         target_opk->GetPublicKeySpan().data()) != 0) {
-                    return Result<size_t, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::Generic("DH4 computation failed"));
+                    return Result<size_t, ProtocolFailure>::Err(
+                        ProtocolFailure::Generic("DH4 computation failed"));
                 }
                 fprintf(stderr, "[X3DH-INITIATOR] DH4 = EK × peer.OPK[%u] = %02x%02x%02x%02x%02x%02x%02x%02x\n",
                     opk_id.value(), dh4[0], dh4[1], dh4[2], dh4[3], dh4[4], dh4[5], dh4[6], dh4[7]);
@@ -662,17 +662,17 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
                 SodiumInterop::SecureWipe(std::span(dh4));
             } else {
                 fprintf(stderr, "[X3DH-INITIATOR] ERROR: OPK ID %u not found in peer bundle!\n", opk_id.value());
-                return Result<size_t, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::InvalidInput("Requested OPK ID not found in peer bundle"));
+                return Result<size_t, ProtocolFailure>::Err(
+                    ProtocolFailure::InvalidInput("Requested OPK ID not found in peer bundle"));
             }
         } else {
             fprintf(stderr, "[X3DH-INITIATOR] No OPK specified, skipping DH4\n");
         }
         fprintf(stderr, "[X3DH-INITIATOR] Total DH bytes: %zu\n", offset);
-        return Result<size_t, EcliptixProtocolFailure>::Ok(offset);
+        return Result<size_t, ProtocolFailure>::Ok(offset);
     }
 
-    Result<size_t, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::PerformX3dhDiffieHellmanAsResponder(
+    Result<size_t, ProtocolFailure> IdentityKeys::PerformX3dhDiffieHellmanAsResponder(
         const LocalPublicKeyBundle &remote_bundle,
         std::optional<uint32_t> used_opk_id,
         std::span<uint8_t> dh_results_output) {
@@ -686,8 +686,8 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
 
         if (!remote_bundle.HasEphemeralKey()) {
             fprintf(stderr, "[X3DH-RESPONDER] ERROR: Remote bundle has no ephemeral key!\n");
-            return Result<size_t, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput("Remote bundle must have ephemeral key for responder X3DH"));
+            return Result<size_t, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("Remote bundle must have ephemeral key for responder X3DH"));
         }
 
         const auto& peer_ephemeral = remote_bundle.GetEphemeralX25519Public().value();
@@ -706,8 +706,8 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
         auto spk_read_result = signed_pre_key_secret_key_handle_.ReadBytes(
             Constants::X_25519_PRIVATE_KEY_SIZE);
         if (spk_read_result.IsErr()) {
-            return Result<size_t, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(spk_read_result.UnwrapErr().message));
+            return Result<size_t, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(spk_read_result.UnwrapErr().message));
         }
         auto spk_secret = std::move(spk_read_result).Unwrap();
 
@@ -716,8 +716,8 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
             Constants::X_25519_PRIVATE_KEY_SIZE);
         if (id_read_result.IsErr()) {
             SodiumInterop::SecureWipe(std::span(spk_secret));
-            return Result<size_t, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(id_read_result.UnwrapErr().message));
+            return Result<size_t, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(id_read_result.UnwrapErr().message));
         }
         auto identity_secret = std::move(id_read_result).Unwrap();
 
@@ -728,8 +728,8 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
         if (crypto_scalarmult(dh1.data(), spk_secret.data(), peer_identity.data()) != 0) {
             SodiumInterop::SecureWipe(std::span(spk_secret));
             SodiumInterop::SecureWipe(std::span(identity_secret));
-            return Result<size_t, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("DH1 (responder) computation failed"));
+            return Result<size_t, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("DH1 (responder) computation failed"));
         }
         fprintf(stderr, "[X3DH-RESPONDER] DH1 = SPK × peer.IK = %02x%02x%02x%02x%02x%02x%02x%02x\n",
             dh1[0], dh1[1], dh1[2], dh1[3], dh1[4], dh1[5], dh1[6], dh1[7]);
@@ -742,8 +742,8 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
         if (crypto_scalarmult(dh2.data(), identity_secret.data(), peer_ephemeral.data()) != 0) {
             SodiumInterop::SecureWipe(std::span(spk_secret));
             SodiumInterop::SecureWipe(std::span(identity_secret));
-            return Result<size_t, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("DH2 (responder) computation failed"));
+            return Result<size_t, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("DH2 (responder) computation failed"));
         }
         fprintf(stderr, "[X3DH-RESPONDER] DH2 = IK × peer.EK = %02x%02x%02x%02x%02x%02x%02x%02x\n",
             dh2[0], dh2[1], dh2[2], dh2[3], dh2[4], dh2[5], dh2[6], dh2[7]);
@@ -756,8 +756,8 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
         if (crypto_scalarmult(dh3.data(), spk_secret.data(), peer_ephemeral.data()) != 0) {
             SodiumInterop::SecureWipe(std::span(spk_secret));
             SodiumInterop::SecureWipe(std::span(identity_secret));
-            return Result<size_t, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("DH3 (responder) computation failed"));
+            return Result<size_t, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("DH3 (responder) computation failed"));
         }
         fprintf(stderr, "[X3DH-RESPONDER] DH3 = SPK × peer.EK = %02x%02x%02x%02x%02x%02x%02x%02x\n",
             dh3[0], dh3[1], dh3[2], dh3[3], dh3[4], dh3[5], dh3[6], dh3[7]);
@@ -770,21 +770,21 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
         
         if (used_opk_id.has_value()) {
             fprintf(stderr, "[X3DH-RESPONDER] Initiator used OPK ID: %u\n", used_opk_id.value());
-            const OneTimePreKeyLocal* opk = FindOneTimePreKeyByIdLocked(used_opk_id.value());
+            const OneTimePreKey* opk = FindOneTimePreKeyByIdLocked(used_opk_id.value());
             if (!opk) {
                 SodiumInterop::SecureWipe(std::span(spk_secret));
                 SodiumInterop::SecureWipe(std::span(identity_secret));
                 fprintf(stderr, "[X3DH-RESPONDER] ERROR: OPK ID %u not found!\n", used_opk_id.value());
-                return Result<size_t, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::InvalidInput("OPK with requested ID not found"));
+                return Result<size_t, ProtocolFailure>::Err(
+                    ProtocolFailure::InvalidInput("OPK with requested ID not found"));
             }
             auto opk_read_result = opk->GetPrivateKeyHandle().ReadBytes(
                 Constants::X_25519_PRIVATE_KEY_SIZE);
             if (opk_read_result.IsErr()) {
                 SodiumInterop::SecureWipe(std::span(spk_secret));
                 SodiumInterop::SecureWipe(std::span(identity_secret));
-                return Result<size_t, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic("Failed to read OPK private key"));
+                return Result<size_t, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic("Failed to read OPK private key"));
             }
             auto opk_secret = std::move(opk_read_result).Unwrap();
             std::vector<uint8_t> dh4(Constants::X_25519_KEY_SIZE);
@@ -793,8 +793,8 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
                 SodiumInterop::SecureWipe(std::span(opk_secret));
                 SodiumInterop::SecureWipe(std::span(spk_secret));
                 SodiumInterop::SecureWipe(std::span(identity_secret));
-                return Result<size_t, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic("DH4 (responder) computation failed"));
+                return Result<size_t, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic("DH4 (responder) computation failed"));
             }
             fprintf(stderr, "[X3DH-RESPONDER] DH4 = OPK[ID=%u] × peer.EK = %02x%02x%02x%02x%02x%02x%02x%02x\n",
                 used_opk_id.value(), dh4[0], dh4[1], dh4[2], dh4[3], dh4[4], dh4[5], dh4[6], dh4[7]);
@@ -811,21 +811,21 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
         SodiumInterop::SecureWipe(std::span(identity_secret));
 
         fprintf(stderr, "[X3DH-RESPONDER] Total DH bytes: %zu\n", offset);
-        return Result<size_t, EcliptixProtocolFailure>::Ok(offset);
+        return Result<size_t, ProtocolFailure>::Ok(offset);
     }
 
-    Result<SecureMemoryHandle, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::X3dhDeriveSharedSecret(
+    Result<SecureMemoryHandle, ProtocolFailure> IdentityKeys::X3dhDeriveSharedSecret(
         const LocalPublicKeyBundle &remote_bundle,
         std::span<const uint8_t> info,
         bool is_initiator) {
         std::unique_lock lock(*lock_);
         if (auto validation_result = ValidateX3dhPrerequisites(remote_bundle, info); validation_result.IsErr()) {
-            return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
+            return Result<SecureMemoryHandle, ProtocolFailure>::Err(
                 validation_result.UnwrapErr());
         }
         if (!remote_bundle.HasKyberKey() || !remote_bundle.GetKyberPublicKey().has_value()) {
-            return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput("Remote Kyber public key required for hybrid X3DH"));
+            return Result<SecureMemoryHandle, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("Remote Kyber public key required for hybrid X3DH"));
         }
 
         std::vector<uint8_t> dh_results(Constants::X_25519_KEY_SIZE * 4);
@@ -837,16 +837,16 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
             auto eph_read_result = ephemeral_secret_key_handle_.value().ReadBytes(
                 Constants::X_25519_PRIVATE_KEY_SIZE);
             if (eph_read_result.IsErr()) {
-                return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic(eph_read_result.UnwrapErr().message));
+                return Result<SecureMemoryHandle, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic(eph_read_result.UnwrapErr().message));
             }
             auto ephemeral_secret = std::move(eph_read_result).Unwrap();
             auto id_read_result = identity_x25519_secret_key_handle_.ReadBytes(
                 Constants::X_25519_PRIVATE_KEY_SIZE);
             if (id_read_result.IsErr()) {
                 SodiumInterop::SecureWipe(std::span(ephemeral_secret));
-                return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Generic(id_read_result.UnwrapErr().message));
+                return Result<SecureMemoryHandle, ProtocolFailure>::Err(
+                    ProtocolFailure::Generic(id_read_result.UnwrapErr().message));
             }
             auto identity_secret = std::move(id_read_result).Unwrap();
 
@@ -885,7 +885,7 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
             SodiumInterop::SecureWipe(std::span(identity_secret));
             if (dh_result.IsErr()) {
                 SodiumInterop::SecureWipe(std::span(dh_results));
-                return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
+                return Result<SecureMemoryHandle, ProtocolFailure>::Err(
                     dh_result.UnwrapErr());
             }
             dh_offset = std::move(dh_result).Unwrap();
@@ -903,7 +903,7 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
             auto dh_result = PerformX3dhDiffieHellmanAsResponder(remote_bundle, used_opk_id, dh_results);
             if (dh_result.IsErr()) {
                 SodiumInterop::SecureWipe(std::span(dh_results));
-                return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
+                return Result<SecureMemoryHandle, ProtocolFailure>::Err(
                     dh_result.UnwrapErr());
             }
             dh_offset = std::move(dh_result).Unwrap();
@@ -918,7 +918,7 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
         SodiumInterop::SecureWipe(std::span(ikm));
         if (hkdf_result.IsErr()) {
             SodiumInterop::SecureWipe(std::span(classical_shared));
-            return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
+            return Result<SecureMemoryHandle, ProtocolFailure>::Err(
                 hkdf_result.UnwrapErr());
         }
 
@@ -942,7 +942,7 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
                 std::span<const uint8_t>(peer_ciphertext.data(), peer_ciphertext.size()));
             if (decap_result.IsErr()) {
                 SodiumInterop::SecureWipe(std::span(classical_shared));
-                return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
+                return Result<SecureMemoryHandle, ProtocolFailure>::Err(
                     decap_result.UnwrapErr());
             }
             auto artifacts = std::move(decap_result).Unwrap();
@@ -956,8 +956,8 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
             auto encaps_result = KyberInterop::Encapsulate(remote_kyber_public);
             if (encaps_result.IsErr()) {
                 SodiumInterop::SecureWipe(std::span(classical_shared));
-                return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::FromSodiumFailure(encaps_result.UnwrapErr()));
+                return Result<SecureMemoryHandle, ProtocolFailure>::Err(
+                    ProtocolFailure::FromSodiumFailure(encaps_result.UnwrapErr()));
             }
             auto [ct, kyber_ss_handle] = std::move(encaps_result).Unwrap();
             kyber_ciphertext = std::move(ct);
@@ -965,8 +965,8 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
             auto kyber_ss_bytes_result = kyber_ss_handle.ReadBytes(KyberInterop::KYBER_768_SHARED_SECRET_SIZE);
             if (kyber_ss_bytes_result.IsErr()) {
                 SodiumInterop::SecureWipe(std::span(classical_shared));
-                return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::FromSodiumFailure(kyber_ss_bytes_result.UnwrapErr()));
+                return Result<SecureMemoryHandle, ProtocolFailure>::Err(
+                    ProtocolFailure::FromSodiumFailure(kyber_ss_bytes_result.UnwrapErr()));
             }
             kyber_ss_bytes = kyber_ss_bytes_result.Unwrap();
         }
@@ -980,7 +980,7 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
         if (hybrid_result.IsErr()) {
             auto _wipe_pq = SodiumInterop::SecureWipe(std::span(kyber_ss_bytes));
             (void) _wipe_pq;
-            return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(
+            return Result<SecureMemoryHandle, ProtocolFailure>::Err(
                 hybrid_result.UnwrapErr());
         }
 
@@ -1000,31 +1000,31 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
             ClearEphemeralKeyPairLocked();
         }
 
-        Result<Unit, EcliptixProtocolFailure> consume_result = Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        Result<Unit, ProtocolFailure> consume_result = Result<Unit, ProtocolFailure>::Ok(Unit{});
         if (!is_initiator && used_opk_id.has_value()) {
             consume_result = ConsumeOneTimePreKeyByIdLocked(used_opk_id.value());
         }
         selected_opk_id_.reset();
         if (consume_result.IsErr()) {
-            return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Err(consume_result.UnwrapErr());
+            return Result<SecureMemoryHandle, ProtocolFailure>::Err(consume_result.UnwrapErr());
         }
 
-        return Result<SecureMemoryHandle, EcliptixProtocolFailure>::Ok(std::move(handle));
+        return Result<SecureMemoryHandle, ProtocolFailure>::Ok(std::move(handle));
     }
 
-    Result<EcliptixSystemIdentityKeys::HybridHandshakeArtifacts, EcliptixProtocolFailure>
-    EcliptixSystemIdentityKeys::ConsumePendingKyberHandshake() {
+    Result<IdentityKeys::HybridHandshakeArtifacts, ProtocolFailure>
+    IdentityKeys::ConsumePendingKyberHandshake() {
         std::unique_lock lock(*lock_);
         if (!pending_kyber_handshake_.has_value()) {
-            return Result<HybridHandshakeArtifacts, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput("No pending Kyber handshake data"));
+            return Result<HybridHandshakeArtifacts, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("No pending Kyber handshake data"));
         }
         auto artifacts = std::move(*pending_kyber_handshake_);
         pending_kyber_handshake_.reset();
-        return Result<HybridHandshakeArtifacts, EcliptixProtocolFailure>::Ok(std::move(artifacts));
+        return Result<HybridHandshakeArtifacts, ProtocolFailure>::Ok(std::move(artifacts));
     }
 
-    void EcliptixSystemIdentityKeys::StorePendingKyberHandshake(
+    void IdentityKeys::StorePendingKyberHandshake(
         std::vector<uint8_t> kyber_ciphertext,
         std::vector<uint8_t> kyber_shared_secret) {
         std::unique_lock lock(*lock_);
@@ -1034,42 +1034,42 @@ Result<Unit, EcliptixProtocolFailure> EcliptixSystemIdentityKeys::ValidateRemote
         };
     }
 
-    Result<std::vector<uint8_t>, EcliptixProtocolFailure>
-    EcliptixSystemIdentityKeys::GetPendingKyberCiphertext() const {
+    Result<std::vector<uint8_t>, ProtocolFailure>
+    IdentityKeys::GetPendingKyberCiphertext() const {
         std::shared_lock lock(*lock_);
         if (!pending_kyber_handshake_.has_value()) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput("No pending Kyber handshake data"));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("No pending Kyber handshake data"));
         }
-        return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Ok(
+        return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(
             pending_kyber_handshake_->kyber_ciphertext);
     }
 
-    Result<EcliptixSystemIdentityKeys::HybridHandshakeArtifacts, EcliptixProtocolFailure>
-    EcliptixSystemIdentityKeys::DecapsulateKyberCiphertext(const std::span<const uint8_t> ciphertext) const {
+    Result<IdentityKeys::HybridHandshakeArtifacts, ProtocolFailure>
+    IdentityKeys::DecapsulateKyberCiphertext(const std::span<const uint8_t> ciphertext) const {
         std::shared_lock lock(*lock_);
         return DecapsulateKyberCiphertextLocked(ciphertext);
     }
 
-    Result<EcliptixSystemIdentityKeys::HybridHandshakeArtifacts, EcliptixProtocolFailure>
-    EcliptixSystemIdentityKeys::DecapsulateKyberCiphertextLocked(std::span<const uint8_t> ciphertext) const {
+    Result<IdentityKeys::HybridHandshakeArtifacts, ProtocolFailure>
+    IdentityKeys::DecapsulateKyberCiphertextLocked(std::span<const uint8_t> ciphertext) const {
         auto validate_result = KyberInterop::ValidateCiphertext(ciphertext);
         if (validate_result.IsErr()) {
-            return Result<HybridHandshakeArtifacts, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::FromSodiumFailure(validate_result.UnwrapErr()));
+            return Result<HybridHandshakeArtifacts, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(validate_result.UnwrapErr()));
         }
         auto decap_result = KyberInterop::Decapsulate(ciphertext, kyber_secret_key_handle_);
         if (decap_result.IsErr()) {
-            return Result<HybridHandshakeArtifacts, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::FromSodiumFailure(decap_result.UnwrapErr()));
+            return Result<HybridHandshakeArtifacts, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(decap_result.UnwrapErr()));
         }
         auto kyber_ss_handle = std::move(decap_result).Unwrap();
         auto ss_bytes_result = kyber_ss_handle.ReadBytes(KyberInterop::KYBER_768_SHARED_SECRET_SIZE);
         if (ss_bytes_result.IsErr()) {
-            return Result<HybridHandshakeArtifacts, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::FromSodiumFailure(ss_bytes_result.UnwrapErr()));
+            return Result<HybridHandshakeArtifacts, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(ss_bytes_result.UnwrapErr()));
         }
-        return Result<HybridHandshakeArtifacts, EcliptixProtocolFailure>::Ok(
+        return Result<HybridHandshakeArtifacts, ProtocolFailure>::Ok(
             HybridHandshakeArtifacts{
                 std::vector(ciphertext.begin(), ciphertext.end()),
                 ss_bytes_result.Unwrap()

@@ -33,7 +33,7 @@ public:
         const SecureMemoryHandle& secret_key_handle
     );
 
-    static Result<SecureMemoryHandle, EcliptixProtocolFailure>
+    static Result<SecureMemoryHandle, ProtocolFailure>
     CombineHybridSecrets(
         std::span<const uint8_t> x25519_shared_secret,
         std::span<const uint8_t> kyber_shared_secret,

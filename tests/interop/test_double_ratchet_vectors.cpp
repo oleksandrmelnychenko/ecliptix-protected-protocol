@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include "helpers/mock_key_provider.hpp"
-#include "ecliptix/models/keys/ratchet_chain_key.hpp"
+#include "ecliptix/models/keys/chain_key.hpp"
 #include "ecliptix/crypto/aes_gcm.hpp"
 #include "ecliptix/crypto/hkdf.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
@@ -87,7 +87,7 @@ TEST_CASE("Double Ratchet - Sequential Message Keys", "[interop][double-ratchet]
         uint32_t successful_decryptions = 0;
 
         for (uint32_t i = 0; i < MESSAGE_COUNT; ++i) {
-            RatchetChainKey chain_key(&mock, i);
+            ChainKey chain_key(&mock, i);
 
             REQUIRE(chain_key.Index() == i);
 
@@ -150,7 +150,7 @@ TEST_CASE("Double Ratchet - Out-of-Order Message Processing", "[interop][double-
         messages.reserve(MESSAGE_COUNT);
 
         for (uint32_t i = 0; i < MESSAGE_COUNT; ++i) {
-            RatchetChainKey chain_key(&sender_mock, i);
+            ChainKey chain_key(&sender_mock, i);
 
             const std::vector<uint8_t> plaintext{
                 0xCA, 0xFE, 0xBA, 0xBE,
@@ -189,7 +189,7 @@ TEST_CASE("Double Ratchet - Out-of-Order Message Processing", "[interop][double-
         uint32_t successful_decryptions = 0;
 
         for (const auto& msg : messages) {
-            RatchetChainKey chain_key(&receiver_mock, msg.index);
+            ChainKey chain_key(&receiver_mock, msg.index);
 
             auto decrypted_result = chain_key.WithKeyMaterial<std::vector<uint8_t>>(
                 [&](std::span<const uint8_t> key) {
@@ -223,7 +223,7 @@ TEST_CASE("Double Ratchet - Skip Messages Scenario", "[interop][double-ratchet][
             }
         }
 
-        RatchetChainKey target_key(&mock, TARGET_INDEX);
+        ChainKey target_key(&mock, TARGET_INDEX);
 
         const std::vector<uint8_t> plaintext{0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE};
         std::vector<uint8_t> nonce(12, 0x42);
@@ -268,7 +268,7 @@ TEST_CASE("Double Ratchet - Skip Messages Scenario", "[interop][double-ratchet][
                 continue;
             }
 
-            RatchetChainKey chain_key(&mock, i);
+            ChainKey chain_key(&mock, i);
 
             const std::vector<uint8_t> plaintext{
                 0x12, 0x34,
@@ -327,7 +327,7 @@ TEST_CASE("Double Ratchet - Bidirectional Communication", "[interop][double-ratc
         uint32_t bob_to_alice_success = 0;
 
         for (uint32_t i = 0; i < ROUND_TRIPS; ++i) {
-            RatchetChainKey alice_key(&alice_mock, i);
+            ChainKey alice_key(&alice_mock, i);
             const std::vector<uint8_t> alice_plaintext{0xA1, 0xA2, static_cast<uint8_t>(i & 0xFF)};
             std::vector<uint8_t> alice_nonce(12, static_cast<uint8_t>((i * 2) & 0xFF));
 
@@ -349,7 +349,7 @@ TEST_CASE("Double Ratchet - Bidirectional Communication", "[interop][double-ratc
             REQUIRE(alice_decrypted.Unwrap() == alice_plaintext);
             ++alice_to_bob_success;
 
-            RatchetChainKey bob_key(&bob_mock, i);
+            ChainKey bob_key(&bob_mock, i);
             const std::vector<uint8_t> bob_plaintext{0xB1, 0xB2, static_cast<uint8_t>(i & 0xFF)};
             std::vector<uint8_t> bob_nonce(12, static_cast<uint8_t>((i * 2 + 1) & 0xFF));
 
@@ -425,7 +425,7 @@ TEST_CASE("Double Ratchet - Memory Management Under Load", "[interop][double-rat
                 mock.PruneKeysBelow(i - PRUNE_THRESHOLD);
             }
 
-            RatchetChainKey chain_key(&mock, i);
+            ChainKey chain_key(&mock, i);
 
             const std::vector<uint8_t> plaintext{0xFF, 0xEE, static_cast<uint8_t>(i & 0xFF)};
             std::vector<uint8_t> nonce(12, 0x99);
@@ -470,7 +470,7 @@ TEST_CASE("Double Ratchet - Large Payload Encryption", "[interop][double-ratchet
                 large_payload[j] = static_cast<uint8_t>((i + j) & 0xFF);
             }
 
-            RatchetChainKey chain_key(&mock, i);
+            ChainKey chain_key(&mock, i);
 
             std::vector<uint8_t> nonce(12, static_cast<uint8_t>(i & 0xFF));
 

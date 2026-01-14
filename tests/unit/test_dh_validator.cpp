@@ -32,20 +32,20 @@ TEST_CASE("DhValidator - Invalid key size", "[dh_validator][security]") {
         std::vector<uint8_t> short_key(31, 0x42);
         auto result = DhValidator::ValidateX25519PublicKey(short_key);
         REQUIRE(result.IsErr());
-        REQUIRE(result.UnwrapErr().type == EcliptixProtocolFailureType::InvalidInput);
+        REQUIRE(result.UnwrapErr().type == ProtocolFailureType::InvalidInput);
         REQUIRE(result.UnwrapErr().message.find("Invalid X25519 public key size") != std::string::npos);
     }
     SECTION("Too long") {
         std::vector<uint8_t> long_key(33, 0x42);
         auto result = DhValidator::ValidateX25519PublicKey(long_key);
         REQUIRE(result.IsErr());
-        REQUIRE(result.UnwrapErr().type == EcliptixProtocolFailureType::InvalidInput);
+        REQUIRE(result.UnwrapErr().type == ProtocolFailureType::InvalidInput);
     }
     SECTION("Empty") {
         std::vector<uint8_t> empty_key;
         auto result = DhValidator::ValidateX25519PublicKey(empty_key);
         REQUIRE(result.IsErr());
-        REQUIRE(result.UnwrapErr().type == EcliptixProtocolFailureType::InvalidInput);
+        REQUIRE(result.UnwrapErr().type == ProtocolFailureType::InvalidInput);
     }
 }
 TEST_CASE("DhValidator - Small-order points detection", "[dh_validator][security]") {

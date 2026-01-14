@@ -1,7 +1,7 @@
-#include "ecliptix/models/keys/one_time_pre_key_record.hpp"
+#include "ecliptix/models/keys/one_time_pre_key_public.hpp"
 
 namespace ecliptix::protocol::models {
-    OneTimePreKeyRecord::OneTimePreKeyRecord(const uint32_t pre_key_id, std::vector<uint8_t> public_key,
+    OneTimePreKeyPublic::OneTimePreKeyPublic(const uint32_t pre_key_id, std::vector<uint8_t> public_key,
                                              std::optional<std::vector<uint8_t> > kyber_public_key)
         : pre_key_id_(pre_key_id)
           , public_key_(std::move(public_key))

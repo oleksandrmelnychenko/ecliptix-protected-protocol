@@ -1,10 +1,10 @@
-#include "ecliptix/protocol/ecliptix_protocol_system.hpp"
+#include "ecliptix/protocol/protocol_system.hpp"
 #include "ecliptix/utilities/envelope_builder.hpp"
 #include "ecliptix/crypto/aes_gcm.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/core/constants.hpp"
 #include "ecliptix/configuration/ratchet_config.hpp"
-#include "ecliptix/enums/pub_key_exchange_type.hpp"
+#include "ecliptix/enums/key_exchange_type.hpp"
 #include "protocol/key_exchange.pb.h"
 #include "common/secure_envelope.pb.h"
 #include <sodium.h>
@@ -20,8 +20,8 @@ namespace ecliptix::protocol {
     using crypto::SodiumInterop;
     using proto::protocol::PublicKeyBundle;
 
-    EcliptixProtocolSystem::EcliptixProtocolSystem(
-        std::unique_ptr<EcliptixSystemIdentityKeys> identity_keys)
+    ProtocolSystem::ProtocolSystem(
+        std::unique_ptr<IdentityKeys> identity_keys)
         : identity_keys_(std::move(identity_keys))
           , connection_(nullptr)
           , event_handler_(nullptr)
@@ -29,56 +29,56 @@ namespace ecliptix::protocol {
           , pending_initiator_flag_(std::nullopt) {
     }
 
-    Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>
-    EcliptixProtocolSystem::Create(std::unique_ptr<EcliptixSystemIdentityKeys> identity_keys) {
+    Result<std::unique_ptr<ProtocolSystem>, ProtocolFailure>
+    ProtocolSystem::Create(std::unique_ptr<IdentityKeys> identity_keys) {
         if (!identity_keys) {
-            return Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput("Identity keys cannot be null"));
+            return Result<std::unique_ptr<ProtocolSystem>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("Identity keys cannot be null"));
         }
-        auto system = std::unique_ptr<EcliptixProtocolSystem>(
-            new EcliptixProtocolSystem(std::move(identity_keys)));
-        return Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>::Ok(
+        auto system = std::unique_ptr<ProtocolSystem>(
+            new ProtocolSystem(std::move(identity_keys)));
+        return Result<std::unique_ptr<ProtocolSystem>, ProtocolFailure>::Ok(
             std::move(system));
     }
 
-    Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>
-    EcliptixProtocolSystem::CreateFromRootAndPeerBundle(
-        std::unique_ptr<EcliptixSystemIdentityKeys> identity_keys,
+    Result<std::unique_ptr<ProtocolSystem>, ProtocolFailure>
+    ProtocolSystem::CreateFromRootAndPeerBundle(
+        std::unique_ptr<IdentityKeys> identity_keys,
         const std::span<const uint8_t> root_key,
         const PublicKeyBundle &peer_bundle,
         const bool is_initiator) {
         if (!identity_keys) {
-            return Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput("Identity keys cannot be null"));
+            return Result<std::unique_ptr<ProtocolSystem>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("Identity keys cannot be null"));
         }
-        auto system = std::unique_ptr<EcliptixProtocolSystem>(
-            new EcliptixProtocolSystem(std::move(identity_keys)));
+        auto system = std::unique_ptr<ProtocolSystem>(
+            new ProtocolSystem(std::move(identity_keys)));
         uint32_t conn_id = system->ConsumePendingConnectionId().value_or(0);
-        auto conn_result = EcliptixProtocolConnection::FromRootAndPeerBundle(
+        auto conn_result = ProtocolConnection::FromRootAndPeerBundle(
             conn_id,
             root_key,
             peer_bundle,
             is_initiator);
         if (conn_result.IsErr()) {
-            return Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>::Err(
+            return Result<std::unique_ptr<ProtocolSystem>, ProtocolFailure>::Err(
                 conn_result.UnwrapErr());
         }
         system->SetConnection(std::move(conn_result.Unwrap()));
-        return Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>::Ok(
+        return Result<std::unique_ptr<ProtocolSystem>, ProtocolFailure>::Ok(
             std::move(system));
     }
 
-    Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>
-    EcliptixProtocolSystem::CreateFromRootAndPeerBundle(
-        std::unique_ptr<EcliptixSystemIdentityKeys> identity_keys,
+    Result<std::unique_ptr<ProtocolSystem>, ProtocolFailure>
+    ProtocolSystem::CreateFromRootAndPeerBundle(
+        std::unique_ptr<IdentityKeys> identity_keys,
         std::span<const uint8_t> root_key,
         const PublicKeyBundle &peer_bundle,
         bool is_initiator,
         std::span<const uint8_t> kyber_ciphertext,
         std::span<const uint8_t> kyber_shared_secret) {
         if (!identity_keys) {
-            return Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput("Identity keys cannot be null"));
+            return Result<std::unique_ptr<ProtocolSystem>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("Identity keys cannot be null"));
         }
 
         std::vector<uint8_t> initial_dh_public;
@@ -87,14 +87,14 @@ namespace ecliptix::protocol {
         if (is_initiator) {
             auto ephemeral_opt = identity_keys->GetEphemeralX25519PublicKeyCopy();
             if (!ephemeral_opt.has_value() || ephemeral_opt->empty()) {
-                return Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::InvalidInput("Initiator ephemeral key not available"));
+                return Result<std::unique_ptr<ProtocolSystem>, ProtocolFailure>::Err(
+                    ProtocolFailure::InvalidInput("Initiator ephemeral key not available"));
             }
             initial_dh_public = std::move(*ephemeral_opt);
 
             auto private_result = identity_keys->GetEphemeralX25519PrivateKeyCopy();
             if (private_result.IsErr()) {
-                return Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>::Err(
+                return Result<std::unique_ptr<ProtocolSystem>, ProtocolFailure>::Err(
                     private_result.UnwrapErr());
             }
             initial_dh_private = private_result.Unwrap();
@@ -103,17 +103,17 @@ namespace ecliptix::protocol {
 
             auto private_result = identity_keys->GetSignedPreKeyPrivateCopy();
             if (private_result.IsErr()) {
-                return Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>::Err(
+                return Result<std::unique_ptr<ProtocolSystem>, ProtocolFailure>::Err(
                     private_result.UnwrapErr());
             }
             initial_dh_private = private_result.Unwrap();
         }
 
-        auto system = std::unique_ptr<EcliptixProtocolSystem>(
-            new EcliptixProtocolSystem(std::move(identity_keys)));
+        auto system = std::unique_ptr<ProtocolSystem>(
+            new ProtocolSystem(std::move(identity_keys)));
 
         uint32_t conn_id = system->ConsumePendingConnectionId().value_or(0);
-        auto conn_result = EcliptixProtocolConnection::FromRootAndPeerBundle(
+        auto conn_result = ProtocolConnection::FromRootAndPeerBundle(
             conn_id,
             root_key,
             peer_bundle,
@@ -127,40 +127,40 @@ namespace ecliptix::protocol {
         (void) _wipe;
 
         if (conn_result.IsErr()) {
-            return Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>::Err(
+            return Result<std::unique_ptr<ProtocolSystem>, ProtocolFailure>::Err(
                 conn_result.UnwrapErr());
         }
         system->SetConnection(std::move(conn_result.Unwrap()));
-        return Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>::Ok(
+        return Result<std::unique_ptr<ProtocolSystem>, ProtocolFailure>::Ok(
             std::move(system));
     }
 
-    Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>
-    EcliptixProtocolSystem::FromProtoState(
-        std::unique_ptr<EcliptixSystemIdentityKeys> identity_keys,
+    Result<std::unique_ptr<ProtocolSystem>, ProtocolFailure>
+    ProtocolSystem::FromProtoState(
+        std::unique_ptr<IdentityKeys> identity_keys,
         const proto::protocol::RatchetState &state) {
         if (!identity_keys) {
-            return Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput("Identity keys cannot be null"));
+            return Result<std::unique_ptr<ProtocolSystem>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("Identity keys cannot be null"));
         }
-        auto system = std::unique_ptr<EcliptixProtocolSystem>(
-            new EcliptixProtocolSystem(std::move(identity_keys)));
-        auto conn_result = EcliptixProtocolConnection::FromProtoState(
+        auto system = std::unique_ptr<ProtocolSystem>(
+            new ProtocolSystem(std::move(identity_keys)));
+        auto conn_result = ProtocolConnection::FromProtoState(
              0,
             state,
             configuration::RatchetConfig::Default(),
-            enums::PubKeyExchangeType::X3DH);
+            enums::KeyExchangeType::X3DH);
         if (conn_result.IsErr()) {
-            return Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>::Err(
+            return Result<std::unique_ptr<ProtocolSystem>, ProtocolFailure>::Err(
                 conn_result.UnwrapErr());
         }
         system->SetConnection(std::move(conn_result.Unwrap()));
-        return Result<std::unique_ptr<EcliptixProtocolSystem>, EcliptixProtocolFailure>::Ok(
+        return Result<std::unique_ptr<ProtocolSystem>, ProtocolFailure>::Ok(
             std::move(system));
     }
 
-    void EcliptixProtocolSystem::SetConnection(std::unique_ptr<EcliptixProtocolConnection> connection) {
-        std::shared_ptr<EcliptixProtocolConnection> shared_connection;
+    void ProtocolSystem::SetConnection(std::unique_ptr<ProtocolConnection> connection) {
+        std::shared_ptr<ProtocolConnection> shared_connection;
         std::shared_ptr<IProtocolEventHandler> handler;
         {
             std::unique_lock lock(*mutex_);
@@ -173,18 +173,18 @@ namespace ecliptix::protocol {
         }
     }
 
-    Result<Unit, EcliptixProtocolFailure> EcliptixProtocolSystem::FinalizeWithRootAndPeerBundle(
+    Result<Unit, ProtocolFailure> ProtocolSystem::FinalizeWithRootAndPeerBundle(
         const std::span<const uint8_t> root_key,
         const PublicKeyBundle &peer_bundle,
         const bool is_initiator) {
         uint32_t conn_id = ConsumePendingConnectionId().value_or(0);
-        auto conn_result = EcliptixProtocolConnection::FromRootAndPeerBundle(
+        auto conn_result = ProtocolConnection::FromRootAndPeerBundle(
             conn_id,
             root_key,
             peer_bundle,
             is_initiator);
         if (conn_result.IsErr()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(conn_result.UnwrapErr());
+            return Result<Unit, ProtocolFailure>::Err(conn_result.UnwrapErr());
         }
         auto connection = std::move(conn_result.Unwrap());
 
@@ -192,7 +192,7 @@ namespace ecliptix::protocol {
             std::shared_lock lock(*mutex_);
             auto kyber_sk_clone = identity_keys_->CloneKyberSecretKey();
             if (kyber_sk_clone.IsErr()) {
-                return Result<Unit, EcliptixProtocolFailure>::Err(kyber_sk_clone.UnwrapErr());
+                return Result<Unit, ProtocolFailure>::Err(kyber_sk_clone.UnwrapErr());
             }
             auto kyber_pk = identity_keys_->GetKyberPublicKeyCopy();
             auto set_result = connection->SetLocalKyberKeyPair(std::move(kyber_sk_clone).Unwrap(), kyber_pk);
@@ -202,10 +202,10 @@ namespace ecliptix::protocol {
         }
 
         SetConnection(std::move(connection));
-        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 
-    Result<Unit, EcliptixProtocolFailure> EcliptixProtocolSystem::FinalizeWithRootAndPeerBundle(
+    Result<Unit, ProtocolFailure> ProtocolSystem::FinalizeWithRootAndPeerBundle(
         std::span<const uint8_t> root_key,
         const PublicKeyBundle &peer_bundle,
         bool is_initiator,
@@ -220,14 +220,14 @@ namespace ecliptix::protocol {
             if (is_initiator) {
                 auto ephemeral_opt = identity_keys_->GetEphemeralX25519PublicKeyCopy();
                 if (!ephemeral_opt.has_value() || ephemeral_opt->empty()) {
-                    return Result<Unit, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::InvalidInput("Initiator ephemeral key not available"));
+                    return Result<Unit, ProtocolFailure>::Err(
+                        ProtocolFailure::InvalidInput("Initiator ephemeral key not available"));
                 }
                 initial_dh_public = std::move(*ephemeral_opt);
 
                 auto private_result = identity_keys_->GetEphemeralX25519PrivateKeyCopy();
                 if (private_result.IsErr()) {
-                    return Result<Unit, EcliptixProtocolFailure>::Err(private_result.UnwrapErr());
+                    return Result<Unit, ProtocolFailure>::Err(private_result.UnwrapErr());
                 }
                 initial_dh_private = private_result.Unwrap();
             } else {
@@ -235,14 +235,14 @@ namespace ecliptix::protocol {
 
                 auto private_result = identity_keys_->GetSignedPreKeyPrivateCopy();
                 if (private_result.IsErr()) {
-                    return Result<Unit, EcliptixProtocolFailure>::Err(private_result.UnwrapErr());
+                    return Result<Unit, ProtocolFailure>::Err(private_result.UnwrapErr());
                 }
                 initial_dh_private = private_result.Unwrap();
             }
         }
 
         uint32_t conn_id = ConsumePendingConnectionId().value_or(0);
-        auto conn_result = EcliptixProtocolConnection::FromRootAndPeerBundle(
+        auto conn_result = ProtocolConnection::FromRootAndPeerBundle(
             conn_id,
             root_key,
             peer_bundle,
@@ -256,13 +256,13 @@ namespace ecliptix::protocol {
         (void) _wipe;
 
         if (conn_result.IsErr()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(conn_result.UnwrapErr());
+            return Result<Unit, ProtocolFailure>::Err(conn_result.UnwrapErr());
         }
         SetConnection(std::move(conn_result.Unwrap()));
-        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 
-    Result<Unit, EcliptixProtocolFailure> EcliptixProtocolSystem::FinalizeWithRootAndPeerBundle(
+    Result<Unit, ProtocolFailure> ProtocolSystem::FinalizeWithRootAndPeerBundle(
         const std::span<const uint8_t> root_key,
         const PublicKeyBundle &peer_bundle,
         const bool is_initiator,
@@ -271,7 +271,7 @@ namespace ecliptix::protocol {
         const std::span<const uint8_t> initial_dh_public_key,
         const std::span<const uint8_t> initial_dh_private_key) {
         uint32_t conn_id = ConsumePendingConnectionId().value_or(0);
-        auto conn_result = EcliptixProtocolConnection::FromRootAndPeerBundle(
+        auto conn_result = ProtocolConnection::FromRootAndPeerBundle(
             conn_id,
             root_key,
             peer_bundle,
@@ -281,7 +281,7 @@ namespace ecliptix::protocol {
             initial_dh_public_key,
             initial_dh_private_key);
         if (conn_result.IsErr()) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(conn_result.UnwrapErr());
+            return Result<Unit, ProtocolFailure>::Err(conn_result.UnwrapErr());
         }
         auto connection = std::move(conn_result.Unwrap());
 
@@ -289,7 +289,7 @@ namespace ecliptix::protocol {
             std::shared_lock lock(*mutex_);
             auto kyber_sk_clone = identity_keys_->CloneKyberSecretKey();
             if (kyber_sk_clone.IsErr()) {
-                return Result<Unit, EcliptixProtocolFailure>::Err(kyber_sk_clone.UnwrapErr());
+                return Result<Unit, ProtocolFailure>::Err(kyber_sk_clone.UnwrapErr());
             }
             auto kyber_pk = identity_keys_->GetKyberPublicKeyCopy();
             auto set_result = connection->SetLocalKyberKeyPair(std::move(kyber_sk_clone).Unwrap(), kyber_pk);
@@ -299,21 +299,21 @@ namespace ecliptix::protocol {
         }
 
         SetConnection(std::move(connection));
-        return Result<Unit, EcliptixProtocolFailure>::Ok(Unit{});
+        return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 
-    const EcliptixSystemIdentityKeys &EcliptixProtocolSystem::GetIdentityKeys() const {
+    const IdentityKeys &ProtocolSystem::GetIdentityKeys() const {
         std::shared_lock lock(*mutex_);
         return *identity_keys_;
     }
 
-    EcliptixSystemIdentityKeys &EcliptixProtocolSystem::GetIdentityKeysMutable() const {
+    IdentityKeys &ProtocolSystem::GetIdentityKeysMutable() const {
         std::unique_lock lock(*mutex_);
         return *identity_keys_;
     }
 
-    void EcliptixProtocolSystem::SetEventHandler(std::shared_ptr<IProtocolEventHandler> handler) {
-        std::shared_ptr<EcliptixProtocolConnection> shared_connection;
+    void ProtocolSystem::SetEventHandler(std::shared_ptr<IProtocolEventHandler> handler) {
+        std::shared_ptr<ProtocolConnection> shared_connection;
         {
             std::unique_lock lock(*mutex_);
             event_handler_ = handler;
@@ -324,89 +324,89 @@ namespace ecliptix::protocol {
         }
     }
 
-    bool EcliptixProtocolSystem::HasConnection() const {
+    bool ProtocolSystem::HasConnection() const {
         std::shared_lock lock(*mutex_);
         return connection_ != nullptr;
     }
 
-    void EcliptixProtocolSystem::SetPendingInitiator(bool is_initiator) {
+    void ProtocolSystem::SetPendingInitiator(bool is_initiator) {
         std::unique_lock lock(*mutex_);
         pending_initiator_flag_ = is_initiator;
     }
 
-    std::optional<bool> EcliptixProtocolSystem::GetPendingInitiator() const {
+    std::optional<bool> ProtocolSystem::GetPendingInitiator() const {
         std::shared_lock lock(*mutex_);
         return pending_initiator_flag_;
     }
 
-    std::optional<bool> EcliptixProtocolSystem::ConsumePendingInitiator() {
+    std::optional<bool> ProtocolSystem::ConsumePendingInitiator() {
         std::unique_lock lock(*mutex_);
         auto value = pending_initiator_flag_;
         pending_initiator_flag_ = std::nullopt;
         return value;
     }
 
-    void EcliptixProtocolSystem::SetPendingConnectionId(uint32_t connection_id) {
+    void ProtocolSystem::SetPendingConnectionId(uint32_t connection_id) {
         std::unique_lock lock(*mutex_);
         pending_connection_id_ = connection_id;
     }
 
-    std::optional<uint32_t> EcliptixProtocolSystem::ConsumePendingConnectionId() {
+    std::optional<uint32_t> ProtocolSystem::ConsumePendingConnectionId() {
         std::unique_lock lock(*mutex_);
         auto value = pending_connection_id_;
         pending_connection_id_ = std::nullopt;
         return value;
     }
 
-    uint32_t EcliptixProtocolSystem::GetConnectionId() const {
-        std::shared_ptr<EcliptixProtocolConnection> connection = GetConnectionSafe();
+    uint32_t ProtocolSystem::GetConnectionId() const {
+        std::shared_ptr<ProtocolConnection> connection = GetConnectionSafe();
         return connection ? connection->GetId() : 0;
     }
 
-    Result<std::pair<uint32_t, uint32_t>, EcliptixProtocolFailure>
-    EcliptixProtocolSystem::GetChainIndices() const {
-        std::shared_ptr<EcliptixProtocolConnection> connection = GetConnectionSafe();
+    Result<std::pair<uint32_t, uint32_t>, ProtocolFailure>
+    ProtocolSystem::GetChainIndices() const {
+        std::shared_ptr<ProtocolConnection> connection = GetConnectionSafe();
         if (!connection) {
-            return Result<std::pair<uint32_t, uint32_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidState("Protocol connection not initialized"));
+            return Result<std::pair<uint32_t, uint32_t>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidState("Protocol connection not initialized"));
         }
         return connection->GetChainIndices();
     }
 
-    uint64_t EcliptixProtocolSystem::GetSessionAgeSeconds() const {
-        std::shared_ptr<EcliptixProtocolConnection> connection = GetConnectionSafe();
+    uint64_t ProtocolSystem::GetSessionAgeSeconds() const {
+        std::shared_ptr<ProtocolConnection> connection = GetConnectionSafe();
         return connection ? connection->GetSessionAgeSeconds() : 0;
     }
 
-    Result<Unit, EcliptixProtocolFailure> EcliptixProtocolSystem::SetConnectionKyberSecrets(
+    Result<Unit, ProtocolFailure> ProtocolSystem::SetConnectionKyberSecrets(
         const std::span<const uint8_t> kyber_ciphertext,
         const std::span<const uint8_t> kyber_shared_secret) const {
-        std::shared_ptr<EcliptixProtocolConnection> connection = GetConnectionSafe();
+        std::shared_ptr<ProtocolConnection> connection = GetConnectionSafe();
         if (!connection) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidState("Protocol connection not initialized"));
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidState("Protocol connection not initialized"));
         }
         return connection->SetHybridHandshakeSecrets(kyber_ciphertext, kyber_shared_secret);
     }
 
-    std::shared_ptr<EcliptixProtocolConnection>
-    EcliptixProtocolSystem::GetConnectionSafe() const {
+    std::shared_ptr<ProtocolConnection>
+    ProtocolSystem::GetConnectionSafe() const {
         std::shared_lock lock(*mutex_);
         return connection_;
     }
 
-    Result<proto::common::SecureEnvelope, EcliptixProtocolFailure>
-    EcliptixProtocolSystem::SendMessage(std::span<const uint8_t> payload) const {
+    Result<proto::common::SecureEnvelope, ProtocolFailure>
+    ProtocolSystem::SendMessage(std::span<const uint8_t> payload) const {
         if (payload.size() > static_cast<size_t>(ProtocolConstants::MAX_PAYLOAD_SIZE)) {
-            return Result<proto::common::SecureEnvelope, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput(
+            return Result<proto::common::SecureEnvelope, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput(
                     ecliptix::compat::format("Payload size ({} bytes) exceeds maximum allowed ({} bytes)",
                                 payload.size(), ProtocolConstants::MAX_PAYLOAD_SIZE)));
         }
         auto connection = GetConnectionSafe();
         if (!connection) {
-            return Result<proto::common::SecureEnvelope, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidState("Protocol connection not initialized"));
+            return Result<proto::common::SecureEnvelope, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidState("Protocol connection not initialized"));
         }
         std::vector<uint8_t> nonce;
         std::vector<uint8_t> ad;
@@ -415,21 +415,21 @@ namespace ecliptix::protocol {
         std::vector<uint8_t> kyber_ciphertext;
         std::vector<uint8_t> metadata_key;
         std::vector<uint8_t> encrypted_metadata;
-        Result<proto::common::SecureEnvelope, EcliptixProtocolFailure> result =
-            Result<proto::common::SecureEnvelope, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic("Message send failed"));
+        Result<proto::common::SecureEnvelope, ProtocolFailure> result =
+            Result<proto::common::SecureEnvelope, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Message send failed"));
         try {
             do {
                 auto prep_result = connection->PrepareNextSendMessage();
                 if (prep_result.IsErr()) {
-                    result = Result<proto::common::SecureEnvelope, EcliptixProtocolFailure>::Err(
+                    result = Result<proto::common::SecureEnvelope, ProtocolFailure>::Err(
                         prep_result.UnwrapErr());
                     break;
                 }
                 auto [ratchet_key, include_dh] = prep_result.Unwrap();
                 auto nonce_result = connection->GenerateNextNonce(ratchet_key.Index());
                 if (nonce_result.IsErr()) {
-                    result = Result<proto::common::SecureEnvelope, EcliptixProtocolFailure>::Err(
+                    result = Result<proto::common::SecureEnvelope, ProtocolFailure>::Err(
                         nonce_result.UnwrapErr());
                     break;
                 }
@@ -437,7 +437,7 @@ namespace ecliptix::protocol {
                 if (include_dh) {
                     auto dh_result = connection->GetCurrentSenderDhPublicKey();
                     if (dh_result.IsErr()) {
-                        result = Result<proto::common::SecureEnvelope, EcliptixProtocolFailure>::Err(
+                        result = Result<proto::common::SecureEnvelope, ProtocolFailure>::Err(
                             dh_result.UnwrapErr());
                         break;
                     }
@@ -446,21 +446,21 @@ namespace ecliptix::protocol {
                     }
                     auto kyber_ct_result = connection->GetCurrentKyberCiphertext();
                     if (kyber_ct_result.IsErr()) {
-                        result = Result<proto::common::SecureEnvelope, EcliptixProtocolFailure>::Err(
+                        result = Result<proto::common::SecureEnvelope, ProtocolFailure>::Err(
                             kyber_ct_result.UnwrapErr());
                         break;
                     }
                     if (const auto& kyber_opt = kyber_ct_result.Unwrap(); kyber_opt.has_value()) {
                         kyber_ciphertext = kyber_opt.value();
                     } else {
-                        result = Result<proto::common::SecureEnvelope, EcliptixProtocolFailure>::Err(
-                            EcliptixProtocolFailure::Generic("Kyber ciphertext missing for ratchet rotation"));
+                        result = Result<proto::common::SecureEnvelope, ProtocolFailure>::Err(
+                            ProtocolFailure::Generic("Kyber ciphertext missing for ratchet rotation"));
                         break;
                     }
                 }
                 auto peer_bundle_result = connection->GetPeerBundle();
                 if (peer_bundle_result.IsErr()) {
-                    result = Result<proto::common::SecureEnvelope, EcliptixProtocolFailure>::Err(
+                    result = Result<proto::common::SecureEnvelope, ProtocolFailure>::Err(
                         peer_bundle_result.UnwrapErr());
                     break;
                 }
@@ -478,11 +478,11 @@ namespace ecliptix::protocol {
                 }
                 auto encrypt_result = ratchet_key.WithKeyMaterial<std::vector<uint8_t> >(
                     [&payload, &nonce, &ad](
-                const std::span<const uint8_t> key_material) -> Result<std::vector<uint8_t>, EcliptixProtocolFailure> {
+                const std::span<const uint8_t> key_material) -> Result<std::vector<uint8_t>, ProtocolFailure> {
                         return AesGcm::Encrypt(key_material, nonce, payload, ad);
                     });
                 if (encrypt_result.IsErr()) {
-                    result = Result<proto::common::SecureEnvelope, EcliptixProtocolFailure>::Err(
+                    result = Result<proto::common::SecureEnvelope, ProtocolFailure>::Err(
                         encrypt_result.UnwrapErr());
                     break;
                 }
@@ -502,7 +502,7 @@ namespace ecliptix::protocol {
                 );
                 auto metadata_key_result = connection->GetMetadataEncryptionKey();
                 if (metadata_key_result.IsErr()) {
-                    result = Result<proto::common::SecureEnvelope, EcliptixProtocolFailure>::Err(
+                    result = Result<proto::common::SecureEnvelope, ProtocolFailure>::Err(
                         metadata_key_result.UnwrapErr());
                     break;
                 }
@@ -515,7 +515,7 @@ namespace ecliptix::protocol {
                     metadata_nonce,
                     ad);
                 if (encrypt_metadata_result.IsErr()) {
-                    result = Result<proto::common::SecureEnvelope, EcliptixProtocolFailure>::Err(
+                    result = Result<proto::common::SecureEnvelope, ProtocolFailure>::Err(
                         encrypt_metadata_result.UnwrapErr());
                     break;
                 }
@@ -538,12 +538,12 @@ namespace ecliptix::protocol {
                     envelope.set_kyber_ciphertext(kyber_ciphertext.data(), kyber_ciphertext.size());
                 }
                 envelope.set_ratchet_epoch(connection->GetSendingRatchetEpoch());
-                result = Result<proto::common::SecureEnvelope, EcliptixProtocolFailure>::Ok(
+                result = Result<proto::common::SecureEnvelope, ProtocolFailure>::Ok(
                     std::move(envelope));
             } while (false);
         } catch (const std::exception &ex) {
-            result = Result<proto::common::SecureEnvelope, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            result = Result<proto::common::SecureEnvelope, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     ecliptix::compat::format("Exception during message send: {}", ex.what())));
         }
         {
@@ -568,21 +568,21 @@ namespace ecliptix::protocol {
         return result;
     }
 
-    Result<std::vector<uint8_t>, EcliptixProtocolFailure>
-    EcliptixProtocolSystem::ReceiveMessage(const proto::common::SecureEnvelope &envelope) const {
+    Result<std::vector<uint8_t>, ProtocolFailure>
+    ProtocolSystem::ReceiveMessage(const proto::common::SecureEnvelope &envelope) const {
         auto connection = GetConnectionSafe();
         if (!connection) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidState("Protocol connection not initialized"));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidState("Protocol connection not initialized"));
         }
         if (!envelope.has_ratchet_epoch()) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Decode("Missing ratchet epoch"));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::Decode("Missing ratchet epoch"));
         }
         const uint64_t envelope_epoch = envelope.ratchet_epoch();
         if (const uint64_t current_epoch = connection->GetReceivingRatchetEpoch(); envelope_epoch < current_epoch) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Decode("Stale ratchet epoch; re-establish session"));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::Decode("Stale ratchet epoch; re-establish session"));
         }
         std::vector<uint8_t> header_nonce;
         std::vector<uint8_t> metadata_key;
@@ -591,18 +591,18 @@ namespace ecliptix::protocol {
         std::vector<uint8_t> encrypted_payload;
         std::vector<uint8_t> dh_public_key;
         std::vector<uint8_t> kyber_ciphertext;
-        std::optional<EcliptixProtocolConnection::ReceivingRatchetPreview> receiving_preview;
+        std::optional<ProtocolConnection::ReceivingRatchetPreview> receiving_preview;
         try {
             if (envelope.header_nonce().size() != Constants::AES_GCM_NONCE_SIZE) {
-                return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::Decode("Invalid or missing header nonce for metadata decryption"));
+                return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                    ProtocolFailure::Decode("Invalid or missing header nonce for metadata decryption"));
             }
             header_nonce.assign(
                 envelope.header_nonce().begin(),
                 envelope.header_nonce().end());
             auto peer_bundle_result = connection->GetPeerBundle();
             if (peer_bundle_result.IsErr()) {
-                return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
+                return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                     peer_bundle_result.UnwrapErr());
             }
             const auto &peer_bundle = peer_bundle_result.Unwrap();
@@ -635,7 +635,7 @@ namespace ecliptix::protocol {
                         auto __wipe = SodiumInterop::SecureWipe(std::span(dh_public_key));
                         (void) __wipe;
                     }
-                    return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
+                    return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                         current_key_result.UnwrapErr());
                 }
                 if (auto current_key_option = current_key_result.Unwrap(); current_key_option.has_value()) {
@@ -653,8 +653,8 @@ namespace ecliptix::protocol {
             }
             if (requires_receiving_ratchet) {
                 if (kyber_ciphertext.empty()) {
-                    return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::Decode("Missing Kyber ciphertext for hybrid ratchet"));
+                    return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                        ProtocolFailure::Decode("Missing Kyber ciphertext for hybrid ratchet"));
                 }
                 auto preview_result = connection->PrepareReceivingRatchet(dh_public_key, kyber_ciphertext);
                 if (preview_result.IsErr()) {
@@ -664,14 +664,14 @@ namespace ecliptix::protocol {
                         auto __wipe_ct = SodiumInterop::SecureWipe(std::span(kyber_ciphertext));
                         (void) __wipe_ct;
                     }
-                    return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
+                    return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                         preview_result.UnwrapErr());
                 }
                 receiving_preview = std::move(preview_result.Unwrap());
             } else {
                 auto metadata_key_result = connection->GetMetadataEncryptionKey();
                 if (metadata_key_result.IsErr()) {
-                    return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
+                    return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                         metadata_key_result.UnwrapErr());
                 }
                 metadata_key = metadata_key_result.Unwrap();
@@ -706,7 +706,7 @@ namespace ecliptix::protocol {
                 }
                 auto _wipe_ct = SodiumInterop::SecureWipe(std::span(kyber_ciphertext));
                 (void) _wipe_ct;
-                return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
+                return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                     decrypt_metadata_result.UnwrapErr());
             }
             const auto &metadata = decrypt_metadata_result.Unwrap();
@@ -716,7 +716,7 @@ namespace ecliptix::protocol {
             if (receiving_preview.has_value()) {
                 auto commit_result = connection->CommitReceivingRatchet(std::move(*receiving_preview));
                 if (commit_result.IsErr()) {
-                    return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(commit_result.UnwrapErr());
+                    return Result<std::vector<uint8_t>, ProtocolFailure>::Err(commit_result.UnwrapErr());
                 }
             }
             auto message_key_result = connection->ProcessReceivedMessage(
@@ -727,7 +727,7 @@ namespace ecliptix::protocol {
                     auto _wipe = SodiumInterop::SecureWipe(std::span(payload_nonce));
                     (void) _wipe;
                 }
-                return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
+                return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                     message_key_result.UnwrapErr());
             }
             auto ratchet_key = message_key_result.Unwrap();
@@ -736,14 +736,14 @@ namespace ecliptix::protocol {
                 envelope.encrypted_payload().end());
             auto decrypt_result = ratchet_key.WithKeyMaterial<std::vector<uint8_t> >(
                 [&encrypted_payload, &payload_nonce, &ad](
-            const std::span<const uint8_t> key_material) -> Result<std::vector<uint8_t>, EcliptixProtocolFailure> {
+            const std::span<const uint8_t> key_material) -> Result<std::vector<uint8_t>, ProtocolFailure> {
                     return AesGcm::Decrypt(key_material, payload_nonce, encrypted_payload, ad);
                 }); {
                 auto __wipe = SodiumInterop::SecureWipe(std::span(payload_nonce));
                 (void) __wipe;
             }
             if (decrypt_result.IsErr()) {
-                return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
+                return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                     decrypt_result.UnwrapErr());
             }
             if (!metadata_key.empty()) {
@@ -787,8 +787,8 @@ namespace ecliptix::protocol {
                     std::span(receiving_preview->kyber_shared_secret));
                 (void) __wipe_pq_preview;
             }
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::Generic(
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic(
                     ecliptix::compat::format("Exception during message receive: {}", ex.what())));
         } {
             auto __wipe1 = SodiumInterop::SecureWipe(std::span(dh_public_key));
@@ -816,17 +816,17 @@ namespace ecliptix::protocol {
         }
     }
 
-    Result<proto::protocol::RatchetState, EcliptixProtocolFailure>
-    EcliptixProtocolSystem::ToProtoState() const {
+    Result<proto::protocol::RatchetState, ProtocolFailure>
+    ProtocolSystem::ToProtoState() const {
         auto connection = GetConnectionSafe();
         if (!connection) {
-            return Result<proto::protocol::RatchetState, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidState("Protocol connection not initialized"));
+            return Result<proto::protocol::RatchetState, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidState("Protocol connection not initialized"));
         }
         return connection->ToProtoState();
     }
 
-    std::vector<uint8_t> EcliptixProtocolSystem::CreateAssociatedData(
+    std::vector<uint8_t> ProtocolSystem::CreateAssociatedData(
         std::span<const uint8_t> local_identity,
         std::span<const uint8_t> peer_identity) {
         if (local_identity.size() > static_cast<size_t>(ProtocolConstants::MAX_IDENTITY_KEY_LENGTH) ||

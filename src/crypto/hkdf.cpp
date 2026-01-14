@@ -9,33 +9,33 @@ namespace ecliptix::protocol::crypto {
     using OpenSSL = OpenSSLConstants;
 
     namespace {
-        Result<Unit, EcliptixProtocolFailure> DeriveKeyWithMode(
+        Result<Unit, ProtocolFailure> DeriveKeyWithMode(
             std::span<const uint8_t> ikm,
             std::span<uint8_t> output,
             std::span<const uint8_t> salt,
             std::span<const uint8_t> info,
             const int mode) {
             if (output.size() > Hkdf::MAX_OUTPUT_LEN) {
-                return Result<Unit, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::InvalidInput(
+                return Result<Unit, ProtocolFailure>::Err(
+                    ProtocolFailure::InvalidInput(
                         "HKDF output size exceeds maximum allowed: " +
                         std::to_string(output.size()) + " > " + std::to_string(Hkdf::MAX_OUTPUT_LEN)));
             }
             if (ikm.empty()) {
-                return Result<Unit, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::InvalidInput("HKDF input key material cannot be empty"));
+                return Result<Unit, ProtocolFailure>::Err(
+                    ProtocolFailure::InvalidInput("HKDF input key material cannot be empty"));
             }
             try {
                 EVP_KDF *const kdf = EVP_KDF_fetch(nullptr, std::string(OpenSSL::ALGORITHM_HKDF).c_str(), nullptr);
                 if (!kdf) {
-                    return Result<Unit, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::DeriveKey("Failed to fetch HKDF algorithm"));
+                    return Result<Unit, ProtocolFailure>::Err(
+                        ProtocolFailure::DeriveKey("Failed to fetch HKDF algorithm"));
                 }
                 EVP_KDF_CTX *const kctx = EVP_KDF_CTX_new(kdf);
                 EVP_KDF_free(kdf);
                 if (!kctx) {
-                    return Result<Unit, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::DeriveKey("Failed to create HKDF context"));
+                    return Result<Unit, ProtocolFailure>::Err(
+                        ProtocolFailure::DeriveKey("Failed to create HKDF context"));
                 }
                 OSSL_PARAM params[6];
                 int param_idx = ProtocolConstants::ZERO_VALUE;
@@ -80,19 +80,19 @@ namespace ecliptix::protocol::crypto {
                 const int result = EVP_KDF_derive(kctx, output.data(), output.size(), params);
                 EVP_KDF_CTX_free(kctx);
                 if (result != OpenSSL::SUCCESS) {
-                    return Result<Unit, EcliptixProtocolFailure>::Err(
-                        EcliptixProtocolFailure::DeriveKey("HKDF key derivation failed"));
+                    return Result<Unit, ProtocolFailure>::Err(
+                        ProtocolFailure::DeriveKey("HKDF key derivation failed"));
                 }
-                return Result<Unit, EcliptixProtocolFailure>::Ok(unit);
+                return Result<Unit, ProtocolFailure>::Ok(unit);
             } catch (const std::exception &ex) {
-                return Result<Unit, EcliptixProtocolFailure>::Err(
-                    EcliptixProtocolFailure::DeriveKey(
+                return Result<Unit, ProtocolFailure>::Err(
+                    ProtocolFailure::DeriveKey(
                         "HKDF derivation exception: " + std::string(ex.what())));
             }
         }
     }
 
-    Result<Unit, EcliptixProtocolFailure> Hkdf::DeriveKey(
+    Result<Unit, ProtocolFailure> Hkdf::DeriveKey(
         const std::span<const uint8_t> ikm,
         const std::span<uint8_t> output,
         const std::span<const uint8_t> salt,
@@ -105,38 +105,38 @@ namespace ecliptix::protocol::crypto {
             EVP_KDF_HKDF_MODE_EXTRACT_AND_EXPAND);
     }
 
-    Result<std::vector<uint8_t>, EcliptixProtocolFailure> Hkdf::DeriveKeyBytes(
+    Result<std::vector<uint8_t>, ProtocolFailure> Hkdf::DeriveKeyBytes(
         const std::span<const uint8_t> ikm,
         const size_t output_size,
         const std::span<const uint8_t> salt,
         const std::span<const uint8_t> info) {
         std::vector<uint8_t> output(output_size);
         if (auto result = DeriveKey(ikm, output, salt, info); result.IsErr()) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                 std::move(result).UnwrapErr());
         }
-        return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Ok(std::move(output));
+        return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(std::move(output));
     }
 
-    Result<std::vector<uint8_t>, EcliptixProtocolFailure> Hkdf::Extract(
+    Result<std::vector<uint8_t>, ProtocolFailure> Hkdf::Extract(
         const std::span<const uint8_t> ikm,
         const std::span<const uint8_t> salt) {
         std::vector<uint8_t> prk(HASH_LEN);
         if (auto result = DeriveKeyWithMode(ikm, prk, salt, {}, EVP_KDF_HKDF_MODE_EXTRACT_ONLY);
             result.IsErr()) {
-            return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Err(
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                 std::move(result).UnwrapErr());
         }
-        return Result<std::vector<uint8_t>, EcliptixProtocolFailure>::Ok(std::move(prk));
+        return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(std::move(prk));
     }
 
-    Result<Unit, EcliptixProtocolFailure> Hkdf::Expand(
+    Result<Unit, ProtocolFailure> Hkdf::Expand(
         const std::span<const uint8_t> prk,
         const std::span<uint8_t> output,
         const std::span<const uint8_t> info) {
         if (prk.size() != HASH_LEN) {
-            return Result<Unit, EcliptixProtocolFailure>::Err(
-                EcliptixProtocolFailure::InvalidInput(
+            return Result<Unit, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput(
                     "PRK must be exactly " + std::to_string(HASH_LEN) + " bytes"));
         }
         return DeriveKeyWithMode(prk, output, {}, info, EVP_KDF_HKDF_MODE_EXPAND_ONLY);

@@ -9,7 +9,7 @@
 namespace ecliptix::protocol::group {
 
 using protocol::Result;
-using protocol::EcliptixProtocolFailure;
+using protocol::ProtocolFailure;
 
 enum class DeviceType {
     Mobile = 0,
@@ -24,7 +24,7 @@ enum class MemberRole {
 
 class GroupMember {
 public:
-    [[nodiscard]] static Result<GroupMember, EcliptixProtocolFailure> Create(
+    [[nodiscard]] static Result<GroupMember, ProtocolFailure> Create(
         std::span<const uint8_t> member_id,
         std::span<const uint8_t> account_id,
         std::span<const uint8_t> app_instance_id,
@@ -33,7 +33,7 @@ public:
         std::span<const uint8_t> identity_public_key,
         MemberRole role = MemberRole::Member);
 
-    [[nodiscard]] static Result<GroupMember, EcliptixProtocolFailure> FromProto(
+    [[nodiscard]] static Result<GroupMember, ProtocolFailure> FromProto(
         const proto::group::GroupMember& proto);
 
     [[nodiscard]] std::vector<uint8_t> GetMemberId() const;
