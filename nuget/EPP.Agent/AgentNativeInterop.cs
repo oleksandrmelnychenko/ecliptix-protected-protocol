@@ -199,6 +199,37 @@ public static class AgentNativeInterop
         nuint outRootKeyLength,
         out EppError outError);
 
+    #endregion
+
+    #region Secret Sharing (Shamir)
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern EppErrorCode epp_shamir_split(
+        [In] byte[] secret,
+        nuint secretLength,
+        byte threshold,
+        byte shareCount,
+        [In] byte[]? authKey,
+        nuint authKeyLength,
+        IntPtr outShares,
+        out nuint outShareLength,
+        out EppError outError);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern EppErrorCode epp_shamir_reconstruct(
+        [In] byte[] shares,
+        nuint sharesLength,
+        nuint shareLength,
+        nuint shareCount,
+        [In] byte[]? authKey,
+        nuint authKeyLength,
+        IntPtr outSecret,
+        out EppError outError);
+
+    #endregion
+
+    #region Memory Management
+
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr epp_buffer_alloc(nuint capacity);
 
