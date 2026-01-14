@@ -435,7 +435,7 @@ TEST_CASE("Protocol System - Session Age Tracking", "[protocol-system][integrati
         const uint64_t alice_age = ctx.alice->GetSessionAgeSeconds();
         const uint64_t bob_age = ctx.bob->GetSessionAgeSeconds();
 
-        REQUIRE(alice_age >= 0);
-        REQUIRE(bob_age >= 0);
+        (void)alice_age;
+        (void)bob_age;
     }
 }
