@@ -63,8 +63,8 @@ xcuserdata/
 *.pb.cc
 
 # Core dumps
-core
-core.*
+/core
+/core.*
 
 # Sanitizer outputs
 *.asan
