@@ -2,6 +2,7 @@
 #include "ecliptix/core/constants.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/crypto/hkdf.hpp"
+#include "ecliptix/debug/key_logger.hpp"
 #include <algorithm>
 #include "protocol/protocol_state.pb.h"
 
@@ -181,6 +182,13 @@ namespace ecliptix::protocol::chain_step {
                 ProtocolConstants::CHAIN_INFO.size()
             )
         ));
+
+#ifdef ECLIPTIX_DEBUG_KEYS
+        EPP_LOG_KEY(debug::Side::Unknown, "CHAIN_DERIVE", "current_chain_key", current_chain_key);
+        EPP_LOG_KEY(debug::Side::Unknown, "CHAIN_DERIVE", "next_chain_key", next_chain_key);
+        EPP_LOG_KEY(debug::Side::Unknown, "CHAIN_DERIVE", "message_key", message_key);
+#endif
+
         return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 

@@ -4,6 +4,7 @@
 #include "ecliptix/crypto/hkdf.hpp"
 #include "ecliptix/crypto/master_key_derivation.hpp"
 #include "ecliptix/crypto/kyber_interop.hpp"
+#include "ecliptix/debug/key_logger.hpp"
 #include <sodium.h>
 #include <algorithm>
 #include <cstring>
@@ -285,8 +286,56 @@ namespace ecliptix::protocol::identity {
             std::move(opks),
             std::move(kyber_secret),
             std::move(kyber_public));
-        return Result<IdentityKeys, ProtocolFailure>::Ok(
-            IdentityKeys(std::move(material)));
+
+        auto identity_keys = IdentityKeys(std::move(material));
+
+#ifdef ECLIPTIX_DEBUG_KEYS
+        // Log all generated identity keys
+        {
+            auto ed_pub = identity_keys.GetIdentityEd25519PublicKeyCopy();
+            auto ed_priv_result = identity_keys.ed25519_secret_key_handle_.ReadBytes(Constants::ED_25519_SECRET_KEY_SIZE);
+            auto x_pub = identity_keys.GetIdentityX25519PublicKeyCopy();
+            auto x_priv_result = identity_keys.identity_x25519_secret_key_handle_.ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
+            auto spk_pub = identity_keys.GetSignedPreKeyPublicCopy();
+            auto spk_priv_result = identity_keys.signed_pre_key_secret_key_handle_.ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
+            auto kyber_pub = identity_keys.GetKyberPublicKeyCopy();
+            auto kyber_priv_result = identity_keys.kyber_secret_key_handle_.ReadBytes(KyberInterop::KYBER_768_SECRET_KEY_SIZE);
+
+            if (ed_priv_result.IsOk() && x_priv_result.IsOk() && spk_priv_result.IsOk() && kyber_priv_result.IsOk()) {
+                auto ed_priv = ed_priv_result.Unwrap();
+                auto x_priv = x_priv_result.Unwrap();
+                auto spk_priv = spk_priv_result.Unwrap();
+                auto kyber_priv = kyber_priv_result.Unwrap();
+
+                debug::LogIdentityKeysCreated(
+                    debug::Side::Unknown,
+                    ed_pub, ed_priv,
+                    x_pub, x_priv,
+                    identity_keys.signed_pre_key_id_,
+                    spk_pub, spk_priv,
+                    identity_keys.signed_pre_key_signature_,
+                    kyber_pub, kyber_priv);
+
+                // Log OPKs
+                for (const auto& opk : identity_keys.one_time_pre_keys_) {
+                    auto opk_pub = opk.GetPublicKeyCopy();
+                    auto opk_priv_result = opk.GetPrivateKeyHandle().ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
+                    if (opk_priv_result.IsOk()) {
+                        auto opk_priv = opk_priv_result.Unwrap();
+                        debug::LogOneTimePreKey(debug::Side::Unknown, opk.GetPreKeyId(), opk_pub, opk_priv);
+                        SodiumInterop::SecureWipe(std::span(opk_priv));
+                    }
+                }
+
+                SodiumInterop::SecureWipe(std::span(ed_priv));
+                SodiumInterop::SecureWipe(std::span(x_priv));
+                SodiumInterop::SecureWipe(std::span(spk_priv));
+                SodiumInterop::SecureWipe(std::span(kyber_priv));
+            }
+        }
+#endif
+
+        return Result<IdentityKeys, ProtocolFailure>::Ok(std::move(identity_keys));
     }
 
     Result<IdentityKeys, ProtocolFailure> IdentityKeys::CreateFromMasterKey(
@@ -401,8 +450,56 @@ namespace ecliptix::protocol::identity {
             std::move(opks),
             std::move(kyber_secret),
             std::move(kyber_public));
-        return Result<IdentityKeys, ProtocolFailure>::Ok(
-            IdentityKeys(std::move(material)));
+
+        auto identity_keys = IdentityKeys(std::move(material));
+
+#ifdef ECLIPTIX_DEBUG_KEYS
+        // Log all generated identity keys (from master key)
+        {
+            auto ed_pub = identity_keys.GetIdentityEd25519PublicKeyCopy();
+            auto ed_priv_result = identity_keys.ed25519_secret_key_handle_.ReadBytes(Constants::ED_25519_SECRET_KEY_SIZE);
+            auto x_pub = identity_keys.GetIdentityX25519PublicKeyCopy();
+            auto x_priv_result = identity_keys.identity_x25519_secret_key_handle_.ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
+            auto spk_pub = identity_keys.GetSignedPreKeyPublicCopy();
+            auto spk_priv_result = identity_keys.signed_pre_key_secret_key_handle_.ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
+            auto kyber_pub = identity_keys.GetKyberPublicKeyCopy();
+            auto kyber_priv_result = identity_keys.kyber_secret_key_handle_.ReadBytes(KyberInterop::KYBER_768_SECRET_KEY_SIZE);
+
+            if (ed_priv_result.IsOk() && x_priv_result.IsOk() && spk_priv_result.IsOk() && kyber_priv_result.IsOk()) {
+                auto ed_priv = ed_priv_result.Unwrap();
+                auto x_priv = x_priv_result.Unwrap();
+                auto spk_priv = spk_priv_result.Unwrap();
+                auto kyber_priv = kyber_priv_result.Unwrap();
+
+                debug::LogIdentityKeysCreated(
+                    debug::Side::Unknown,
+                    ed_pub, ed_priv,
+                    x_pub, x_priv,
+                    identity_keys.signed_pre_key_id_,
+                    spk_pub, spk_priv,
+                    identity_keys.signed_pre_key_signature_,
+                    kyber_pub, kyber_priv);
+
+                // Log OPKs
+                for (const auto& opk : identity_keys.one_time_pre_keys_) {
+                    auto opk_pub = opk.GetPublicKeyCopy();
+                    auto opk_priv_result = opk.GetPrivateKeyHandle().ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
+                    if (opk_priv_result.IsOk()) {
+                        auto opk_priv = opk_priv_result.Unwrap();
+                        debug::LogOneTimePreKey(debug::Side::Unknown, opk.GetPreKeyId(), opk_pub, opk_priv);
+                        SodiumInterop::SecureWipe(std::span(opk_priv));
+                    }
+                }
+
+                SodiumInterop::SecureWipe(std::span(ed_priv));
+                SodiumInterop::SecureWipe(std::span(x_priv));
+                SodiumInterop::SecureWipe(std::span(spk_priv));
+                SodiumInterop::SecureWipe(std::span(kyber_priv));
+            }
+        }
+#endif
+
+        return Result<IdentityKeys, ProtocolFailure>::Ok(std::move(identity_keys));
     }
 
     Result<LocalPublicKeyBundle, ProtocolFailure> IdentityKeys::CreatePublicBundle() const {
@@ -440,6 +537,15 @@ namespace ecliptix::protocol::identity {
             auto [handle, public_key] = std::move(result).Unwrap();
             ephemeral_secret_key_handle_ = std::move(handle);
             ephemeral_x25519_public_key_ = std::move(public_key);
+
+#ifdef ECLIPTIX_DEBUG_KEYS
+            auto priv_result = ephemeral_secret_key_handle_->ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
+            if (priv_result.IsOk()) {
+                auto priv = priv_result.Unwrap();
+                debug::LogEphemeralKeyGenerated(debug::Side::Unknown, *ephemeral_x25519_public_key_, priv);
+                SodiumInterop::SecureWipe(std::span(priv));
+            }
+#endif
         }
     }
 

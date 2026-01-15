@@ -15,6 +15,7 @@
 #include "ecliptix/crypto/kyber_interop.hpp"
 #include "ecliptix/core/result.hpp"
 #include "ecliptix/core/constants.hpp"
+#include "ecliptix/debug/key_logger.hpp"
 #include "common/secure_envelope.pb.h"
 #include "protocol/protocol_state.pb.h"
 #include "protocol/key_exchange.pb.h"

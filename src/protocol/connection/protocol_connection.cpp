@@ -4,6 +4,7 @@
 #include "ecliptix/crypto/aes_gcm.hpp"
 #include "ecliptix/crypto/hkdf.hpp"
 #include "ecliptix/security/validation/dh_validator.hpp"
+#include "ecliptix/debug/key_logger.hpp"
 #include "protocol/protocol_state.pb.h"
 #include <cstdlib>
 #include <cstdio>
@@ -3188,6 +3189,25 @@ namespace ecliptix::protocol::connection {
             if (event_handler_) {
                 event_handler_->OnProtocolStateChanged(id_);
             }
+
+#ifdef ECLIPTIX_DEBUG_KEYS
+            // Log connection created with initial state
+            {
+                auto root_bytes = root_key_handle_->ReadBytes(Constants::X_25519_KEY_SIZE);
+                if (root_bytes.IsOk()) {
+                    auto root = root_bytes.Unwrap();
+                    debug::LogConnectionCreated(
+                        debug::Side::Unknown,
+                        id_,
+                        is_initiator_,
+                        session_id_,
+                        root,
+                        current_sending_dh_public_);
+                    SodiumInterop::SecureWipe(std::span(root));
+                }
+            }
+#endif
+
             return Result<Unit, ProtocolFailure>::Ok(Unit{});
         } catch (const std::exception &ex) {
             auto __wipe = SodiumInterop::SecureWipe(std::span(persistent_private_bytes));

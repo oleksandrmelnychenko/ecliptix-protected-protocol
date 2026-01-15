@@ -22,6 +22,7 @@ option(ECLIPTIX_ENABLE_TSAN "Enable ThreadSanitizer" OFF)
 option(ECLIPTIX_ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer" OFF)
 option(ECLIPTIX_BUILD_CLIENT_TARGET "Build client (desktop/mobile) target with C API" ON)
 option(ECLIPTIX_BUILD_SERVER_TARGET "Build server target (core only)" ON)
+option(ECLIPTIX_DEBUG_KEYS "Enable debug logging of cryptographic keys (DEVELOPMENT ONLY)" OFF)
 
 # ============================================================================
 # Position Independent Code (required for shared libraries)
@@ -246,6 +247,7 @@ function(configure_protocol_target target_name output_name)
         PRIVATE
             $<$<BOOL:${spdlog_FOUND}>:ECLIPTIX_HAS_SPDLOG>
             $<$<BOOL:${ECLIPTIX_BUILD_TESTS}>:ECLIPTIX_TEST_BUILD>
+            $<$<BOOL:${ECLIPTIX_DEBUG_KEYS}>:ECLIPTIX_DEBUG_KEYS>
     )
 
     set_target_properties(${target_name} PROPERTIES
@@ -355,9 +357,13 @@ message(STATUS "  Build Type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "  Build Tests: ${ECLIPTIX_BUILD_TESTS}")
 message(STATUS "  Build Examples: ${ECLIPTIX_BUILD_EXAMPLES}")
 message(STATUS "  Build Shared: ${ECLIPTIX_BUILD_SHARED}")
+message(STATUS "  Debug Keys: ${ECLIPTIX_DEBUG_KEYS}")
 message(STATUS "  libsodium: ${LIBSODIUM_VERSION}")
 message(STATUS "  Protobuf: ${Protobuf_VERSION}")
 if(spdlog_FOUND)
     message(STATUS "  spdlog: ${spdlog_VERSION}")
+endif()
+if(ECLIPTIX_DEBUG_KEYS)
+    message(WARNING "  ⚠️  ECLIPTIX_DEBUG_KEYS is ON - DO NOT USE IN PRODUCTION!")
 endif()
 message(STATUS "")
