@@ -21,6 +21,16 @@
 
 namespace ecliptix::debug {
 
+// ============================================================================
+// Side identifiers - always defined so types are available
+// ============================================================================
+
+enum class Side {
+    Client,
+    Server,
+    Unknown
+};
+
 #ifdef ECLIPTIX_DEBUG_KEYS
 
 /**
@@ -48,16 +58,6 @@ inline std::string ToHexTruncated(std::span<const uint8_t> data, size_t max_byte
     truncated += "...(" + std::to_string(data.size()) + " bytes)";
     return truncated;
 }
-
-// ============================================================================
-// Side identifiers
-// ============================================================================
-
-enum class Side {
-    Client,
-    Server,
-    Unknown
-};
 
 inline const char* SideToString(Side side) {
     switch (side) {
