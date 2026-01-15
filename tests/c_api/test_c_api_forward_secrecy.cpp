@@ -10,7 +10,7 @@ extern "C" {
         ProtocolSystemHandle** out_handle,
         EppError* out_error);
 
-    EppErrorCode epp_server_begin_handshake_with_peer_kyber(
+    EppErrorCode epp_server_begin_handshake(
         ProtocolSystemHandle* handle,
         uint32_t connection_id,
         uint8_t exchange_type,
@@ -125,7 +125,7 @@ namespace {
         }
 
         EppBuffer server_handshake_msg{};
-        if (epp_server_begin_handshake_with_peer_kyber(
+        if (epp_server_begin_handshake(
             *out_server, 1, 0, client_kyber_pk.data(), client_kyber_pk.size(),
             &server_handshake_msg, nullptr
         ) != EPP_SUCCESS) {

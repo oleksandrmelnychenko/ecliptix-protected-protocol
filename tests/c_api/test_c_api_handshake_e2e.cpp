@@ -10,7 +10,7 @@ extern "C" {
         ProtocolSystemHandle** out_handle,
         EppError* out_error);
 
-    EppErrorCode epp_server_begin_handshake_with_peer_kyber(
+    EppErrorCode epp_server_begin_handshake(
         ProtocolSystemHandle* handle,
         uint32_t connection_id,
         uint8_t exchange_type,
@@ -131,7 +131,7 @@ namespace {
         }
 
         EppBuffer server_handshake_msg{};
-        result = epp_server_begin_handshake_with_peer_kyber(
+        result = epp_server_begin_handshake(
             server_system, connection_id, 0, client_kyber_pk.data(), client_kyber_pk.size(),
             &server_handshake_msg, &error
         );
@@ -228,7 +228,7 @@ TEST_CASE("C API E2E - Full Handshake Flow", "[c_api][e2e][handshake]") {
         REQUIRE(client_handshake_msg.length > 0);
 
         EppBuffer server_handshake_msg{};
-        result = epp_server_begin_handshake_with_peer_kyber(
+        result = epp_server_begin_handshake(
             server_system.handle,
             1,
             0,

@@ -11,7 +11,7 @@ extern "C" {
         ProtocolSystemHandle** out_handle,
         EppError* out_error);
 
-    EppErrorCode epp_server_begin_handshake_with_peer_kyber(
+    EppErrorCode epp_server_begin_handshake(
         ProtocolSystemHandle* handle,
         uint64_t peer_device_id,
         uint64_t peer_identity_id,
@@ -257,7 +257,7 @@ TEST_CASE("C API Hybrid PQ - First Message Contains Kyber", "[c_api][hybrid][pq]
         ) == EPP_SUCCESS);
 
         EppBuffer server_handshake_msg{};
-        REQUIRE(epp_server_begin_handshake_with_peer_kyber(
+        REQUIRE(epp_server_begin_handshake(
             server_system.handle, 1, 0, client_kyber_pk.data(), client_kyber_pk.size(),
             &server_handshake_msg, nullptr
         ) == EPP_SUCCESS);

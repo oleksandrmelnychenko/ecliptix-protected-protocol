@@ -168,16 +168,8 @@ EppErrorCode epp_server_set_callbacks(
     const EppCallbacks* callbacks,
     EppError* out_error);
 
-/** Begin a handshake with the specified exchange type */
+/** Begin a handshake with peer's Kyber public key (mandatory for PQ security) */
 EppErrorCode epp_server_begin_handshake(
-    const ProtocolSystemHandle* handle,
-    uint32_t connection_id,
-    uint8_t exchange_type,
-    EppBuffer* out_handshake_message,
-    EppError* out_error);
-
-/** Begin a handshake with peer's Kyber public key for post-quantum security */
-EppErrorCode epp_server_begin_handshake_with_peer_kyber(
     ProtocolSystemHandle* handle,
     uint32_t connection_id,
     uint8_t exchange_type,
