@@ -126,6 +126,16 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
+      - name: Collect Windows runtime dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $depsDir = "vcpkg-dlls"
+          New-Item -ItemType Directory -Force -Path $depsDir | Out-Null
+          $binDir = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin"
+          Copy-Item "$binDir\*.dll" $depsDir -Force
+
       - name: Run tests (Linux x64 only)
         if: matrix.rid == 'linux-x64'
         run: |
@@ -150,6 +160,7 @@ jobs:
           path: |
             build/**/${{ matrix.lib_prefix }}epp_agent.${{ matrix.lib_ext }}
             build/**/${{ matrix.lib_prefix }}epp_relay.${{ matrix.lib_ext }}
+            vcpkg-dlls/*.dll
 
   build-nuget:
     needs: build-native
@@ -204,6 +215,8 @@ jobs:
           mkdir -p nuget/EPP.Relay/runtimes/win-x64/native
           find native-artifacts/native-win-x64 -name "epp_agent.dll" -exec cp {} nuget/EPP.Agent/runtimes/win-x64/native/ \; || true
           find native-artifacts/native-win-x64 -name "epp_relay.dll" -exec cp {} nuget/EPP.Relay/runtimes/win-x64/native/ \; || true
+          find native-artifacts/native-win-x64 -path "*/vcpkg-dlls/*.dll" -exec cp {} nuget/EPP.Agent/runtimes/win-x64/native/ \; || true
+          find native-artifacts/native-win-x64 -path "*/vcpkg-dlls/*.dll" -exec cp {} nuget/EPP.Relay/runtimes/win-x64/native/ \; || true
 
           # List what we have
           echo "=== Native library structure ==="

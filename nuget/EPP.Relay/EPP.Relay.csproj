@@ -10,7 +10,7 @@
 
     <!-- Package metadata -->
     <PackageId>EPP.Relay</PackageId>
-    <Version>1.0.7</Version>
+    <Version>1.0.0</Version>
     <Authors>Ecliptix</Authors>
     <Company>Ecliptix</Company>
     <Product>EPP Relay - Ecliptix Protection Protocol Server</Product>

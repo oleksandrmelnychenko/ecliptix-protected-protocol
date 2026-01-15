@@ -188,14 +188,21 @@ set(ECLIPTIX_CORE_SOURCES
     ${ECLIPTIX_SOURCE_DIR}/protocol/group/group_metadata.cpp
 )
 
+# Common C API sources (shared between client and server)
+set(ECLIPTIX_COMMON_API_SOURCES
+    ${ECLIPTIX_SOURCE_DIR}/c_api/epp_common.cpp
+)
+
 set(ECLIPTIX_CLIENT_SOURCES
     ${ECLIPTIX_CORE_SOURCES}
+    ${ECLIPTIX_COMMON_API_SOURCES}
     ${ECLIPTIX_SOURCE_DIR}/c_api/epp_api.cpp
 )
 
-# Server sources include core + server-specific C API
+# Server sources include core + common + server-specific C API
 set(ECLIPTIX_SERVER_SOURCES
     ${ECLIPTIX_CORE_SOURCES}
+    ${ECLIPTIX_COMMON_API_SOURCES}
     ${ECLIPTIX_SOURCE_DIR}/c_api/epp_server_api.cpp
 )
 
@@ -203,6 +210,7 @@ function(configure_protocol_target target_name output_name)
     if(ECLIPTIX_BUILD_SHARED)
         add_library(${target_name} SHARED ${ARGN})
         target_compile_definitions(${target_name} PRIVATE ECLIPTIX_EXPORTS)
+        target_compile_definitions(${target_name} PUBLIC ECLIPTIX_SHARED)
     else()
         add_library(${target_name} STATIC ${ARGN})
     endif()

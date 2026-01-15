@@ -111,7 +111,7 @@ Destroy identity keys and securely wipe memory.
 
 ## Session Management (Client)
 
-Client-side protocol session for initiating connections.
+Client-side protocol session for initiating connections (uses `epp_session_*` prefix).
 
 ### `epp_session_create`
 ```c
@@ -121,6 +121,20 @@ EppErrorCode epp_session_create(
     EppError* out_error);
 ```
 Create a new client session.
+
+### `epp_session_create_from_root`
+```c
+EppErrorCode epp_session_create_from_root(
+    EppIdentityHandle* identity_keys,
+    const uint8_t* root_key,
+    size_t root_key_length,
+    const uint8_t* peer_bundle,
+    size_t peer_bundle_length,
+    bool is_initiator,
+    ProtocolSystemHandle** out_handle,
+    EppError* out_error);
+```
+Create a session from a pre-shared root key (e.g., from OPAQUE) and peer bundle.
 
 ### `epp_session_begin_handshake`
 ```c
@@ -179,8 +193,65 @@ EppErrorCode epp_session_decrypt(
 ```
 Decrypt a message using the Double Ratchet.
 
-### `epp_session_serialize` / `epp_session_deserialize`
-Export/import session state for persistence.
+### `epp_session_is_established`
+```c
+EppErrorCode epp_session_is_established(
+    const ProtocolSystemHandle* handle,
+    bool* out_has_connection,
+    EppError* out_error);
+```
+Check if the session has an active connection.
+
+### `epp_session_get_id`
+```c
+EppErrorCode epp_session_get_id(
+    const ProtocolSystemHandle* handle,
+    uint32_t* out_connection_id,
+    EppError* out_error);
+```
+Get the current connection ID.
+
+### `epp_session_get_chain_indices`
+```c
+EppErrorCode epp_session_get_chain_indices(
+    const ProtocolSystemHandle* handle,
+    uint32_t* out_sending_index,
+    uint32_t* out_receiving_index,
+    EppError* out_error);
+```
+Get current sending and receiving chain indices.
+
+### `epp_session_serialize`
+```c
+EppErrorCode epp_session_serialize(
+    const ProtocolSystemHandle* handle,
+    EppBuffer* out_state,
+    EppError* out_error);
+```
+Export the full session state for persistence.
+
+### `epp_session_deserialize`
+```c
+EppErrorCode epp_session_deserialize(
+    EppIdentityHandle* identity_keys,
+    const uint8_t* state_bytes,
+    size_t state_bytes_length,
+    ProtocolSystemHandle** out_handle,
+    EppError* out_error);
+```
+Import session state from a previously serialized state.
+
+### `epp_session_set_kyber_secrets`
+```c
+EppErrorCode epp_session_set_kyber_secrets(
+    const ProtocolSystemHandle* handle,
+    const uint8_t* kyber_ciphertext,
+    size_t kyber_ciphertext_length,
+    const uint8_t* kyber_shared_secret,
+    size_t kyber_shared_secret_length,
+    EppError* out_error);
+```
+Set Kyber hybrid handshake secrets for manual PQ setup.
 
 ### `epp_session_destroy`
 ```c
@@ -192,7 +263,7 @@ Destroy the session and securely wipe memory.
 
 ## Server Management
 
-Server-side protocol session for responding to connections.
+Server-side protocol session for responding to connections (uses `epp_server_*` prefix).
 
 ### `epp_server_create`
 ```c
@@ -203,30 +274,161 @@ EppErrorCode epp_server_create(
 ```
 Create a new server session.
 
+### `epp_server_create_from_root`
+```c
+EppErrorCode epp_server_create_from_root(
+    EppIdentityHandle* identity_keys,
+    const uint8_t* root_key,
+    size_t root_key_length,
+    const uint8_t* peer_bundle,
+    size_t peer_bundle_length,
+    bool is_initiator,
+    ProtocolSystemHandle** out_handle,
+    EppError* out_error);
+```
+Create a server session from a pre-shared root key and peer bundle.
+
+### `epp_server_deserialize`
+```c
+EppErrorCode epp_server_deserialize(
+    EppIdentityHandle* identity_keys,
+    const uint8_t* state_bytes,
+    size_t state_bytes_length,
+    ProtocolSystemHandle** out_handle,
+    EppError* out_error);
+```
+Import server session state from a serialized blob.
+
+### `epp_server_set_callbacks`
+```c
+EppErrorCode epp_server_set_callbacks(
+    ProtocolSystemHandle* handle,
+    const EppCallbacks* callbacks,
+    EppError* out_error);
+```
+Set callbacks for protocol state changes.
+
 ### `epp_server_begin_handshake`
 ```c
 EppErrorCode epp_server_begin_handshake(
     ProtocolSystemHandle* handle,
     uint32_t connection_id,
     uint8_t exchange_type,
-    const uint8_t* peer_kyber_public_key,  // Required, 1184 bytes
+    const uint8_t* peer_kyber_public_key,
     size_t peer_kyber_public_key_length,
     EppBuffer* out_handshake_message,
     EppError* out_error);
 ```
-Begin a server handshake with the client's Kyber public key. **Kyber is mandatory**.
+Begin a server handshake with the peer's Kyber public key.
 
-### `epp_server_encrypt` / `epp_server_decrypt`
-Same as client-side encryption/decryption.
+### `epp_server_complete_handshake`
+```c
+EppErrorCode epp_server_complete_handshake(
+    ProtocolSystemHandle* handle,
+    const uint8_t* peer_handshake_message,
+    size_t peer_handshake_message_length,
+    const uint8_t* root_key,
+    size_t root_key_length,
+    EppError* out_error);
+```
+Complete handshake with an explicit root key.
 
-### `epp_server_serialize` / `epp_server_deserialize`
-Export/import server state for persistence.
+### `epp_server_complete_handshake_auto`
+```c
+EppErrorCode epp_server_complete_handshake_auto(
+    ProtocolSystemHandle* handle,
+    const uint8_t* peer_handshake_message,
+    size_t peer_handshake_message_length,
+    EppError* out_error);
+```
+Complete handshake by auto-deriving the root key from the peer's message.
+
+### `epp_server_encrypt`
+```c
+EppErrorCode epp_server_encrypt(
+    const ProtocolSystemHandle* handle,
+    const uint8_t* plaintext,
+    size_t plaintext_length,
+    EppBuffer* out_encrypted_envelope,
+    EppError* out_error);
+```
+Encrypt a message using the Double Ratchet.
+
+### `epp_server_decrypt`
+```c
+EppErrorCode epp_server_decrypt(
+    const ProtocolSystemHandle* handle,
+    const uint8_t* encrypted_envelope,
+    size_t encrypted_envelope_length,
+    EppBuffer* out_plaintext,
+    EppError* out_error);
+```
+Decrypt a message using the Double Ratchet.
+
+### `epp_server_is_established`
+```c
+EppErrorCode epp_server_is_established(
+    const ProtocolSystemHandle* handle,
+    bool* out_has_connection,
+    EppError* out_error);
+```
+Check if the server session has an active connection.
+
+### `epp_server_get_id`
+```c
+EppErrorCode epp_server_get_id(
+    const ProtocolSystemHandle* handle,
+    uint32_t* out_connection_id,
+    EppError* out_error);
+```
+Get the current connection ID.
+
+### `epp_server_get_chain_indices`
+```c
+EppErrorCode epp_server_get_chain_indices(
+    const ProtocolSystemHandle* handle,
+    uint32_t* out_sending_index,
+    uint32_t* out_receiving_index,
+    EppError* out_error);
+```
+Get current sending and receiving chain indices.
+
+### `epp_server_get_used_prekey_id`
+```c
+EppErrorCode epp_server_get_used_prekey_id(
+    const ProtocolSystemHandle* handle,
+    bool* out_has_opk_id,
+    uint32_t* out_opk_id,
+    EppError* out_error);
+```
+Get the selected one-time pre-key ID during handshake.
+
+### `epp_server_serialize`
+```c
+EppErrorCode epp_server_serialize(
+    const ProtocolSystemHandle* handle,
+    EppBuffer* out_state,
+    EppError* out_error);
+```
+Export the full server session state for persistence.
+
+### `epp_server_set_kyber_secrets`
+```c
+EppErrorCode epp_server_set_kyber_secrets(
+    const ProtocolSystemHandle* handle,
+    const uint8_t* kyber_ciphertext,
+    size_t kyber_ciphertext_length,
+    const uint8_t* kyber_shared_secret,
+    size_t kyber_shared_secret_length,
+    EppError* out_error);
+```
+Set Kyber hybrid handshake secrets for manual PQ setup.
 
 ### `epp_server_destroy`
 ```c
 void epp_server_destroy(const ProtocolSystemHandle* handle);
 ```
-Destroy the server session.
+Destroy the server session and securely wipe memory.
 
 ---
 
