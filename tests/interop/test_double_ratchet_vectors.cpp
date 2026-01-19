@@ -22,7 +22,7 @@ struct DoubleRatchetTestVector {
     [[nodiscard]] static DoubleRatchetTestVector Generate(uint32_t key_count) {
         DoubleRatchetTestVector vec;
 
-        vec.initial_chain_key.resize(Constants::X_25519_KEY_SIZE);
+        vec.initial_chain_key.resize(kChainKeyBytes);
         for (size_t i = 0; i < vec.initial_chain_key.size(); ++i) {
             vec.initial_chain_key[i] = static_cast<uint8_t>(i + 1);
         }
@@ -30,12 +30,12 @@ struct DoubleRatchetTestVector {
         std::vector<uint8_t> current_chain_key = vec.initial_chain_key;
 
         for (uint32_t i = 0; i < key_count; ++i) {
-            std::vector<uint8_t> message_key(Constants::AES_KEY_SIZE);
-            std::vector<uint8_t> next_chain_key(Constants::X_25519_KEY_SIZE);
+            std::vector<uint8_t> message_key(kAesKeyBytes);
+            std::vector<uint8_t> next_chain_key(kChainKeyBytes);
 
             const std::vector<uint8_t> message_info(
-                Constants::MSG_INFO.begin(),
-                Constants::MSG_INFO.end()
+                kMessageInfo.begin(),
+                kMessageInfo.end()
             );
 
             auto message_hkdf_result = Hkdf::DeriveKey(
@@ -49,8 +49,8 @@ struct DoubleRatchetTestVector {
             vec.message_keys[i] = message_key;
 
             const std::vector<uint8_t> chain_info(
-                Constants::CHAIN_INFO.begin(),
-                Constants::CHAIN_INFO.end()
+                kChainInfo.begin(),
+                kChainInfo.end()
             );
 
             auto chain_hkdf_result = Hkdf::DeriveKey(

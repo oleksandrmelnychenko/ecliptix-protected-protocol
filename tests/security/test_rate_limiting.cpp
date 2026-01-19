@@ -13,15 +13,15 @@ using namespace ecliptix::protocol::crypto;
 using namespace ecliptix::protocol::test_helpers;
 
 static std::vector<uint8_t> MakeRateNonce(uint64_t idx) {
-    std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE, 0);
+    std::vector<uint8_t> nonce(kAesGcmNonceBytes, 0);
 
-    for (size_t i = 0; i < ProtocolConstants::NONCE_COUNTER_SIZE; ++i) {
-        nonce[ProtocolConstants::NONCE_PREFIX_SIZE + i] =
+    for (size_t i = 0; i < kNonceCounterBytes; ++i) {
+        nonce[kNoncePrefixBytes + i] =
             static_cast<uint8_t>((idx >> (i * 8)) & 0xFF);
     }
 
-    for (size_t i = 0; i < ProtocolConstants::NONCE_INDEX_SIZE; ++i) {
-        nonce[ProtocolConstants::NONCE_PREFIX_SIZE + ProtocolConstants::NONCE_COUNTER_SIZE + i] =
+    for (size_t i = 0; i < kNonceIndexBytes; ++i) {
+        nonce[kNoncePrefixBytes + kNonceCounterBytes + i] =
             static_cast<uint8_t>((idx >> (i * 8)) & 0xFF);
     }
 
@@ -34,7 +34,7 @@ TEST_CASE("Rate Limiting - Nonce Generation Rate Limit", "[security][rate_limiti
     SECTION("Nonce generation respects 1000/second rate limit") {
         auto conn = CreatePreparedConnection(1, true);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -74,7 +74,7 @@ TEST_CASE("Rate Limiting - Nonce Rate Limit Resets After One Second", "[security
     SECTION("Rate limit window resets after 1 second") {
         auto conn = CreatePreparedConnection(1, true);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xBB);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xBB);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -117,7 +117,7 @@ TEST_CASE("Rate Limiting - Concurrent Nonce Generation Respects Rate Limit", "[s
     SECTION("Multiple threads respect shared rate limit") {
         auto conn = CreatePreparedConnection(1, true);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xCC);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xCC);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -166,7 +166,7 @@ TEST_CASE("Rate Limiting - DH Ratchet Flood Protection", "[security][rate_limiti
     SECTION("DH ratchet rate limited to prevent DoS") {
         auto [alice, bob] = CreatePreparedPair(1, 2);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xDD);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xDD);
 
         auto alice_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
         auto bob_dh = bob->GetCurrentSenderDhPublicKey().Unwrap().value();
@@ -204,7 +204,7 @@ TEST_CASE("Rate Limiting - DH Ratchet Rate Resets Per Minute", "[security][rate_
     SECTION("DH ratchet rate limit resets after 1 minute") {
         auto [alice, bob] = CreatePreparedPair(1, 2);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xEE);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xEE);
 
         auto alice_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
         auto bob_dh = bob->GetCurrentSenderDhPublicKey().Unwrap().value();
@@ -247,7 +247,7 @@ TEST_CASE("Rate Limiting - Nonce Burst Protection", "[security][rate_limiting][n
     SECTION("Rapid nonce bursts are blocked after limit") {
         auto conn = CreatePreparedConnection(1, true);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xFF);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xFF);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -295,7 +295,7 @@ TEST_CASE("Rate Limiting - DH Ratchet Independent of Message Count", "[security]
     SECTION("DH ratchet rate limit independent of message throughput") {
         auto [alice, bob] = CreatePreparedPair(1, 2);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x11);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0x11);
 
         auto alice_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
         auto bob_dh = bob->GetCurrentSenderDhPublicKey().Unwrap().value();
@@ -339,7 +339,7 @@ TEST_CASE("Rate Limiting - Combined Nonce and DH Rate Limits", "[security][rate_
     SECTION("Both rate limits enforced independently") {
         auto [alice, bob] = CreatePreparedPair(1, 2);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x22);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0x22);
 
         auto alice_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
         auto bob_dh = bob->GetCurrentSenderDhPublicKey().Unwrap().value();

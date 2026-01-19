@@ -165,8 +165,8 @@ EcliptixProtocolConnection::PerformDhRatchet(
             hybrid_secret,
             64,  // output length
             root_bytes,
-            std::vector<uint8_t>(ProtocolConstants::HYBRID_DH_RATCHET_INFO.begin(),
-                                 ProtocolConstants::HYBRID_DH_RATCHET_INFO.end()));
+            std::vector<uint8_t>(kHybridRatchetInfo.begin(),
+                                 kHybridRatchetInfo.end()));
 
         // Wipe hybrid_secret immediately
         SodiumInterop::SecureWipe(std::span(hybrid_secret));

@@ -6,12 +6,12 @@
 namespace ecliptix::protocol::security {
     Result<Unit, ProtocolFailure> DhValidator::ValidateX25519PublicKey(
         const std::span<const uint8_t> public_key) {
-        if (public_key.size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
+        if (public_key.size() != kX25519PublicKeyBytes) {
             return Result<Unit, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidInput(
                     compat::format(
                         "Invalid X25519 public key size: expected {}, got {}",
-                        Constants::X_25519_PUBLIC_KEY_SIZE,
+                        kX25519PublicKeyBytes,
                         public_key.size())
                 ));
         }
@@ -77,8 +77,8 @@ namespace ecliptix::protocol::security {
         if (a.size() != b.size()) {
             return false;
         }
-        uint8_t diff = ProtocolConstants::ZERO_VALUE;
-        for (size_t i = ProtocolConstants::ZERO_VALUE; i < a.size(); ++i) {
+        uint8_t diff = 0;
+        for (size_t i = 0; i < a.size(); ++i) {
             diff |= a[i] ^ b[i];
         }
         return diff == ComparisonConstants::EQUAL;

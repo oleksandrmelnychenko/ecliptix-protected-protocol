@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document details how Kyber-768 post-quantum cryptography will be integrated into the existing Ecliptix Protocol System without breaking backward compatibility.
+This document details how Kyber-768 post-quantum cryptography will be integrated into the Ecliptix Protection Protocol. Note: this plan references legacy connection/chain-step components and needs a rewrite for the current handshake/session build.
 
 ## Current Architecture (Classical)
 
@@ -380,7 +380,7 @@ RatchetConfig low_bandwidth;
 low_bandwidth.enable_pq_ratchet = true;
 low_bandwidth.pq_ratchet_every_n_messages = 500;  // Every 500 messages
 
-// Classical Only (backward compatibility)
+// Classical Only (legacy)
 RatchetConfig classical_only;
 classical_only.enable_pq_ratchet = false;
 ```
@@ -490,7 +490,7 @@ classical_only.enable_pq_ratchet = false;
 - [ ] Implement ToProtoState() with PQ serialization
 - [ ] Implement FromProtoState() with PQ deserialization
 - [ ] Write state persistence tests
-- [ ] Test backward compatibility with old states
+- [ ] Test legacy state import behavior (if needed)
 
 ### Phase 3: Optimization & Adaptive Policies (FUTURE)
 - [ ] Implement adaptive PQ ratchet frequency

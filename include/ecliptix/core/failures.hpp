@@ -29,6 +29,7 @@ enum class ProtocolFailureType {
     Encode,
     BufferTooSmall,
     ObjectDisposed,
+    ReplayAttack,
     InvalidState,
     NullPointer
 };
@@ -110,6 +111,9 @@ public:
     }
     static ProtocolFailure ObjectDisposed(std::string msg) {
         return {ProtocolFailureType::ObjectDisposed, std::move(msg)};
+    }
+    static ProtocolFailure ReplayAttack(std::string msg) {
+        return {ProtocolFailureType::ReplayAttack, std::move(msg)};
     }
     static ProtocolFailure InvalidState(std::string msg) {
         return {ProtocolFailureType::InvalidState, std::move(msg)};

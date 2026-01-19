@@ -70,8 +70,8 @@ TEST_CASE("EnvelopeBuilder - EncryptMetadata and DecryptMetadata", "[envelope_bu
             {},
             ecliptix::proto::common::EnvelopeType::REQUEST,
             "correlation-test");
-        std::vector<uint8_t> header_key(Constants::AES_KEY_SIZE, 0x22);
-        std::vector<uint8_t> header_nonce(Constants::AES_GCM_NONCE_SIZE, 0x33);
+        std::vector<uint8_t> header_key(kAesKeyBytes, 0x22);
+        std::vector<uint8_t> header_nonce(kAesGcmNonceBytes, 0x33);
         std::vector<uint8_t> associated_data = {'a', 'd', '_', 't', 'e', 's', 't'};
         auto encrypt_result = EnvelopeBuilder::EncryptMetadata(
             metadata,
@@ -80,7 +80,7 @@ TEST_CASE("EnvelopeBuilder - EncryptMetadata and DecryptMetadata", "[envelope_bu
             associated_data);
         REQUIRE(encrypt_result.IsOk());
         auto encrypted = encrypt_result.Unwrap();
-        size_t expected_min_size = Constants::AES_GCM_TAG_SIZE;
+        size_t expected_min_size = kAesGcmTagBytes;
         REQUIRE(encrypted.size() > expected_min_size);
         auto decrypt_result = EnvelopeBuilder::DecryptMetadata(
             encrypted,
@@ -102,8 +102,8 @@ TEST_CASE("EnvelopeBuilder - EncryptMetadata and DecryptMetadata", "[envelope_bu
             999,
             nonce,
             10);
-        std::vector<uint8_t> header_key(Constants::AES_KEY_SIZE, 0x55);
-        std::vector<uint8_t> header_nonce(Constants::AES_GCM_NONCE_SIZE, 0x66);
+        std::vector<uint8_t> header_key(kAesKeyBytes, 0x55);
+        std::vector<uint8_t> header_nonce(kAesGcmNonceBytes, 0x66);
         auto encrypt_result = EnvelopeBuilder::EncryptMetadata(
             metadata,
             header_key,
@@ -128,8 +128,8 @@ TEST_CASE("EnvelopeBuilder - EncryptMetadata and DecryptMetadata", "[envelope_bu
             {},
             ecliptix::proto::common::EnvelopeType::RESPONSE,
             large_correlation_id);
-        std::vector<uint8_t> header_key(Constants::AES_KEY_SIZE, 0x88);
-        std::vector<uint8_t> header_nonce(Constants::AES_GCM_NONCE_SIZE, 0x99);
+        std::vector<uint8_t> header_key(kAesKeyBytes, 0x88);
+        std::vector<uint8_t> header_nonce(kAesGcmNonceBytes, 0x99);
         auto encrypt_result = EnvelopeBuilder::EncryptMetadata(
             metadata,
             header_key,
@@ -155,8 +155,8 @@ TEST_CASE("EnvelopeBuilder - Decryption authentication failures", "[envelope_bui
         {},
         ecliptix::proto::common::EnvelopeType::REQUEST,
         "auth-test");
-    std::vector<uint8_t> header_key(Constants::AES_KEY_SIZE, 0xBB);
-    std::vector<uint8_t> header_nonce(Constants::AES_GCM_NONCE_SIZE, 0xCC);
+    std::vector<uint8_t> header_key(kAesKeyBytes, 0xBB);
+    std::vector<uint8_t> header_nonce(kAesGcmNonceBytes, 0xCC);
     std::vector<uint8_t> associated_data = {'c', 'o', 'n', 't', 'e', 'x', 't'};
     auto encrypted = EnvelopeBuilder::EncryptMetadata(
         metadata,
@@ -164,7 +164,7 @@ TEST_CASE("EnvelopeBuilder - Decryption authentication failures", "[envelope_bui
         header_nonce,
         associated_data).Unwrap();
     SECTION("Decrypt with wrong key fails") {
-        std::vector<uint8_t> wrong_key(Constants::AES_KEY_SIZE, 0xFF);
+        std::vector<uint8_t> wrong_key(kAesKeyBytes, 0xFF);
         auto result = EnvelopeBuilder::DecryptMetadata(
             encrypted,
             wrong_key,
@@ -173,7 +173,7 @@ TEST_CASE("EnvelopeBuilder - Decryption authentication failures", "[envelope_bui
         REQUIRE(result.IsErr());
     }
     SECTION("Decrypt with wrong nonce fails") {
-        std::vector<uint8_t> wrong_nonce(Constants::AES_GCM_NONCE_SIZE, 0xFF);
+        std::vector<uint8_t> wrong_nonce(kAesGcmNonceBytes, 0xFF);
         auto result = EnvelopeBuilder::DecryptMetadata(
             encrypted,
             header_key,
@@ -228,7 +228,7 @@ TEST_CASE("EnvelopeBuilder - Invalid inputs", "[envelope_builder]") {
         1);
     SECTION("Encrypt with invalid key size") {
         std::vector<uint8_t> short_key(16, 0xEE);  
-        std::vector<uint8_t> valid_nonce(Constants::AES_GCM_NONCE_SIZE, 0xFF);
+        std::vector<uint8_t> valid_nonce(kAesGcmNonceBytes, 0xFF);
         auto result = EnvelopeBuilder::EncryptMetadata(
             valid_metadata,
             short_key,
@@ -237,7 +237,7 @@ TEST_CASE("EnvelopeBuilder - Invalid inputs", "[envelope_builder]") {
         REQUIRE(result.IsErr());
     }
     SECTION("Encrypt with invalid nonce size") {
-        std::vector<uint8_t> valid_key(Constants::AES_KEY_SIZE, 0xAA);
+        std::vector<uint8_t> valid_key(kAesKeyBytes, 0xAA);
         std::vector<uint8_t> short_nonce(8, 0xBB);  
         auto result = EnvelopeBuilder::EncryptMetadata(
             valid_metadata,
@@ -247,8 +247,8 @@ TEST_CASE("EnvelopeBuilder - Invalid inputs", "[envelope_builder]") {
         REQUIRE(result.IsErr());
     }
     SECTION("Decrypt with ciphertext too short") {
-        std::vector<uint8_t> valid_key(Constants::AES_KEY_SIZE, 0xCC);
-        std::vector<uint8_t> valid_nonce(Constants::AES_GCM_NONCE_SIZE, 0xDD);
+        std::vector<uint8_t> valid_key(kAesKeyBytes, 0xCC);
+        std::vector<uint8_t> valid_nonce(kAesGcmNonceBytes, 0xDD);
         std::vector<uint8_t> too_short(10, 0xEE);  
         auto result = EnvelopeBuilder::DecryptMetadata(
             too_short,

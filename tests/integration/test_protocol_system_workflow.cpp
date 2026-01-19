@@ -104,8 +104,8 @@ namespace {
             auto alice_bundle = std::move(alice_bundle_result).Unwrap();
 
             const std::vector<uint8_t> info(
-                Constants::X3DH_INFO.begin(),
-                Constants::X3DH_INFO.end());
+                kX3dhInfo.begin(),
+                kX3dhInfo.end());
 
             auto alice_ek_public = alice->GetIdentityKeys().GetEphemeralX25519PublicKeyCopy();
             if (!alice_ek_public.has_value()) {

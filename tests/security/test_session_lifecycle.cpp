@@ -13,15 +13,15 @@ using namespace ecliptix::protocol::crypto;
 using namespace ecliptix::protocol::test_helpers;
 
 static std::vector<uint8_t> MakeNonce(uint64_t idx) {
-    std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE, 0);
+    std::vector<uint8_t> nonce(kAesGcmNonceBytes, 0);
 
-    for (size_t i = 0; i < ProtocolConstants::NONCE_COUNTER_SIZE; ++i) {
-        nonce[ProtocolConstants::NONCE_PREFIX_SIZE + i] =
+    for (size_t i = 0; i < kNonceCounterBytes; ++i) {
+        nonce[kNoncePrefixBytes + i] =
             static_cast<uint8_t>((idx >> (i * 8)) & 0xFF);
     }
 
-    for (size_t i = 0; i < ProtocolConstants::NONCE_INDEX_SIZE; ++i) {
-        nonce[ProtocolConstants::NONCE_PREFIX_SIZE + ProtocolConstants::NONCE_COUNTER_SIZE + i] =
+    for (size_t i = 0; i < kNonceIndexBytes; ++i) {
+        nonce[kNoncePrefixBytes + kNonceCounterBytes + i] =
             static_cast<uint8_t>((idx >> (i * 8)) & 0xFF);
     }
 
@@ -34,7 +34,7 @@ TEST_CASE("Session Lifecycle - GetSessionAgeSeconds Returns Correct Age", "[secu
     SECTION("Session age increases over time") {
         auto conn = CreatePreparedConnection(1, true);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -58,7 +58,7 @@ TEST_CASE("Session Lifecycle - GetSessionAgeSeconds for New Connection", "[secur
     SECTION("New connection has age near zero") {
         auto conn = CreatePreparedConnection(1, true);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xBB);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xBB);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -76,7 +76,7 @@ TEST_CASE("Session Lifecycle - Operations Succeed Without Timeout Enforcement", 
     SECTION("PrepareNextSendMessage succeeds regardless of session age") {
         auto conn = CreatePreparedConnection(1, true);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -101,7 +101,7 @@ TEST_CASE("Session Lifecycle - GenerateNextNonce Without Timeout", "[security][s
     SECTION("GenerateNextNonce succeeds regardless of session age") {
         auto conn = CreatePreparedConnection(1, true);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xBB);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xBB);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -126,7 +126,7 @@ TEST_CASE("Session Lifecycle - ProcessReceivedMessage Without Timeout", "[securi
     SECTION("ProcessReceivedMessage succeeds regardless of session age") {
         auto [alice, bob] = CreatePreparedPair(1, 2);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xCC);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xCC);
 
         auto alice_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
         auto bob_dh = bob->GetCurrentSenderDhPublicKey().Unwrap().value();
@@ -152,7 +152,7 @@ TEST_CASE("Session Lifecycle - Multiple Operations Over Time", "[security][sessi
     SECTION("All operations continue to work over time") {
         auto [alice, bob] = CreatePreparedPair(1, 2);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xDD);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xDD);
 
         auto alice_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
         auto bob_dh = bob->GetCurrentSenderDhPublicKey().Unwrap().value();
@@ -182,7 +182,7 @@ TEST_CASE("Session Lifecycle - All Operations Work After Extended Time", "[secur
     SECTION("All operations succeed after extended time (no timeout enforcement)") {
         auto [alice, bob] = CreatePreparedPair(1, 2);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xEE);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xEE);
 
         auto alice_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
         auto bob_dh = bob->GetCurrentSenderDhPublicKey().Unwrap().value();
@@ -218,7 +218,7 @@ TEST_CASE("Session Lifecycle - Independent Connection Ages", "[security][session
     SECTION("Each connection tracks age independently") {
         auto conn1 = CreatePreparedConnection(1, true);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x11);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0x11);
         auto peer1 = SodiumInterop::GenerateX25519KeyPair("peer1");
         REQUIRE(peer1.IsOk());
         auto [peer1_sk, peer1_pk] = std::move(peer1).Unwrap();
@@ -256,7 +256,7 @@ TEST_CASE("Session Lifecycle - Concurrent Operations Without Timeout", "[securit
     SECTION("Concurrent operations all succeed") {
         auto conn = CreatePreparedConnection(1, true);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x22);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0x22);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();

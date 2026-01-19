@@ -374,7 +374,7 @@ namespace ecliptix::protocol::crypto {
         std::copy_n(x25519_shared_secret.begin(), 32, ikm.begin());
         std::copy_n(kyber_shared_secret.begin(), 32, ikm.begin() + 32);
 
-        std::string salt_str = "Ecliptix-PQ-Hybrid-v1::";
+        std::string salt_str = "Ecliptix-PQ-Hybrid::";
         salt_str += context;
         std::vector<uint8_t> salt(salt_str.begin(), salt_str.end());
 

@@ -709,7 +709,7 @@ TEST_CASE("C API - Hybrid ratchet requires Kyber ciphertext with DH", "[c_api][b
     REQUIRE(epp_session_create(keys, &system, nullptr) == EPP_SUCCESS);
 
     ecliptix::proto::common::SecureEnvelope envelope;
-    std::vector<uint8_t> dh(ecliptix::protocol::Constants::X_25519_PUBLIC_KEY_SIZE, 0x01);
+    std::vector<uint8_t> dh(ecliptix::protocol::kX25519PublicKeyBytes, 0x01);
     envelope.set_dh_public_key(dh.data(), dh.size());
     envelope.set_ratchet_epoch(0);
     const std::string serialized = envelope.SerializeAsString();
@@ -735,7 +735,7 @@ TEST_CASE("C API - Hybrid ratchet requires Kyber ciphertext with DH", "[c_api][b
 TEST_CASE("C API - Envelope validation prefilter enforces hybrid ciphertext", "[c_api][boundary][hybrid][pq]") {
     REQUIRE(epp_init() == EPP_SUCCESS);
 
-    std::vector<uint8_t> dh(ecliptix::protocol::Constants::X_25519_PUBLIC_KEY_SIZE, 0x01);
+    std::vector<uint8_t> dh(ecliptix::protocol::kX25519PublicKeyBytes, 0x01);
     std::vector<uint8_t> kyber(ecliptix::protocol::crypto::KyberInterop::KYBER_768_CIPHERTEXT_SIZE, 0x02);
 
     SECTION("Rejects DH without Kyber") {

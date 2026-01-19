@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Ecliptix.Protocol.System** is a production-ready C++20 cryptographic protocol library implementing a Signal Protocol-like double ratchet with X3DH key agreement. This is a port from C# (.NET 10) to C++ with enhanced security features.
+**Ecliptix.Protection.Protocol** is a production-ready C++20 cryptographic protocol library implementing a Signal Protocol-like double ratchet with X3DH key agreement. This is a port from C# (.NET 10) to C++ with enhanced security features.
 
 **Status**: Phase 2 Complete (~30% overall)
 

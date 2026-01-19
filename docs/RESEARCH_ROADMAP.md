@@ -1,4 +1,4 @@
-# Ecliptix Protocol System: Research-Grade Enhancement Roadmap
+# Ecliptix Protection Protocol: Research-Grade Enhancement Roadmap
 
 **Version**: 1.0
 **Date**: January 2025
@@ -10,7 +10,7 @@
 
 ## Executive Summary
 
-This document outlines a 9-month plan to transform Ecliptix.Protocol.System into the most advanced end-to-end encrypted messaging protocol library, with **three novel research contributions**:
+This document outlines a 9-month plan to transform Ecliptix.Protection.Protocol into the most advanced end-to-end encrypted messaging protocol library, with **three novel research contributions**:
 
 1. **Dense Post-Quantum Ratchet**: Kyber-768 every 10 DH steps (vs Signal's ~50-500)
 2. **Puncturable Forward Secrecy**: First production implementation of cryptographic FS
@@ -514,7 +514,7 @@ End-to-end encrypted (E2EE) messaging protocols like Signal protect billions of 
 
 ## Conclusion
 
-This 9-month roadmap transforms Ecliptix.Protocol.System from a solid Signal-like protocol into a research-grade contribution with three novel features. The plan is ambitious but achievable, with clear milestones, fallback options, and risk mitigation.
+This 9-month roadmap transforms Ecliptix.Protection.Protocol from a solid Signal-like protocol into a research-grade contribution with three novel features. The plan is ambitious but achievable, with clear milestones, fallback options, and risk mitigation.
 
 **Key Success Factors**:
 1. Start puncturable encryption early (highest risk)

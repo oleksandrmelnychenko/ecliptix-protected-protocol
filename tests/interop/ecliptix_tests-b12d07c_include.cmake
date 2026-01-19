@@ -1,5 +1,0 @@
-if(EXISTS "/Users/oleksandrmelnychenko/CLionProjects/Ecliptix.Protocol.System/tests/interop/ecliptix_tests-b12d07c_tests.cmake")
-  include("/Users/oleksandrmelnychenko/CLionProjects/Ecliptix.Protocol.System/tests/interop/ecliptix_tests-b12d07c_tests.cmake")
-else()
-  add_test(ecliptix_tests_NOT_BUILT-b12d07c ecliptix_tests_NOT_BUILT-b12d07c)
-endif()

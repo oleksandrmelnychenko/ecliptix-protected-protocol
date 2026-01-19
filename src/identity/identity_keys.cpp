@@ -11,8 +11,6 @@
 #include <unordered_set>
 
 namespace ecliptix::protocol::identity {
-    using protocol::Constants;
-    using protocol::ProtocolConstants;
     using crypto::SodiumInterop;
     using crypto::MasterKeyDerivation;
     using crypto::Hkdf;
@@ -54,6 +52,17 @@ namespace ecliptix::protocol::identity {
         return kyber_public_key_;
     }
 
+    Result<std::vector<uint8_t>, ProtocolFailure>
+    IdentityKeys::GetIdentityX25519PrivateKeyCopy() const {
+        std::shared_lock lock(*lock_);
+        auto read_result = identity_x25519_secret_key_handle_.ReadBytes(kX25519PrivateKeyBytes);
+        if (read_result.IsErr()) {
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(read_result.UnwrapErr()));
+        }
+        return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(read_result.Unwrap());
+    }
+
     Result<SecureMemoryHandle, ProtocolFailure> IdentityKeys::CloneKyberSecretKey() const {
         std::shared_lock lock(*lock_);
         auto read_result = kyber_secret_key_handle_.ReadBytes(KyberInterop::KYBER_768_SECRET_KEY_SIZE);
@@ -84,7 +93,7 @@ namespace ecliptix::protocol::identity {
             return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                 ProtocolFailure::Generic("Ephemeral key has not been generated"));
         }
-        auto read_result = ephemeral_secret_key_handle_->ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
+        auto read_result = ephemeral_secret_key_handle_->ReadBytes(kX25519PrivateKeyBytes);
         if (read_result.IsErr()) {
             return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                 ProtocolFailure::FromSodiumFailure(read_result.UnwrapErr()));
@@ -95,7 +104,7 @@ namespace ecliptix::protocol::identity {
     Result<std::vector<uint8_t>, ProtocolFailure>
     IdentityKeys::GetSignedPreKeyPrivateCopy() const {
         std::shared_lock lock(*lock_);
-        auto read_result = signed_pre_key_secret_key_handle_.ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
+        auto read_result = signed_pre_key_secret_key_handle_.ReadBytes(kX25519PrivateKeyBytes);
         if (read_result.IsErr()) {
             return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                 ProtocolFailure::FromSodiumFailure(read_result.UnwrapErr()));
@@ -138,7 +147,7 @@ namespace ecliptix::protocol::identity {
             return Result<Ed25519KeyPair, ProtocolFailure>::Err(
                 ProtocolFailure::KeyGeneration("Failed to generate Ed25519 keypair"));
         }
-        auto handle_result = SecureMemoryHandle::Allocate(Constants::ED_25519_SECRET_KEY_SIZE);
+        auto handle_result = SecureMemoryHandle::Allocate(kEd25519SecretKeyBytes);
         if (handle_result.IsErr()) {
             SodiumInterop::SecureWipe(std::span(secret_key));
             return Result<Ed25519KeyPair, ProtocolFailure>::Err(
@@ -178,7 +187,7 @@ namespace ecliptix::protocol::identity {
     Result<std::vector<uint8_t>, ProtocolFailure> IdentityKeys::SignSignedPreKey(
         const SecureMemoryHandle &ed_secret_key_handle,
         const std::span<const uint8_t> spk_public) {
-        auto read_result = ed_secret_key_handle.ReadBytes(Constants::ED_25519_SECRET_KEY_SIZE);
+        auto read_result = ed_secret_key_handle.ReadBytes(kEd25519SecretKeyBytes);
         if (read_result.IsErr()) {
             return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                 ProtocolFailure::Generic(read_result.UnwrapErr().message));
@@ -197,7 +206,7 @@ namespace ecliptix::protocol::identity {
             return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                 ProtocolFailure::Generic("Failed to sign signed pre-key public key"));
         }
-        if (sig_len != Constants::ED_25519_SIGNATURE_SIZE) {
+        if (sig_len != kEd25519SignatureBytes) {
             return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                 ProtocolFailure::Generic("Generated signature has incorrect size"));
         }
@@ -206,7 +215,7 @@ namespace ecliptix::protocol::identity {
 
     Result<std::vector<OneTimePreKey>, ProtocolFailure> IdentityKeys::GenerateOneTimePreKeys(
         const uint32_t count) {
-        if (count == ProtocolConstants::ZERO_VALUE) {
+        if (count == 0) {
             return Result<std::vector<OneTimePreKey>, ProtocolFailure>::Ok(
                 std::vector<OneTimePreKey>{});
         }
@@ -217,7 +226,7 @@ namespace ecliptix::protocol::identity {
         uint32_t id_counter = 2;
         for (uint32_t i = 0; i < count; ++i) {
             uint32_t id = id_counter++;
-            while (used_ids.count(id) > ProtocolConstants::ZERO_VALUE) {
+            while (used_ids.count(id) > 0) {
                 auto random_bytes = SodiumInterop::GetRandomBytes(sizeof(uint32_t));
                 std::memcpy(&id, random_bytes.data(), sizeof(uint32_t));
             }
@@ -293,11 +302,11 @@ namespace ecliptix::protocol::identity {
         // Log all generated identity keys
         {
             auto ed_pub = identity_keys.GetIdentityEd25519PublicKeyCopy();
-            auto ed_priv_result = identity_keys.ed25519_secret_key_handle_.ReadBytes(Constants::ED_25519_SECRET_KEY_SIZE);
+            auto ed_priv_result = identity_keys.ed25519_secret_key_handle_.ReadBytes(kEd25519SecretKeyBytes);
             auto x_pub = identity_keys.GetIdentityX25519PublicKeyCopy();
-            auto x_priv_result = identity_keys.identity_x25519_secret_key_handle_.ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
+            auto x_priv_result = identity_keys.identity_x25519_secret_key_handle_.ReadBytes(kX25519PrivateKeyBytes);
             auto spk_pub = identity_keys.GetSignedPreKeyPublicCopy();
-            auto spk_priv_result = identity_keys.signed_pre_key_secret_key_handle_.ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
+            auto spk_priv_result = identity_keys.signed_pre_key_secret_key_handle_.ReadBytes(kX25519PrivateKeyBytes);
             auto kyber_pub = identity_keys.GetKyberPublicKeyCopy();
             auto kyber_priv_result = identity_keys.kyber_secret_key_handle_.ReadBytes(KyberInterop::KYBER_768_SECRET_KEY_SIZE);
 
@@ -319,7 +328,7 @@ namespace ecliptix::protocol::identity {
                 // Log OPKs
                 for (const auto& opk : identity_keys.one_time_pre_keys_) {
                     auto opk_pub = opk.GetPublicKeyCopy();
-                    auto opk_priv_result = opk.GetPrivateKeyHandle().ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
+                    auto opk_priv_result = opk.GetPrivateKeyHandle().ReadBytes(kX25519PrivateKeyBytes);
                     if (opk_priv_result.IsOk()) {
                         auto opk_priv = opk_priv_result.Unwrap();
                         debug::LogOneTimePreKey(debug::Side::Unknown, opk.GetPreKeyId(), opk_pub, opk_priv);
@@ -352,7 +361,7 @@ namespace ecliptix::protocol::identity {
                 ProtocolFailure::KeyGeneration("Failed to generate Ed25519 keypair from seed"));
         }
         SodiumInterop::SecureWipe(std::span(ed_seed));
-        auto ed_handle_result = SecureMemoryHandle::Allocate(Constants::ED_25519_SECRET_KEY_SIZE);
+        auto ed_handle_result = SecureMemoryHandle::Allocate(kEd25519SecretKeyBytes);
         if (ed_handle_result.IsErr()) {
             SodiumInterop::SecureWipe(std::span(ed_secret));
             return Result<IdentityKeys, ProtocolFailure>::Err(
@@ -376,7 +385,7 @@ namespace ecliptix::protocol::identity {
             return Result<IdentityKeys, ProtocolFailure>::Err(
                 ProtocolFailure::KeyGeneration("Failed to derive X25519 public key"));
         }
-        auto x_handle_result = SecureMemoryHandle::Allocate(Constants::X_25519_PRIVATE_KEY_SIZE);
+        auto x_handle_result = SecureMemoryHandle::Allocate(kX25519PrivateKeyBytes);
         if (x_handle_result.IsErr()) {
             SodiumInterop::SecureWipe(std::span(x_seed));
             return Result<IdentityKeys, ProtocolFailure>::Err(
@@ -393,8 +402,8 @@ namespace ecliptix::protocol::identity {
         auto spk_seed = MasterKeyDerivation::DeriveSignedPreKeySeed(master_key, membership_id);
         uint32_t spk_id;
         std::memcpy(&spk_id, spk_seed.data(), sizeof(uint32_t));
-        std::vector<uint8_t> spk_secret(Constants::X_25519_PRIVATE_KEY_SIZE);
-        std::memcpy(spk_secret.data(), spk_seed.data(), Constants::X_25519_PRIVATE_KEY_SIZE);
+        std::vector<uint8_t> spk_secret(kX25519PrivateKeyBytes);
+        std::memcpy(spk_secret.data(), spk_seed.data(), kX25519PrivateKeyBytes);
         SodiumInterop::SecureWipe(std::span(spk_seed));
         spk_secret[0] &= 248;
         spk_secret[31] &= 127;
@@ -405,7 +414,7 @@ namespace ecliptix::protocol::identity {
             return Result<IdentityKeys, ProtocolFailure>::Err(
                 ProtocolFailure::KeyGeneration("Failed to derive signed pre-key public key"));
         }
-        auto spk_handle_result = SecureMemoryHandle::Allocate(Constants::X_25519_PRIVATE_KEY_SIZE);
+        auto spk_handle_result = SecureMemoryHandle::Allocate(kX25519PrivateKeyBytes);
         if (spk_handle_result.IsErr()) {
             SodiumInterop::SecureWipe(std::span(spk_secret));
             return Result<IdentityKeys, ProtocolFailure>::Err(
@@ -457,11 +466,11 @@ namespace ecliptix::protocol::identity {
         // Log all generated identity keys (from master key)
         {
             auto ed_pub = identity_keys.GetIdentityEd25519PublicKeyCopy();
-            auto ed_priv_result = identity_keys.ed25519_secret_key_handle_.ReadBytes(Constants::ED_25519_SECRET_KEY_SIZE);
+            auto ed_priv_result = identity_keys.ed25519_secret_key_handle_.ReadBytes(kEd25519SecretKeyBytes);
             auto x_pub = identity_keys.GetIdentityX25519PublicKeyCopy();
-            auto x_priv_result = identity_keys.identity_x25519_secret_key_handle_.ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
+            auto x_priv_result = identity_keys.identity_x25519_secret_key_handle_.ReadBytes(kX25519PrivateKeyBytes);
             auto spk_pub = identity_keys.GetSignedPreKeyPublicCopy();
-            auto spk_priv_result = identity_keys.signed_pre_key_secret_key_handle_.ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
+            auto spk_priv_result = identity_keys.signed_pre_key_secret_key_handle_.ReadBytes(kX25519PrivateKeyBytes);
             auto kyber_pub = identity_keys.GetKyberPublicKeyCopy();
             auto kyber_priv_result = identity_keys.kyber_secret_key_handle_.ReadBytes(KyberInterop::KYBER_768_SECRET_KEY_SIZE);
 
@@ -483,7 +492,7 @@ namespace ecliptix::protocol::identity {
                 // Log OPKs
                 for (const auto& opk : identity_keys.one_time_pre_keys_) {
                     auto opk_pub = opk.GetPublicKeyCopy();
-                    auto opk_priv_result = opk.GetPrivateKeyHandle().ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
+                    auto opk_priv_result = opk.GetPrivateKeyHandle().ReadBytes(kX25519PrivateKeyBytes);
                     if (opk_priv_result.IsOk()) {
                         auto opk_priv = opk_priv_result.Unwrap();
                         debug::LogOneTimePreKey(debug::Side::Unknown, opk.GetPreKeyId(), opk_pub, opk_priv);
@@ -539,7 +548,7 @@ namespace ecliptix::protocol::identity {
             ephemeral_x25519_public_key_ = std::move(public_key);
 
 #ifdef ECLIPTIX_DEBUG_KEYS
-            auto priv_result = ephemeral_secret_key_handle_->ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
+            auto priv_result = ephemeral_secret_key_handle_->ReadBytes(kX25519PrivateKeyBytes);
             if (priv_result.IsOk()) {
                 auto priv = priv_result.Unwrap();
                 debug::LogEphemeralKeyGenerated(debug::Side::Unknown, *ephemeral_x25519_public_key_, priv);
@@ -570,9 +579,9 @@ namespace ecliptix::protocol::identity {
         const std::span<const uint8_t> remote_identity_ed25519,
         const std::span<const uint8_t> remote_spk_public,
         const std::span<const uint8_t> remote_spk_signature) {
-        if (remote_identity_ed25519.size() != Constants::ED_25519_PUBLIC_KEY_SIZE ||
-            remote_spk_public.size() != Constants::X_25519_PUBLIC_KEY_SIZE ||
-            remote_spk_signature.size() != Constants::ED_25519_SIGNATURE_SIZE) {
+        if (remote_identity_ed25519.size() != kEd25519PublicKeyBytes ||
+            remote_spk_public.size() != kX25519PublicKeyBytes ||
+            remote_spk_signature.size() != kEd25519SignatureBytes) {
             return Result<bool, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidInput("Invalid key or signature length for SPK verification"));
         }
@@ -599,15 +608,15 @@ namespace ecliptix::protocol::identity {
 
 Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
     const LocalPublicKeyBundle &remote_bundle) {
-        if (remote_bundle.GetEd25519Public().size() != Constants::ED_25519_PUBLIC_KEY_SIZE) {
+        if (remote_bundle.GetEd25519Public().size() != kEd25519PublicKeyBytes) {
             return Result<Unit, ProtocolFailure>::Err(
                 ProtocolFailure::PeerPubKey("Invalid remote Ed25519 identity key"));
         }
-        if (remote_bundle.GetIdentityX25519().size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
+        if (remote_bundle.GetIdentityX25519().size() != kX25519PublicKeyBytes) {
             return Result<Unit, ProtocolFailure>::Err(
                 ProtocolFailure::PeerPubKey("Invalid remote identity X25519 key"));
         }
-        if (remote_bundle.GetSignedPreKeyPublic().size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
+        if (remote_bundle.GetSignedPreKeyPublic().size() != kX25519PublicKeyBytes) {
             return Result<Unit, ProtocolFailure>::Err(
                 ProtocolFailure::PeerPubKey("Invalid remote signed pre-key public key"));
         }
@@ -676,6 +685,11 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
         return FindOneTimePreKeyByIdLocked(opk_id);
     }
 
+    Result<Unit, ProtocolFailure> IdentityKeys::ConsumeOneTimePreKeyById(uint32_t opk_id) {
+        std::unique_lock lock(*lock_);
+        return ConsumeOneTimePreKeyByIdLocked(opk_id);
+    }
+
     Result<size_t, ProtocolFailure> IdentityKeys::PerformX3dhDiffieHellmanAsInitiator(
         const std::span<const uint8_t> ephemeral_secret,
         const std::span<const uint8_t> identity_secret,
@@ -699,7 +713,7 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
             remote_bundle.GetIdentityX25519().size());
 
         size_t offset = 0;
-        std::vector<uint8_t> dh1(Constants::X_25519_KEY_SIZE);
+        std::vector<uint8_t> dh1(kX25519SharedSecretBytes);
         if (crypto_scalarmult(
                 dh1.data(),
                 identity_secret.data(),
@@ -709,10 +723,10 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
         }
         fprintf(stderr, "[X3DH-INITIATOR] DH1 = IK × peer.SPK = %02x%02x%02x%02x%02x%02x%02x%02x\n",
             dh1[0], dh1[1], dh1[2], dh1[3], dh1[4], dh1[5], dh1[6], dh1[7]);
-        std::memcpy(dh_results_output.data() + offset, dh1.data(), Constants::X_25519_KEY_SIZE);
-        offset += Constants::X_25519_KEY_SIZE;
+        std::memcpy(dh_results_output.data() + offset, dh1.data(), kX25519SharedSecretBytes);
+        offset += kX25519SharedSecretBytes;
         SodiumInterop::SecureWipe(std::span(dh1));
-        std::vector<uint8_t> dh2(Constants::X_25519_KEY_SIZE);
+        std::vector<uint8_t> dh2(kX25519SharedSecretBytes);
         if (crypto_scalarmult(
                 dh2.data(),
                 ephemeral_secret.data(),
@@ -722,10 +736,10 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
         }
         fprintf(stderr, "[X3DH-INITIATOR] DH2 = EK × peer.IK = %02x%02x%02x%02x%02x%02x%02x%02x\n",
             dh2[0], dh2[1], dh2[2], dh2[3], dh2[4], dh2[5], dh2[6], dh2[7]);
-        std::memcpy(dh_results_output.data() + offset, dh2.data(), Constants::X_25519_KEY_SIZE);
-        offset += Constants::X_25519_KEY_SIZE;
+        std::memcpy(dh_results_output.data() + offset, dh2.data(), kX25519SharedSecretBytes);
+        offset += kX25519SharedSecretBytes;
         SodiumInterop::SecureWipe(std::span(dh2));
-        std::vector<uint8_t> dh3(Constants::X_25519_KEY_SIZE);
+        std::vector<uint8_t> dh3(kX25519SharedSecretBytes);
         if (crypto_scalarmult(
                 dh3.data(),
                 ephemeral_secret.data(),
@@ -735,8 +749,8 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
         }
         fprintf(stderr, "[X3DH-INITIATOR] DH3 = EK × peer.SPK = %02x%02x%02x%02x%02x%02x%02x%02x\n",
             dh3[0], dh3[1], dh3[2], dh3[3], dh3[4], dh3[5], dh3[6], dh3[7]);
-        std::memcpy(dh_results_output.data() + offset, dh3.data(), Constants::X_25519_KEY_SIZE);
-        offset += Constants::X_25519_KEY_SIZE;
+        std::memcpy(dh_results_output.data() + offset, dh3.data(), kX25519SharedSecretBytes);
+        offset += kX25519SharedSecretBytes;
         SodiumInterop::SecureWipe(std::span(dh3));
         
         if (opk_id.has_value() && remote_bundle.HasOneTimePreKeys()) {
@@ -748,12 +762,12 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
                     break;
                 }
             }
-            if (target_opk && target_opk->GetPublicKeySpan().size() == Constants::X_25519_PUBLIC_KEY_SIZE) {
+            if (target_opk && target_opk->GetPublicKeySpan().size() == kX25519PublicKeyBytes) {
                 fprintf(stderr, "[X3DH-INITIATOR] Using OPK ID %u, prefix: %02x%02x%02x%02x\n",
                     opk_id.value(),
                     target_opk->GetPublicKeySpan()[0], target_opk->GetPublicKeySpan()[1],
                     target_opk->GetPublicKeySpan()[2], target_opk->GetPublicKeySpan()[3]);
-                std::vector<uint8_t> dh4(Constants::X_25519_KEY_SIZE);
+                std::vector<uint8_t> dh4(kX25519SharedSecretBytes);
                 if (crypto_scalarmult(
                         dh4.data(),
                         ephemeral_secret.data(),
@@ -763,8 +777,8 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
                 }
                 fprintf(stderr, "[X3DH-INITIATOR] DH4 = EK × peer.OPK[%u] = %02x%02x%02x%02x%02x%02x%02x%02x\n",
                     opk_id.value(), dh4[0], dh4[1], dh4[2], dh4[3], dh4[4], dh4[5], dh4[6], dh4[7]);
-                std::memcpy(dh_results_output.data() + offset, dh4.data(), Constants::X_25519_KEY_SIZE);
-                offset += Constants::X_25519_KEY_SIZE;
+                std::memcpy(dh_results_output.data() + offset, dh4.data(), kX25519SharedSecretBytes);
+                offset += kX25519SharedSecretBytes;
                 SodiumInterop::SecureWipe(std::span(dh4));
             } else {
                 fprintf(stderr, "[X3DH-INITIATOR] ERROR: OPK ID %u not found in peer bundle!\n", opk_id.value());
@@ -810,7 +824,7 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
 
         
         auto spk_read_result = signed_pre_key_secret_key_handle_.ReadBytes(
-            Constants::X_25519_PRIVATE_KEY_SIZE);
+            kX25519PrivateKeyBytes);
         if (spk_read_result.IsErr()) {
             return Result<size_t, ProtocolFailure>::Err(
                 ProtocolFailure::Generic(spk_read_result.UnwrapErr().message));
@@ -819,7 +833,7 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
 
         
         auto id_read_result = identity_x25519_secret_key_handle_.ReadBytes(
-            Constants::X_25519_PRIVATE_KEY_SIZE);
+            kX25519PrivateKeyBytes);
         if (id_read_result.IsErr()) {
             SodiumInterop::SecureWipe(std::span(spk_secret));
             return Result<size_t, ProtocolFailure>::Err(
@@ -830,7 +844,7 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
         size_t offset = 0;
 
         
-        std::vector<uint8_t> dh1(Constants::X_25519_KEY_SIZE);
+        std::vector<uint8_t> dh1(kX25519SharedSecretBytes);
         if (crypto_scalarmult(dh1.data(), spk_secret.data(), peer_identity.data()) != 0) {
             SodiumInterop::SecureWipe(std::span(spk_secret));
             SodiumInterop::SecureWipe(std::span(identity_secret));
@@ -839,12 +853,12 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
         }
         fprintf(stderr, "[X3DH-RESPONDER] DH1 = SPK × peer.IK = %02x%02x%02x%02x%02x%02x%02x%02x\n",
             dh1[0], dh1[1], dh1[2], dh1[3], dh1[4], dh1[5], dh1[6], dh1[7]);
-        std::memcpy(dh_results_output.data() + offset, dh1.data(), Constants::X_25519_KEY_SIZE);
-        offset += Constants::X_25519_KEY_SIZE;
+        std::memcpy(dh_results_output.data() + offset, dh1.data(), kX25519SharedSecretBytes);
+        offset += kX25519SharedSecretBytes;
         SodiumInterop::SecureWipe(std::span(dh1));
 
         
-        std::vector<uint8_t> dh2(Constants::X_25519_KEY_SIZE);
+        std::vector<uint8_t> dh2(kX25519SharedSecretBytes);
         if (crypto_scalarmult(dh2.data(), identity_secret.data(), peer_ephemeral.data()) != 0) {
             SodiumInterop::SecureWipe(std::span(spk_secret));
             SodiumInterop::SecureWipe(std::span(identity_secret));
@@ -853,12 +867,12 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
         }
         fprintf(stderr, "[X3DH-RESPONDER] DH2 = IK × peer.EK = %02x%02x%02x%02x%02x%02x%02x%02x\n",
             dh2[0], dh2[1], dh2[2], dh2[3], dh2[4], dh2[5], dh2[6], dh2[7]);
-        std::memcpy(dh_results_output.data() + offset, dh2.data(), Constants::X_25519_KEY_SIZE);
-        offset += Constants::X_25519_KEY_SIZE;
+        std::memcpy(dh_results_output.data() + offset, dh2.data(), kX25519SharedSecretBytes);
+        offset += kX25519SharedSecretBytes;
         SodiumInterop::SecureWipe(std::span(dh2));
 
         
-        std::vector<uint8_t> dh3(Constants::X_25519_KEY_SIZE);
+        std::vector<uint8_t> dh3(kX25519SharedSecretBytes);
         if (crypto_scalarmult(dh3.data(), spk_secret.data(), peer_ephemeral.data()) != 0) {
             SodiumInterop::SecureWipe(std::span(spk_secret));
             SodiumInterop::SecureWipe(std::span(identity_secret));
@@ -867,8 +881,8 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
         }
         fprintf(stderr, "[X3DH-RESPONDER] DH3 = SPK × peer.EK = %02x%02x%02x%02x%02x%02x%02x%02x\n",
             dh3[0], dh3[1], dh3[2], dh3[3], dh3[4], dh3[5], dh3[6], dh3[7]);
-        std::memcpy(dh_results_output.data() + offset, dh3.data(), Constants::X_25519_KEY_SIZE);
-        offset += Constants::X_25519_KEY_SIZE;
+        std::memcpy(dh_results_output.data() + offset, dh3.data(), kX25519SharedSecretBytes);
+        offset += kX25519SharedSecretBytes;
         SodiumInterop::SecureWipe(std::span(dh3));
 
         
@@ -885,7 +899,7 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
                     ProtocolFailure::InvalidInput("OPK with requested ID not found"));
             }
             auto opk_read_result = opk->GetPrivateKeyHandle().ReadBytes(
-                Constants::X_25519_PRIVATE_KEY_SIZE);
+                kX25519PrivateKeyBytes);
             if (opk_read_result.IsErr()) {
                 SodiumInterop::SecureWipe(std::span(spk_secret));
                 SodiumInterop::SecureWipe(std::span(identity_secret));
@@ -893,7 +907,7 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
                     ProtocolFailure::Generic("Failed to read OPK private key"));
             }
             auto opk_secret = std::move(opk_read_result).Unwrap();
-            std::vector<uint8_t> dh4(Constants::X_25519_KEY_SIZE);
+            std::vector<uint8_t> dh4(kX25519SharedSecretBytes);
             if (crypto_scalarmult(dh4.data(), opk_secret.data(), peer_ephemeral.data()) != 0) {
                 SodiumInterop::SecureWipe(std::span(dh4));
                 SodiumInterop::SecureWipe(std::span(opk_secret));
@@ -904,8 +918,8 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
             }
             fprintf(stderr, "[X3DH-RESPONDER] DH4 = OPK[ID=%u] × peer.EK = %02x%02x%02x%02x%02x%02x%02x%02x\n",
                 used_opk_id.value(), dh4[0], dh4[1], dh4[2], dh4[3], dh4[4], dh4[5], dh4[6], dh4[7]);
-            std::memcpy(dh_results_output.data() + offset, dh4.data(), Constants::X_25519_KEY_SIZE);
-            offset += Constants::X_25519_KEY_SIZE;
+            std::memcpy(dh_results_output.data() + offset, dh4.data(), kX25519SharedSecretBytes);
+            offset += kX25519SharedSecretBytes;
             SodiumInterop::SecureWipe(std::span(dh4));
             SodiumInterop::SecureWipe(std::span(opk_secret));
         } else {
@@ -934,21 +948,21 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
                 ProtocolFailure::InvalidInput("Remote Kyber public key required for hybrid X3DH"));
         }
 
-        std::vector<uint8_t> dh_results(Constants::X_25519_KEY_SIZE * 4);
+        std::vector<uint8_t> dh_results(kX25519SharedSecretBytes * 4);
         size_t dh_offset = 0;
         std::optional<uint32_t> used_opk_id;
 
         if (is_initiator) {
             
             auto eph_read_result = ephemeral_secret_key_handle_.value().ReadBytes(
-                Constants::X_25519_PRIVATE_KEY_SIZE);
+                kX25519PrivateKeyBytes);
             if (eph_read_result.IsErr()) {
                 return Result<SecureMemoryHandle, ProtocolFailure>::Err(
                     ProtocolFailure::Generic(eph_read_result.UnwrapErr().message));
             }
             auto ephemeral_secret = std::move(eph_read_result).Unwrap();
             auto id_read_result = identity_x25519_secret_key_handle_.ReadBytes(
-                Constants::X_25519_PRIVATE_KEY_SIZE);
+                kX25519PrivateKeyBytes);
             if (id_read_result.IsErr()) {
                 SodiumInterop::SecureWipe(std::span(ephemeral_secret));
                 return Result<SecureMemoryHandle, ProtocolFailure>::Err(
@@ -1014,11 +1028,11 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
             }
             dh_offset = std::move(dh_result).Unwrap();
         }
-        std::vector<uint8_t> ikm(Constants::X_25519_KEY_SIZE + dh_offset);
-        std::fill_n(ikm.begin(), Constants::X_25519_KEY_SIZE, CryptoHashConstants::FILL_BYTE);
-        std::memcpy(ikm.data() + Constants::X_25519_KEY_SIZE, dh_results.data(), dh_offset);
+        std::vector<uint8_t> ikm(kX25519SharedSecretBytes + dh_offset);
+        std::fill_n(ikm.begin(), kX25519SharedSecretBytes, CryptoHashConstants::FILL_BYTE);
+        std::memcpy(ikm.data() + kX25519SharedSecretBytes, dh_results.data(), dh_offset);
         SodiumInterop::SecureWipe(std::span(dh_results));
-        std::vector<uint8_t> classical_shared(Constants::X_25519_KEY_SIZE);
+        std::vector<uint8_t> classical_shared(kX25519SharedSecretBytes);
         auto hkdf_result = Hkdf::DeriveKey(ikm, classical_shared, {}, info);
 
         SodiumInterop::SecureWipe(std::span(ikm));
@@ -1080,7 +1094,7 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
         auto hybrid_result = KyberInterop::CombineHybridSecrets(
             classical_shared,
             kyber_ss_bytes,
-            std::string(ProtocolConstants::X3DH_INFO));
+            std::string(kX3dhInfo));
         auto _wipe_classical = SodiumInterop::SecureWipe(std::span(classical_shared));
         (void) _wipe_classical;
         if (hybrid_result.IsErr()) {

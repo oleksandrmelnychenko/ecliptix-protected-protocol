@@ -29,10 +29,10 @@ TEST_CASE("Metadata key agreement - correct DH key selection", "[metadata][x3dh]
 
     auto client_ek = client_identity.GetEphemeralX25519PublicKeyCopy();
     REQUIRE(client_ek.has_value());
-    REQUIRE(client_ek->size() == Constants::X_25519_PUBLIC_KEY_SIZE);
+    REQUIRE(client_ek->size() == kX25519PublicKeyBytes);
 
     auto server_spk = server_identity.GetSignedPreKeyPublicCopy();
-    REQUIRE(server_spk.size() == Constants::X_25519_PUBLIC_KEY_SIZE);
+    REQUIRE(server_spk.size() == kX25519PublicKeyBytes);
 
     auto client_ek_priv_result = client_identity.GetEphemeralX25519PrivateKeyCopy();
     REQUIRE(client_ek_priv_result.IsOk());
@@ -228,14 +228,14 @@ TEST_CASE("Metadata key canonical ordering", "[metadata][ordering]") {
     auto kp_a_result = SodiumInterop::GenerateX25519KeyPair("metadata-a");
     REQUIRE(kp_a_result.IsOk());
     auto [key_a_handle, key_a_public] = std::move(kp_a_result).Unwrap();
-    auto key_a_private_result = key_a_handle.ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
+    auto key_a_private_result = key_a_handle.ReadBytes(kX25519PrivateKeyBytes);
     REQUIRE(key_a_private_result.IsOk());
     auto key_a_private = key_a_private_result.Unwrap();
 
     auto kp_b_result = SodiumInterop::GenerateX25519KeyPair("metadata-b");
     REQUIRE(kp_b_result.IsOk());
     auto [key_b_handle, key_b_public] = std::move(kp_b_result).Unwrap();
-    auto key_b_private_result = key_b_handle.ReadBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
+    auto key_b_private_result = key_b_handle.ReadBytes(kX25519PrivateKeyBytes);
     REQUIRE(key_b_private_result.IsOk());
     auto key_b_private = key_b_private_result.Unwrap();
 

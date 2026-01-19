@@ -8,16 +8,21 @@
 
 #include "ecliptix/c_api/epp_api.h"
 #include "epp_internal.hpp"
-#include "ecliptix/protocol/protocol_system.hpp"
-#include "ecliptix/protocol/connection/protocol_connection.hpp"
 #include "ecliptix/identity/identity_keys.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/crypto/kyber_interop.hpp"
+#include "ecliptix/crypto/hkdf.hpp"
 #include "ecliptix/crypto/shamir_secret_sharing.hpp"
+#include "ecliptix/protocol/handshake.hpp"
+#include "ecliptix/protocol/session.hpp"
+#include "ecliptix/protocol/constants.hpp"
+#include "ecliptix/security/validation/dh_validator.hpp"
 #include "ecliptix/core/result.hpp"
 #include "ecliptix/core/constants.hpp"
-#include "common/secure_envelope.pb.h"
-#include "protocol/key_exchange.pb.h"
+#include "protocol/handshake.pb.h"
+#include "protocol/envelope.pb.h"
+#include "protocol/state.pb.h"
+#include <algorithm>
 #include <atomic>
 #include <cstring>
 #include <limits>
@@ -25,14 +30,11 @@
 #include <mutex>
 #include <span>
 #include <string>
+#include <string_view>
 
 using namespace ecliptix::protocol;
-using namespace ecliptix::protocol::connection;
 using namespace ecliptix::protocol::identity;
 using namespace ecliptix::protocol::crypto;
-using namespace ecliptix::protocol::models;
-using ecliptix::proto::common::SecureEnvelope;
-using ecliptix::proto::protocol::PublicKeyBundle;
 using crypto::KyberInterop;
 
 // ============================================================================
@@ -91,6 +93,9 @@ EppErrorCode fill_error_from_failure(EppError* out_error, const ProtocolFailure&
         case ProtocolFailureType::ObjectDisposed:
             code = EPP_ERROR_OBJECT_DISPOSED;
             break;
+        case ProtocolFailureType::ReplayAttack:
+            code = EPP_ERROR_REPLAY_ATTACK;
+            break;
         case ProtocolFailureType::InvalidInput:
             code = EPP_ERROR_INVALID_INPUT;
             break;
@@ -133,6 +138,19 @@ bool validate_output_handle(const void* handle, EppError* out_error) {
     return true;
 }
 
+bool validate_session_config(const EppSessionConfig* config, EppError* out_error) {
+    if (!config) {
+        fill_error(out_error, EPP_ERROR_NULL_POINTER, "Session config is null");
+        return false;
+    }
+    if (config->max_messages_per_ratchet == 0 ||
+        config->max_messages_per_ratchet > kMaxChainLength) {
+        fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Invalid max messages per ratchet");
+        return false;
+    }
+    return true;
+}
+
 bool copy_to_buffer(const std::span<const uint8_t> input, EppBuffer* out_buffer, EppError* out_error) {
     if (!out_buffer) {
         fill_error(out_error, EPP_ERROR_NULL_POINTER, "Output buffer is null");
@@ -148,87 +166,6 @@ bool copy_to_buffer(const std::span<const uint8_t> input, EppBuffer* out_buffer,
     out_buffer->data = data;
     out_buffer->length = input.size();
     return true;
-}
-
-Result<LocalPublicKeyBundle, ProtocolFailure> build_local_bundle(const PublicKeyBundle& proto_bundle) {
-    if (proto_bundle.identity_public_key().empty() || proto_bundle.identity_x25519_public_key().empty()) {
-        return Result<LocalPublicKeyBundle, ProtocolFailure>::Err(
-            ProtocolFailure::InvalidInput("Peer bundle missing identity keys"));
-    }
-    if (proto_bundle.signed_pre_key_public_key().empty() || proto_bundle.signed_pre_key_signature().empty()) {
-        return Result<LocalPublicKeyBundle, ProtocolFailure>::Err(
-            ProtocolFailure::InvalidInput("Peer bundle missing signed pre-key material"));
-    }
-
-    std::vector<OneTimePreKeyPublic> otps;
-    otps.reserve(proto_bundle.one_time_pre_keys_size());
-    for (const auto& otp : proto_bundle.one_time_pre_keys()) {
-        if (otp.public_key().empty()) {
-            return Result<LocalPublicKeyBundle, ProtocolFailure>::Err(
-                ProtocolFailure::InvalidInput("Peer bundle contains empty one-time pre-key"));
-        }
-        otps.emplace_back(
-            otp.pre_key_id(),
-            std::vector<uint8_t>(otp.public_key().begin(), otp.public_key().end()));
-    }
-
-    std::optional<std::vector<uint8_t>> ephemeral = std::nullopt;
-    if (!proto_bundle.ephemeral_x25519_public_key().empty()) {
-        ephemeral = std::vector<uint8_t>(
-            proto_bundle.ephemeral_x25519_public_key().begin(),
-            proto_bundle.ephemeral_x25519_public_key().end());
-    }
-
-    std::optional<std::vector<uint8_t>> kyber = std::nullopt;
-    if (!proto_bundle.kyber_public_key().empty()) {
-        kyber = std::vector<uint8_t>(
-            proto_bundle.kyber_public_key().begin(),
-            proto_bundle.kyber_public_key().end());
-    }
-
-    std::optional<std::vector<uint8_t>> kyber_ciphertext = std::nullopt;
-    if (!proto_bundle.kyber_ciphertext().empty()) {
-        kyber_ciphertext = std::vector<uint8_t>(
-            proto_bundle.kyber_ciphertext().begin(),
-            proto_bundle.kyber_ciphertext().end());
-    }
-
-    std::optional<uint32_t> used_opk_id = std::nullopt;
-    if (proto_bundle.has_used_one_time_pre_key_id()) {
-        used_opk_id = proto_bundle.used_one_time_pre_key_id();
-    }
-
-    return Result<LocalPublicKeyBundle, ProtocolFailure>::Ok(
-        LocalPublicKeyBundle(
-            std::vector<uint8_t>(proto_bundle.identity_public_key().begin(),
-                                 proto_bundle.identity_public_key().end()),
-            std::vector<uint8_t>(proto_bundle.identity_x25519_public_key().begin(),
-                                 proto_bundle.identity_x25519_public_key().end()),
-            proto_bundle.signed_pre_key_id(),
-            std::vector<uint8_t>(proto_bundle.signed_pre_key_public_key().begin(),
-                                 proto_bundle.signed_pre_key_public_key().end()),
-            std::vector<uint8_t>(proto_bundle.signed_pre_key_signature().begin(),
-                                 proto_bundle.signed_pre_key_signature().end()),
-            std::move(otps),
-            std::move(ephemeral),
-            std::move(kyber),
-            std::move(kyber_ciphertext),
-            used_opk_id));
-}
-
-CApiEventHandler::CApiEventHandler(const EppEventCallback callback, void* user_data)
-    : callback_(callback), user_data_(user_data) {
-}
-
-void CApiEventHandler::OnProtocolStateChanged(const uint32_t connection_id) {
-    if (callback_) {
-        callback_(connection_id, user_data_);
-    }
-}
-
-void CApiEventHandler::OnRatchetRequired(const uint32_t connection_id, const std::string& reason) {
-    (void)connection_id;
-    (void)reason;
 }
 
 } // namespace epp::internal
@@ -408,9 +345,9 @@ EppErrorCode epp_identity_get_x25519_public(
         return out_error->code;
     }
 
-    if (out_key_length != Constants::X_25519_PUBLIC_KEY_SIZE) {
+    if (out_key_length != kX25519PublicKeyBytes) {
         fill_error(out_error, EPP_ERROR_BUFFER_TOO_SMALL,
-                   "Output buffer must be " + std::to_string(Constants::X_25519_PUBLIC_KEY_SIZE) + " bytes");
+                   "Output buffer must be " + std::to_string(kX25519PublicKeyBytes) + " bytes");
         return EPP_ERROR_BUFFER_TOO_SMALL;
     }
 
@@ -434,9 +371,9 @@ EppErrorCode epp_identity_get_ed25519_public(
         return out_error->code;
     }
 
-    if (out_key_length != Constants::ED_25519_PUBLIC_KEY_SIZE) {
+    if (out_key_length != kEd25519PublicKeyBytes) {
         fill_error(out_error, EPP_ERROR_BUFFER_TOO_SMALL,
-                   "Output buffer must be " + std::to_string(Constants::ED_25519_PUBLIC_KEY_SIZE) + " bytes");
+                   "Output buffer must be " + std::to_string(kEd25519PublicKeyBytes) + " bytes");
         return EPP_ERROR_BUFFER_TOO_SMALL;
     }
 
@@ -477,28 +414,502 @@ void epp_identity_destroy(EppIdentityHandle* handle) {
 }
 
 // ----------------------------------------------------------------------------
-// Session Utilities
+// Protocol Handshake + Session
 // ----------------------------------------------------------------------------
 
-EppErrorCode epp_session_age_seconds(
-    const ProtocolSystemHandle* handle,
-    uint64_t* out_age_seconds,
+EppErrorCode epp_prekey_bundle_create(
+    const EppIdentityHandle* identity_keys,
+    EppBuffer* out_bundle,
     EppError* out_error) {
-    if (!handle || !handle->system) {
-        fill_error(out_error, EPP_ERROR_INVALID_STATE, "Protocol system handle is null or uninitialized");
-        return EPP_ERROR_INVALID_STATE;
+    if (const auto err = EnsureInitialized(); err != EPP_SUCCESS) {
+        fill_error(out_error, err, "Failed to initialize libsodium");
+        return err;
     }
-    if (!out_age_seconds) {
-        fill_error(out_error, EPP_ERROR_NULL_POINTER, "out_age_seconds is null");
+    if (!identity_keys || !identity_keys->identity_keys) {
+        fill_error(out_error, EPP_ERROR_NULL_POINTER, "Identity keys handle is null");
         return EPP_ERROR_NULL_POINTER;
     }
-    if (!handle->system->HasConnection()) {
-        fill_error(out_error, EPP_ERROR_INVALID_STATE, "Protocol connection not established");
-        return EPP_ERROR_INVALID_STATE;
+    if (!validate_output_handle(out_bundle, out_error)) {
+        return EPP_ERROR_NULL_POINTER;
     }
 
-    *out_age_seconds = handle->system->GetSessionAgeSeconds();
+    auto bundle_result = identity_keys->identity_keys->CreatePublicBundle();
+    if (bundle_result.IsErr()) {
+        return fill_error_from_failure(out_error, std::move(bundle_result).UnwrapErr());
+    }
+    const auto& bundle = bundle_result.Unwrap();
+
+    if (bundle.GetEd25519Public().size() != kEd25519PublicKeyBytes ||
+        bundle.GetIdentityX25519().size() != kX25519PublicKeyBytes ||
+        bundle.GetSignedPreKeyPublic().size() != kX25519PublicKeyBytes ||
+        bundle.GetSignedPreKeySignature().size() != kEd25519SignatureBytes) {
+        fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Invalid local identity key sizes for bundle");
+        return EPP_ERROR_INVALID_INPUT;
+    }
+
+    if (!bundle.HasKyberKey()) {
+        fill_error(out_error, EPP_ERROR_PQ_MISSING, "Kyber public key required for bundle");
+        return EPP_ERROR_PQ_MISSING;
+    }
+    const auto& kyber_public = bundle.GetKyberPublicKey();
+    if (!kyber_public.has_value() || kyber_public->size() != kKyberPublicKeyBytes) {
+        fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Invalid Kyber public key size for bundle");
+        return EPP_ERROR_INVALID_INPUT;
+    }
+
+    ecliptix::proto::protocol::PreKeyBundle proto_bundle;
+    proto_bundle.set_version(kProtocolVersion);
+    proto_bundle.set_identity_ed25519(
+        bundle.GetEd25519Public().data(),
+        bundle.GetEd25519Public().size());
+    proto_bundle.set_identity_x25519(
+        bundle.GetIdentityX25519().data(),
+        bundle.GetIdentityX25519().size());
+    proto_bundle.set_signed_pre_key_id(bundle.GetSignedPreKeyId());
+    proto_bundle.set_signed_pre_key_public(
+        bundle.GetSignedPreKeyPublic().data(),
+        bundle.GetSignedPreKeyPublic().size());
+    proto_bundle.set_signed_pre_key_signature(
+        bundle.GetSignedPreKeySignature().data(),
+        bundle.GetSignedPreKeySignature().size());
+    for (const auto& opk : bundle.GetOneTimePreKeys()) {
+        auto* opk_proto = proto_bundle.add_one_time_pre_keys();
+        opk_proto->set_pre_key_id(opk.GetPreKeyId());
+        const auto& opk_pub = opk.GetPublicKey();
+        opk_proto->set_public_key(opk_pub.data(), opk_pub.size());
+    }
+    proto_bundle.set_kyber_public_key(kyber_public->data(), kyber_public->size());
+
+    std::string serialized;
+    if (!proto_bundle.SerializeToString(&serialized)) {
+        fill_error(out_error, EPP_ERROR_ENCODE, "Failed to serialize PreKeyBundle");
+        return EPP_ERROR_ENCODE;
+    }
+
+    if (!copy_to_buffer(
+        std::span(reinterpret_cast<const uint8_t*>(serialized.data()), serialized.size()),
+        out_bundle,
+        out_error)) {
+        return out_error ? out_error->code : EPP_ERROR_OUT_OF_MEMORY;
+    }
+
     return EPP_SUCCESS;
+}
+
+EppErrorCode epp_handshake_initiator_start(
+    EppIdentityHandle* identity_keys,
+    const uint8_t* peer_prekey_bundle,
+    size_t peer_prekey_bundle_length,
+    const EppSessionConfig* config,
+    EppHandshakeInitiatorHandle** out_handle,
+    EppBuffer* out_handshake_init,
+    EppError* out_error) {
+    if (const auto err = EnsureInitialized(); err != EPP_SUCCESS) {
+        fill_error(out_error, err, "Failed to initialize libsodium");
+        return err;
+    }
+    if (!identity_keys || !identity_keys->identity_keys) {
+        fill_error(out_error, EPP_ERROR_NULL_POINTER, "Identity keys handle is null");
+        return EPP_ERROR_NULL_POINTER;
+    }
+    if (!validate_buffer_param(peer_prekey_bundle, peer_prekey_bundle_length, out_error) ||
+        !validate_output_handle(out_handle, out_error) ||
+        !validate_output_handle(out_handshake_init, out_error)) {
+        return out_error ? out_error->code : EPP_ERROR_NULL_POINTER;
+    }
+    if (!validate_session_config(config, out_error)) {
+        return out_error ? out_error->code : EPP_ERROR_INVALID_INPUT;
+    }
+
+    ecliptix::proto::protocol::PreKeyBundle peer_bundle;
+    if (!peer_bundle.ParseFromArray(peer_prekey_bundle, static_cast<int>(peer_prekey_bundle_length))) {
+        fill_error(out_error, EPP_ERROR_DECODE, "Failed to parse peer PreKeyBundle");
+        return EPP_ERROR_DECODE;
+    }
+    if (peer_bundle.kyber_public_key().empty()) {
+        fill_error(out_error, EPP_ERROR_PQ_MISSING, "Peer bundle missing Kyber public key");
+        return EPP_ERROR_PQ_MISSING;
+    }
+    if (peer_bundle.kyber_public_key().size() != kKyberPublicKeyBytes) {
+        fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Invalid peer Kyber public key size");
+        return EPP_ERROR_INVALID_INPUT;
+    }
+
+    auto handshake_result = ecliptix::protocol::HandshakeInitiator::Start(
+        *identity_keys->identity_keys,
+        peer_bundle,
+        config->max_messages_per_ratchet);
+    if (handshake_result.IsErr()) {
+        return fill_error_from_failure(out_error, handshake_result.UnwrapErr());
+    }
+
+    auto* handle = new(std::nothrow) EppHandshakeInitiatorHandle{};
+    if (!handle) {
+        fill_error(out_error, EPP_ERROR_OUT_OF_MEMORY, "Failed to allocate handshake handle");
+        return EPP_ERROR_OUT_OF_MEMORY;
+    }
+    handle->handshake = std::move(handshake_result).Unwrap();
+
+    const auto& init_bytes = handle->handshake->EncodedMessage();
+    if (!copy_to_buffer(std::span(init_bytes.data(), init_bytes.size()), out_handshake_init, out_error)) {
+        delete handle;
+        return out_error ? out_error->code : EPP_ERROR_OUT_OF_MEMORY;
+    }
+
+    *out_handle = handle;
+    return EPP_SUCCESS;
+}
+
+EppErrorCode epp_handshake_initiator_finish(
+    EppHandshakeInitiatorHandle* handle,
+    const uint8_t* handshake_ack,
+    size_t handshake_ack_length,
+    EppSessionHandle** out_session,
+    EppError* out_error) {
+    if (const auto err = EnsureInitialized(); err != EPP_SUCCESS) {
+        fill_error(out_error, err, "Failed to initialize libsodium");
+        return err;
+    }
+    if (!handle || !handle->handshake) {
+        fill_error(out_error, EPP_ERROR_INVALID_STATE, "Handshake initiator handle is null or consumed");
+        return EPP_ERROR_INVALID_STATE;
+    }
+    if (!validate_buffer_param(handshake_ack, handshake_ack_length, out_error) ||
+        !validate_output_handle(out_session, out_error)) {
+        return out_error ? out_error->code : EPP_ERROR_NULL_POINTER;
+    }
+
+    ecliptix::proto::protocol::HandshakeAck ack;
+    if (!ack.ParseFromArray(handshake_ack, static_cast<int>(handshake_ack_length))) {
+        fill_error(out_error, EPP_ERROR_DECODE, "Failed to parse HandshakeAck");
+        return EPP_ERROR_DECODE;
+    }
+
+    auto session_result = handle->handshake->Finish(ack);
+    if (session_result.IsErr()) {
+        return fill_error_from_failure(out_error, session_result.UnwrapErr());
+    }
+
+    auto* session_handle = new(std::nothrow) EppSessionHandle{};
+    if (!session_handle) {
+        fill_error(out_error, EPP_ERROR_OUT_OF_MEMORY, "Failed to allocate session handle");
+        return EPP_ERROR_OUT_OF_MEMORY;
+    }
+    session_handle->session = std::move(session_result).Unwrap();
+    handle->handshake.reset();
+
+    *out_session = session_handle;
+    return EPP_SUCCESS;
+}
+
+void epp_handshake_initiator_destroy(EppHandshakeInitiatorHandle* handle) {
+    delete handle;
+}
+
+EppErrorCode epp_handshake_responder_start(
+    EppIdentityHandle* identity_keys,
+    const uint8_t* local_prekey_bundle,
+    size_t local_prekey_bundle_length,
+    const uint8_t* handshake_init,
+    size_t handshake_init_length,
+    const EppSessionConfig* config,
+    EppHandshakeResponderHandle** out_handle,
+    EppBuffer* out_handshake_ack,
+    EppError* out_error) {
+    if (const auto err = EnsureInitialized(); err != EPP_SUCCESS) {
+        fill_error(out_error, err, "Failed to initialize libsodium");
+        return err;
+    }
+    if (!identity_keys || !identity_keys->identity_keys) {
+        fill_error(out_error, EPP_ERROR_NULL_POINTER, "Identity keys handle is null");
+        return EPP_ERROR_NULL_POINTER;
+    }
+    if (!validate_buffer_param(local_prekey_bundle, local_prekey_bundle_length, out_error) ||
+        !validate_buffer_param(handshake_init, handshake_init_length, out_error) ||
+        !validate_output_handle(out_handle, out_error) ||
+        !validate_output_handle(out_handshake_ack, out_error)) {
+        return out_error ? out_error->code : EPP_ERROR_NULL_POINTER;
+    }
+    if (!validate_session_config(config, out_error)) {
+        return out_error ? out_error->code : EPP_ERROR_INVALID_INPUT;
+    }
+
+    ecliptix::proto::protocol::PreKeyBundle local_bundle;
+    if (!local_bundle.ParseFromArray(local_prekey_bundle, static_cast<int>(local_prekey_bundle_length))) {
+        fill_error(out_error, EPP_ERROR_DECODE, "Failed to parse local PreKeyBundle");
+        return EPP_ERROR_DECODE;
+    }
+    if (local_bundle.kyber_public_key().empty()) {
+        fill_error(out_error, EPP_ERROR_PQ_MISSING, "Local bundle missing Kyber public key");
+        return EPP_ERROR_PQ_MISSING;
+    }
+    if (local_bundle.kyber_public_key().size() != kKyberPublicKeyBytes) {
+        fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Invalid local Kyber public key size");
+        return EPP_ERROR_INVALID_INPUT;
+    }
+
+    auto handshake_result = ecliptix::protocol::HandshakeResponder::Process(
+        *identity_keys->identity_keys,
+        local_bundle,
+        std::span(handshake_init, handshake_init_length),
+        config->max_messages_per_ratchet);
+    if (handshake_result.IsErr()) {
+        return fill_error_from_failure(out_error, handshake_result.UnwrapErr());
+    }
+
+    auto* handle = new(std::nothrow) EppHandshakeResponderHandle{};
+    if (!handle) {
+        fill_error(out_error, EPP_ERROR_OUT_OF_MEMORY, "Failed to allocate handshake handle");
+        return EPP_ERROR_OUT_OF_MEMORY;
+    }
+    handle->handshake = std::move(handshake_result).Unwrap();
+
+    const auto& ack_bytes = handle->handshake->EncodedAck();
+    if (!copy_to_buffer(std::span(ack_bytes.data(), ack_bytes.size()), out_handshake_ack, out_error)) {
+        delete handle;
+        return out_error ? out_error->code : EPP_ERROR_OUT_OF_MEMORY;
+    }
+
+    *out_handle = handle;
+    return EPP_SUCCESS;
+}
+
+EppErrorCode epp_handshake_responder_finish(
+    EppHandshakeResponderHandle* handle,
+    EppSessionHandle** out_session,
+    EppError* out_error) {
+    if (const auto err = EnsureInitialized(); err != EPP_SUCCESS) {
+        fill_error(out_error, err, "Failed to initialize libsodium");
+        return err;
+    }
+    if (!handle || !handle->handshake) {
+        fill_error(out_error, EPP_ERROR_INVALID_STATE, "Handshake responder handle is null or consumed");
+        return EPP_ERROR_INVALID_STATE;
+    }
+    if (!validate_output_handle(out_session, out_error)) {
+        return EPP_ERROR_NULL_POINTER;
+    }
+
+    auto session_result = handle->handshake->Finish();
+    if (session_result.IsErr()) {
+        return fill_error_from_failure(out_error, session_result.UnwrapErr());
+    }
+
+    auto* session_handle = new(std::nothrow) EppSessionHandle{};
+    if (!session_handle) {
+        fill_error(out_error, EPP_ERROR_OUT_OF_MEMORY, "Failed to allocate session handle");
+        return EPP_ERROR_OUT_OF_MEMORY;
+    }
+    session_handle->session = std::move(session_result).Unwrap();
+    handle->handshake.reset();
+
+    *out_session = session_handle;
+    return EPP_SUCCESS;
+}
+
+void epp_handshake_responder_destroy(EppHandshakeResponderHandle* handle) {
+    delete handle;
+}
+
+EppErrorCode epp_session_encrypt(
+    EppSessionHandle* handle,
+    const uint8_t* plaintext,
+    size_t plaintext_length,
+    EppEnvelopeType envelope_type,
+    uint32_t envelope_id,
+    const char* correlation_id,
+    size_t correlation_id_length,
+    EppBuffer* out_encrypted_envelope,
+    EppError* out_error) {
+    if (const auto err = EnsureInitialized(); err != EPP_SUCCESS) {
+        fill_error(out_error, err, "Failed to initialize libsodium");
+        return err;
+    }
+    if (!handle || !handle->session) {
+        fill_error(out_error, EPP_ERROR_INVALID_STATE, "Session handle is null or uninitialized");
+        return EPP_ERROR_INVALID_STATE;
+    }
+    if (!validate_buffer_param(plaintext, plaintext_length, out_error) ||
+        !validate_output_handle(out_encrypted_envelope, out_error)) {
+        return out_error ? out_error->code : EPP_ERROR_NULL_POINTER;
+    }
+    if (correlation_id_length > 0 && !correlation_id) {
+        fill_error(out_error, EPP_ERROR_NULL_POINTER, "Correlation id is null");
+        return EPP_ERROR_NULL_POINTER;
+    }
+
+    if (envelope_type < EPP_ENVELOPE_REQUEST || envelope_type > EPP_ENVELOPE_ERROR_RESPONSE) {
+        fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Invalid envelope type");
+        return EPP_ERROR_INVALID_INPUT;
+    }
+
+    std::string_view correlation_view;
+    if (correlation_id && correlation_id_length > 0) {
+        correlation_view = std::string_view(correlation_id, correlation_id_length);
+    }
+
+    auto encrypt_result = handle->session->Encrypt(
+        std::span(plaintext, plaintext_length),
+        static_cast<ecliptix::proto::protocol::EnvelopeType>(envelope_type),
+        envelope_id,
+        correlation_view);
+    if (encrypt_result.IsErr()) {
+        return fill_error_from_failure(out_error, encrypt_result.UnwrapErr());
+    }
+
+    const auto& envelope = encrypt_result.Unwrap();
+    std::string serialized;
+    if (!envelope.SerializeToString(&serialized)) {
+        fill_error(out_error, EPP_ERROR_ENCODE, "Failed to serialize SecureEnvelope");
+        return EPP_ERROR_ENCODE;
+    }
+    if (!copy_to_buffer(
+        std::span(reinterpret_cast<const uint8_t*>(serialized.data()), serialized.size()),
+        out_encrypted_envelope,
+        out_error)) {
+        return out_error ? out_error->code : EPP_ERROR_OUT_OF_MEMORY;
+    }
+
+    return EPP_SUCCESS;
+}
+
+EppErrorCode epp_session_decrypt(
+    EppSessionHandle* handle,
+    const uint8_t* encrypted_envelope,
+    size_t encrypted_envelope_length,
+    EppBuffer* out_plaintext,
+    EppBuffer* out_metadata,
+    EppError* out_error) {
+    if (const auto err = EnsureInitialized(); err != EPP_SUCCESS) {
+        fill_error(out_error, err, "Failed to initialize libsodium");
+        return err;
+    }
+    if (!handle || !handle->session) {
+        fill_error(out_error, EPP_ERROR_INVALID_STATE, "Session handle is null or uninitialized");
+        return EPP_ERROR_INVALID_STATE;
+    }
+    if (!validate_buffer_param(encrypted_envelope, encrypted_envelope_length, out_error) ||
+        !validate_output_handle(out_plaintext, out_error)) {
+        return out_error ? out_error->code : EPP_ERROR_NULL_POINTER;
+    }
+    if (out_metadata && !validate_output_handle(out_metadata, out_error)) {
+        return out_error ? out_error->code : EPP_ERROR_NULL_POINTER;
+    }
+
+    ecliptix::proto::protocol::SecureEnvelope envelope;
+    if (!envelope.ParseFromArray(encrypted_envelope, static_cast<int>(encrypted_envelope_length))) {
+        fill_error(out_error, EPP_ERROR_DECODE, "Failed to parse SecureEnvelope");
+        return EPP_ERROR_DECODE;
+    }
+
+    auto decrypt_result = handle->session->Decrypt(envelope);
+    if (decrypt_result.IsErr()) {
+        return fill_error_from_failure(out_error, decrypt_result.UnwrapErr());
+    }
+
+    auto result = std::move(decrypt_result).Unwrap();
+    std::string metadata_serialized;
+    if (out_metadata) {
+        if (!result.metadata.SerializeToString(&metadata_serialized)) {
+            fill_error(out_error, EPP_ERROR_ENCODE, "Failed to serialize EnvelopeMetadata");
+            return EPP_ERROR_ENCODE;
+        }
+        if (!copy_to_buffer(
+            std::span(reinterpret_cast<const uint8_t*>(metadata_serialized.data()), metadata_serialized.size()),
+            out_metadata,
+            out_error)) {
+            return out_error ? out_error->code : EPP_ERROR_OUT_OF_MEMORY;
+        }
+    }
+
+    if (!copy_to_buffer(std::span(result.plaintext.data(), result.plaintext.size()), out_plaintext, out_error)) {
+        if (out_metadata && out_metadata->data) {
+            SodiumInterop::SecureWipe(std::span(out_metadata->data, out_metadata->length));
+            delete[] out_metadata->data;
+            out_metadata->data = nullptr;
+            out_metadata->length = 0;
+        }
+        return out_error ? out_error->code : EPP_ERROR_OUT_OF_MEMORY;
+    }
+
+    return EPP_SUCCESS;
+}
+
+EppErrorCode epp_session_serialize(
+    EppSessionHandle* handle,
+    EppBuffer* out_state,
+    EppError* out_error) {
+    if (const auto err = EnsureInitialized(); err != EPP_SUCCESS) {
+        fill_error(out_error, err, "Failed to initialize libsodium");
+        return err;
+    }
+    if (!handle || !handle->session) {
+        fill_error(out_error, EPP_ERROR_INVALID_STATE, "Session handle is null or uninitialized");
+        return EPP_ERROR_INVALID_STATE;
+    }
+    if (!validate_output_handle(out_state, out_error)) {
+        return EPP_ERROR_NULL_POINTER;
+    }
+
+    auto state_result = handle->session->ExportState();
+    if (state_result.IsErr()) {
+        return fill_error_from_failure(out_error, state_result.UnwrapErr());
+    }
+
+    const auto& state = state_result.Unwrap();
+    std::string serialized;
+    if (!state.SerializeToString(&serialized)) {
+        fill_error(out_error, EPP_ERROR_ENCODE, "Failed to serialize ProtocolState");
+        return EPP_ERROR_ENCODE;
+    }
+    if (!copy_to_buffer(
+        std::span(reinterpret_cast<const uint8_t*>(serialized.data()), serialized.size()),
+        out_state,
+        out_error)) {
+        return out_error ? out_error->code : EPP_ERROR_OUT_OF_MEMORY;
+    }
+
+    return EPP_SUCCESS;
+}
+
+EppErrorCode epp_session_deserialize(
+    const uint8_t* state_bytes,
+    size_t state_bytes_length,
+    EppSessionHandle** out_handle,
+    EppError* out_error) {
+    if (const auto err = EnsureInitialized(); err != EPP_SUCCESS) {
+        fill_error(out_error, err, "Failed to initialize libsodium");
+        return err;
+    }
+    if (!validate_buffer_param(state_bytes, state_bytes_length, out_error) ||
+        !validate_output_handle(out_handle, out_error)) {
+        return out_error ? out_error->code : EPP_ERROR_NULL_POINTER;
+    }
+
+    ecliptix::proto::protocol::ProtocolState state;
+    if (!state.ParseFromArray(state_bytes, static_cast<int>(state_bytes_length))) {
+        fill_error(out_error, EPP_ERROR_DECODE, "Failed to parse ProtocolState");
+        return EPP_ERROR_DECODE;
+    }
+
+    auto session_result = ecliptix::protocol::Session::FromState(state);
+    if (session_result.IsErr()) {
+        return fill_error_from_failure(out_error, session_result.UnwrapErr());
+    }
+
+    auto* handle = new(std::nothrow) EppSessionHandle{};
+    if (!handle) {
+        fill_error(out_error, EPP_ERROR_OUT_OF_MEMORY, "Failed to allocate session handle");
+        return EPP_ERROR_OUT_OF_MEMORY;
+    }
+    handle->session = std::move(session_result).Unwrap();
+
+    *out_handle = handle;
+    return EPP_SUCCESS;
+}
+
+void epp_session_destroy(EppSessionHandle* handle) {
+    delete handle;
 }
 
 // ----------------------------------------------------------------------------
@@ -513,27 +924,69 @@ EppErrorCode epp_envelope_validate(
         return out_error ? out_error->code : EPP_ERROR_NULL_POINTER;
     }
 
-    SecureEnvelope envelope;
+    ecliptix::proto::protocol::SecureEnvelope envelope;
     if (!envelope.ParseFromArray(encrypted_envelope, static_cast<int>(encrypted_envelope_length))) {
         fill_error(out_error, EPP_ERROR_DECODE, "Failed to parse envelope");
         return EPP_ERROR_DECODE;
     }
 
-    if (!envelope.has_ratchet_epoch()) {
-        fill_error(out_error, EPP_ERROR_DECODE, "Missing ratchet epoch");
-        return EPP_ERROR_DECODE;
+    if (envelope.version() != kProtocolVersion) {
+        fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Invalid envelope version");
+        return EPP_ERROR_INVALID_INPUT;
     }
 
-    if (!envelope.dh_public_key().empty() && envelope.kyber_ciphertext().empty()) {
-        fill_error(out_error, EPP_ERROR_PQ_MISSING, "Missing Kyber ciphertext for hybrid ratchet");
+    if (envelope.encrypted_metadata().size() <= kAesGcmTagBytes) {
+        fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Encrypted metadata too small");
+        return EPP_ERROR_INVALID_INPUT;
+    }
+    if (envelope.encrypted_payload().size() < kAesGcmTagBytes) {
+        fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Encrypted payload too small");
+        return EPP_ERROR_INVALID_INPUT;
+    }
+    if (envelope.header_nonce().size() != kAesGcmNonceBytes) {
+        fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Invalid header nonce size");
+        return EPP_ERROR_INVALID_INPUT;
+    }
+    if (std::all_of(envelope.header_nonce().begin(), envelope.header_nonce().end(),
+                    [](const char value) { return value == 0; })) {
+        fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Header nonce must not be all zeros");
+        return EPP_ERROR_INVALID_INPUT;
+    }
+
+    const bool has_dh = envelope.has_dh_public_key();
+    const bool has_pq = envelope.has_kyber_ciphertext();
+    if (has_dh != has_pq) {
+        fill_error(out_error, EPP_ERROR_PQ_MISSING, "Incomplete hybrid ratchet header");
         return EPP_ERROR_PQ_MISSING;
     }
-
-    if (!envelope.kyber_ciphertext().empty()) {
-        const auto& ct = envelope.kyber_ciphertext();
-        if (ct.size() != KyberInterop::KYBER_768_CIPHERTEXT_SIZE) {
-            fill_error(out_error, EPP_ERROR_DECODE, "Invalid Kyber ciphertext size");
-            return EPP_ERROR_DECODE;
+    if (has_dh && envelope.ratchet_epoch() == 0) {
+        fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Ratchet header requires non-zero epoch");
+        return EPP_ERROR_INVALID_INPUT;
+    }
+    if (has_dh && envelope.dh_public_key().size() != kX25519PublicKeyBytes) {
+        fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Invalid DH public key size");
+        return EPP_ERROR_INVALID_INPUT;
+    }
+    if (has_pq && envelope.kyber_ciphertext().size() != kKyberCiphertextBytes) {
+        fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Invalid Kyber ciphertext size");
+        return EPP_ERROR_INVALID_INPUT;
+    }
+    if (has_dh) {
+        auto dh_check = security::DhValidator::ValidateX25519PublicKey(
+            std::span(reinterpret_cast<const uint8_t*>(envelope.dh_public_key().data()),
+                      envelope.dh_public_key().size()));
+        if (dh_check.IsErr()) {
+            return fill_error_from_failure(out_error, dh_check.UnwrapErr());
+        }
+    }
+    if (has_pq) {
+        auto pq_check = KyberInterop::ValidateCiphertext(
+            std::span(reinterpret_cast<const uint8_t*>(envelope.kyber_ciphertext().data()),
+                      envelope.kyber_ciphertext().size()));
+        if (pq_check.IsErr()) {
+            auto pq_err = pq_check.UnwrapErr();
+            fill_error(out_error, EPP_ERROR_INVALID_INPUT, pq_err.message);
+            return EPP_ERROR_INVALID_INPUT;
         }
     }
 
@@ -558,7 +1011,7 @@ EppErrorCode epp_derive_root_key(
         return out_error ? out_error->code : EPP_ERROR_NULL_POINTER;
     }
 
-    if (opaque_session_key_length != Constants::X_25519_KEY_SIZE) {
+    if (opaque_session_key_length != kOpaqueSessionKeyBytes) {
         fill_error(out_error, EPP_ERROR_INVALID_INPUT,
                    "OPAQUE session key must be 32 bytes");
         return EPP_ERROR_INVALID_INPUT;
@@ -567,20 +1020,27 @@ EppErrorCode epp_derive_root_key(
         fill_error(out_error, EPP_ERROR_INVALID_INPUT, "OPAQUE user context must not be empty");
         return EPP_ERROR_INVALID_INPUT;
     }
-    if (out_root_key_length < Constants::X_25519_KEY_SIZE) {
+    if (out_root_key_length < kRootKeyBytes) {
         fill_error(out_error, EPP_ERROR_BUFFER_TOO_SMALL,
                    "Output buffer too small for derived root key");
         return EPP_ERROR_BUFFER_TOO_SMALL;
     }
 
-    auto root_result = ProtocolConnection::DeriveOpaqueMessagingRoot(
+    const auto info = kOpaqueRootInfo;
+    const std::span<const uint8_t> info_span(
+        reinterpret_cast<const uint8_t*>(info.data()),
+        info.size());
+
+    auto root_result = Hkdf::DeriveKeyBytes(
         std::span(opaque_session_key, opaque_session_key_length),
-        std::span(user_context, user_context_length));
+        kRootKeyBytes,
+        std::span(user_context, user_context_length),
+        info_span);
     if (root_result.IsErr()) {
         return fill_error_from_failure(out_error, std::move(root_result).UnwrapErr());
     }
     auto root = root_result.Unwrap();
-    std::memcpy(out_root_key, root.data(), Constants::X_25519_KEY_SIZE);
+    std::memcpy(out_root_key, root.data(), kRootKeyBytes);
     const auto _wipe = SodiumInterop::SecureWipe(std::span(root));
     (void)_wipe;
     return EPP_SUCCESS;
@@ -723,6 +1183,18 @@ EppErrorCode epp_shamir_reconstruct(
 // Memory & Error Management
 // ----------------------------------------------------------------------------
 
+void epp_buffer_release(EppBuffer* buffer) {
+    if (!buffer) {
+        return;
+    }
+    if (buffer->data) {
+        SodiumInterop::SecureWipe(std::span(buffer->data, buffer->length));
+        delete[] buffer->data;
+        buffer->data = nullptr;
+    }
+    buffer->length = 0;
+}
+
 EppBuffer* epp_buffer_alloc(const size_t capacity) {
     auto* buffer = new(std::nothrow) EppBuffer{};
     if (!buffer) {
@@ -744,13 +1216,11 @@ EppBuffer* epp_buffer_alloc(const size_t capacity) {
 }
 
 void epp_buffer_free(EppBuffer* buffer) {
-    if (buffer) {
-        if (buffer->data) {
-            SodiumInterop::SecureWipe(std::span(buffer->data, buffer->length));
-            delete[] buffer->data;
-        }
-        delete buffer;
+    if (!buffer) {
+        return;
     }
+    epp_buffer_release(buffer);
+    delete buffer;
 }
 
 void epp_error_free(EppError* error) {

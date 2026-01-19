@@ -10,7 +10,7 @@ using namespace ecliptix::protocol;
 using namespace ecliptix::protocol::security;
 using namespace ecliptix::protocol::crypto;
 std::vector<uint8_t> CreateTestChainKey(uint8_t seed) {
-    std::vector<uint8_t> key(Constants::AES_KEY_SIZE);
+    std::vector<uint8_t> key(kAesKeyBytes);
     for (size_t i = 0; i < key.size(); ++i) {
         key[i] = static_cast<uint8_t>((seed + i) % 256);
     }
@@ -21,7 +21,7 @@ TEST_CASE("RatchetRecovery - Basic construction", "[ratchet_recovery][security]"
     SECTION("Default constructor") {
         RatchetRecovery recovery;
         REQUIRE(recovery.GetSkippedKeyCount() == 0);
-        REQUIRE(recovery.GetMaxSkippedKeys() == ProtocolConstants::MAX_SKIP_MESSAGE_KEYS);
+        REQUIRE(recovery.GetMaxSkippedKeys() == kMaxSkippedMessageKeys);
     }
     SECTION("Custom max skipped keys") {
         RatchetRecovery recovery(500);
@@ -76,7 +76,7 @@ TEST_CASE("RatchetRecovery - Key retrieval", "[ratchet_recovery][security]") {
         REQUIRE(result.IsOk());
         REQUIRE(result.Unwrap().has_value());
         auto& key_handle = result.Unwrap().value();
-        REQUIRE(key_handle.Size() == Constants::AES_KEY_SIZE);
+        REQUIRE(key_handle.Size() == kAesKeyBytes);
         REQUIRE_FALSE(recovery.HasSkippedMessageKey(7));
         REQUIRE(recovery.GetSkippedKeyCount() == 4); 
     }
@@ -112,9 +112,9 @@ TEST_CASE("RatchetRecovery - Key uniqueness", "[ratchet_recovery][security]") {
         auto key0 = std::move(key0_result.Unwrap().value());
         auto key1 = std::move(key1_result.Unwrap().value());
         auto key2 = std::move(key2_result.Unwrap().value());
-        auto bytes0_result = key0.ReadBytes(Constants::AES_KEY_SIZE);
-        auto bytes1_result = key1.ReadBytes(Constants::AES_KEY_SIZE);
-        auto bytes2_result = key2.ReadBytes(Constants::AES_KEY_SIZE);
+        auto bytes0_result = key0.ReadBytes(kAesKeyBytes);
+        auto bytes1_result = key1.ReadBytes(kAesKeyBytes);
+        auto bytes2_result = key2.ReadBytes(kAesKeyBytes);
         REQUIRE(bytes0_result.IsOk());
         REQUIRE(bytes1_result.IsOk());
         REQUIRE(bytes2_result.IsOk());
@@ -220,7 +220,7 @@ TEST_CASE("RatchetRecovery - Out-of-order message simulation", "[ratchet_recover
         REQUIRE(key2_result.IsOk());
         REQUIRE(key2_result.Unwrap().has_value());
         auto key2 = std::move(key2_result.Unwrap().value());
-        REQUIRE(key2.Size() == Constants::AES_KEY_SIZE);
+        REQUIRE(key2.Size() == kAesKeyBytes);
         REQUIRE(recovery.HasSkippedMessageKey(0));
         REQUIRE(recovery.HasSkippedMessageKey(1));
         REQUIRE_FALSE(recovery.HasSkippedMessageKey(2)); 
@@ -292,7 +292,7 @@ TEST_CASE("RatchetRecovery - Memory management", "[ratchet_recovery][security]")
         auto key1_result = recovery.TryGetSkippedMessageKey(1);
         auto key1 = std::move(key1_result.Unwrap().value());
         REQUIRE_FALSE(recovery.HasSkippedMessageKey(1));
-        auto bytes_result = key1.ReadBytes(Constants::AES_KEY_SIZE);
+        auto bytes_result = key1.ReadBytes(kAesKeyBytes);
         REQUIRE(bytes_result.IsOk());
     }
 }

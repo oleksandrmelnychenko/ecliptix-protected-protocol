@@ -38,7 +38,7 @@ namespace ecliptix::protocol::crypto {
                         ProtocolFailure::DeriveKey("Failed to create HKDF context"));
                 }
                 OSSL_PARAM params[6];
-                int param_idx = ProtocolConstants::ZERO_VALUE;
+                int param_idx = 0;
                 char digest_name[7];
                 std::memcpy(digest_name, OpenSSL::ALGORITHM_SHA256.data(), 6);
                 digest_name[6] = '\0';
@@ -52,7 +52,7 @@ namespace ecliptix::protocol::crypto {
                 std::memcpy(param_mode, OpenSSL::PARAM_MODE.data(), OpenSSL::PARAM_MODE.size());
                 param_mode[OpenSSL::PARAM_MODE.size()] = '\0';
                 params[param_idx++] = OSSL_PARAM_construct_utf8_string(
-                    param_digest, digest_name, ProtocolConstants::ZERO_VALUE);
+                    param_digest, digest_name, 0);
                 std::vector ikm_copy(ikm.begin(), ikm.end());
                 params[param_idx++] = OSSL_PARAM_construct_octet_string(
                     param_key, ikm_copy.data(), ikm_copy.size());

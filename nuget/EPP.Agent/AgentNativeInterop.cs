@@ -38,8 +38,8 @@ public static class AgentNativeInterop
     public static extern EppErrorCode epp_identity_create_with_context(
         [In] byte[] seed,
         nuint seedLength,
-        string accountId,
-        nuint accountIdLength,
+        string membershipId,
+        nuint membershipIdLength,
         out IntPtr outHandle,
         out EppError outError);
 
@@ -69,52 +69,66 @@ public static class AgentNativeInterop
 
     #endregion
 
-    #region Protocol System
+    #region Handshake + Session
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern EppErrorCode epp_session_create(
+    public static extern EppErrorCode epp_prekey_bundle_create(
         IntPtr identityKeys,
+        out EppBuffer outBundle,
+        out EppError outError);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern EppErrorCode epp_handshake_initiator_start(
+        IntPtr identityKeys,
+        [In] byte[] peerPrekeyBundle,
+        nuint peerPrekeyBundleLength,
+        ref EppSessionConfig config,
         out IntPtr outHandle,
+        out EppBuffer outHandshakeInit,
         out EppError outError);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern EppErrorCode epp_session_set_callbacks(
+    public static extern EppErrorCode epp_handshake_initiator_finish(
         IntPtr handle,
-        in EppCallbacks callbacks,
+        [In] byte[] handshakeAck,
+        nuint handshakeAckLength,
+        out IntPtr outSession,
         out EppError outError);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern EppErrorCode epp_session_begin_handshake(
-        IntPtr handle,
-        uint connectionId,
-        byte exchangeType,
-        [In] byte[] peerKyberPublicKey,
-        nuint peerKyberPublicKeyLength,
-        IntPtr outHandshakeMessage,
+    public static extern void epp_handshake_initiator_destroy(IntPtr handle);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern EppErrorCode epp_handshake_responder_start(
+        IntPtr identityKeys,
+        [In] byte[] localPrekeyBundle,
+        nuint localPrekeyBundleLength,
+        [In] byte[] handshakeInit,
+        nuint handshakeInitLength,
+        ref EppSessionConfig config,
+        out IntPtr outHandle,
+        out EppBuffer outHandshakeAck,
         out EppError outError);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern EppErrorCode epp_session_complete_handshake(
+    public static extern EppErrorCode epp_handshake_responder_finish(
         IntPtr handle,
-        [In] byte[] peerHandshakeMessage,
-        nuint peerHandshakeMessageLength,
-        [In] byte[] rootKey,
-        nuint rootKeyLength,
+        out IntPtr outSession,
         out EppError outError);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern EppErrorCode epp_session_complete_handshake_auto(
-        IntPtr handle,
-        [In] byte[] peerHandshakeMessage,
-        nuint peerHandshakeMessageLength,
-        out EppError outError);
+    public static extern void epp_handshake_responder_destroy(IntPtr handle);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     public static extern EppErrorCode epp_session_encrypt(
         IntPtr handle,
         [In] byte[] plaintext,
         nuint plaintextLength,
-        IntPtr outEncryptedEnvelope,
+        EppEnvelopeType envelopeType,
+        uint envelopeId,
+        [In] byte[]? correlationId,
+        nuint correlationIdLength,
+        out EppBuffer outEncryptedEnvelope,
         out EppError outError);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
@@ -122,55 +136,18 @@ public static class AgentNativeInterop
         IntPtr handle,
         [In] byte[] encryptedEnvelope,
         nuint encryptedEnvelopeLength,
-        IntPtr outPlaintext,
-        out EppError outError);
-
-    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern EppErrorCode epp_session_is_established(
-        IntPtr handle,
-        out bool outHasConnection,
-        out EppError outError);
-
-    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern EppErrorCode epp_session_get_id(
-        IntPtr handle,
-        out uint outConnectionId,
-        out EppError outError);
-
-    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern EppErrorCode epp_session_get_chain_indices(
-        IntPtr handle,
-        out uint outSendingIndex,
-        out uint outReceivingIndex,
-        out EppError outError);
-
-    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern EppErrorCode epp_session_get_used_prekey_id(
-        IntPtr handle,
-        [MarshalAs(UnmanagedType.I1)] out bool outHasOpkId,
-        out uint outOpkId,
-        out EppError outError);
-
-    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern EppErrorCode epp_session_create_from_root(
-        IntPtr identityKeys,
-        [In] byte[] rootKey,
-        nuint rootKeyLength,
-        [In] byte[] peerBundle,
-        nuint peerBundleLength,
-        [MarshalAs(UnmanagedType.I1)] bool isInitiator,
-        out IntPtr outHandle,
+        out EppBuffer outPlaintext,
+        out EppBuffer outMetadata,
         out EppError outError);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     public static extern EppErrorCode epp_session_serialize(
         IntPtr handle,
-        IntPtr outState,
+        out EppBuffer outState,
         out EppError outError);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     public static extern EppErrorCode epp_session_deserialize(
-        IntPtr identityKeys,
         [In] byte[] stateBytes,
         nuint stateBytesLength,
         out IntPtr outHandle,
@@ -199,19 +176,15 @@ public static class AgentNativeInterop
         nuint outRootKeyLength,
         out EppError outError);
 
-    #endregion
-
-    #region Secret Sharing (Shamir)
-
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     public static extern EppErrorCode epp_shamir_split(
         [In] byte[] secret,
         nuint secretLength,
         byte threshold,
         byte shareCount,
-        [In] byte[]? authKey,
+        [In] byte[] authKey,
         nuint authKeyLength,
-        IntPtr outShares,
+        out EppBuffer outShares,
         out nuint outShareLength,
         out EppError outError);
 
@@ -221,14 +194,17 @@ public static class AgentNativeInterop
         nuint sharesLength,
         nuint shareLength,
         nuint shareCount,
-        [In] byte[]? authKey,
+        [In] byte[] authKey,
         nuint authKeyLength,
-        IntPtr outSecret,
+        out EppBuffer outSecret,
         out EppError outError);
 
     #endregion
 
     #region Memory Management
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void epp_buffer_release(ref EppBuffer buffer);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr epp_buffer_alloc(nuint capacity);
@@ -242,21 +218,10 @@ public static class AgentNativeInterop
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
     public static extern IntPtr epp_error_string(EppErrorCode code);
 
-    #endregion
-
-    #region Helper Methods
-
-    public static string GetVersion()
-    {
-        IntPtr versionPtr = epp_version();
-        return Marshal.PtrToStringAnsi(versionPtr) ?? "unknown";
-    }
-
-    public static string ErrorCodeToString(EppErrorCode code)
-    {
-        IntPtr messagePtr = epp_error_string(code);
-        return Marshal.PtrToStringAnsi(messagePtr) ?? "unknown error";
-    }
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern EppErrorCode epp_secure_wipe(
+        IntPtr data,
+        nuint length);
 
     #endregion
 }

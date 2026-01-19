@@ -37,6 +37,7 @@ public:
     [[nodiscard]] std::vector<uint8_t> GetIdentityX25519PublicKeyCopy() const;
     [[nodiscard]] std::vector<uint8_t> GetIdentityEd25519PublicKeyCopy() const;
     [[nodiscard]] std::vector<uint8_t> GetKyberPublicKeyCopy() const;
+    [[nodiscard]] Result<std::vector<uint8_t>, ProtocolFailure> GetIdentityX25519PrivateKeyCopy() const;
     [[nodiscard]] Result<SecureMemoryHandle, ProtocolFailure> CloneKyberSecretKey() const;
     [[nodiscard]] std::optional<std::vector<uint8_t>> GetEphemeralX25519PublicKeyCopy() const;
     [[nodiscard]] std::vector<uint8_t> GetSignedPreKeyPublicCopy() const;
@@ -60,6 +61,7 @@ public:
         std::span<const uint8_t> remote_spk_public,
         std::span<const uint8_t> remote_spk_signature);
     [[nodiscard]] const OneTimePreKey* FindOneTimePreKeyById(uint32_t opk_id) const;
+    [[nodiscard]] Result<Unit, ProtocolFailure> ConsumeOneTimePreKeyById(uint32_t opk_id);
     [[nodiscard]] std::optional<uint32_t> GetSelectedOpkId() const;
     void SetSelectedOpkId(uint32_t opk_id);
     void ClearSelectedOpkId();

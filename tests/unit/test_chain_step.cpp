@@ -10,7 +10,7 @@ using namespace ecliptix::protocol::enums;
 TEST_CASE("ChainStep - Basic creation and initialization", "[chain_step]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Create SENDER chain with valid chain key") {
-        std::vector<uint8_t> chain_key(Constants::X_25519_KEY_SIZE, 0x42);
+        std::vector<uint8_t> chain_key(kChainKeyBytes, 0x42);
         auto result = ChainStep::Create(
             ChainStepType::Sender,
             chain_key,
@@ -24,7 +24,7 @@ TEST_CASE("ChainStep - Basic creation and initialization", "[chain_step]") {
         REQUIRE(index_result.Unwrap() == 0);
     }
     SECTION("Create RECEIVER chain with valid chain key") {
-        std::vector<uint8_t> chain_key(Constants::X_25519_KEY_SIZE, 0x43);
+        std::vector<uint8_t> chain_key(kChainKeyBytes, 0x43);
         auto result = ChainStep::Create(
             ChainStepType::Receiver,
             chain_key,
@@ -48,9 +48,9 @@ TEST_CASE("ChainStep - Basic creation and initialization", "[chain_step]") {
         REQUIRE(result.IsErr());
     }
     SECTION("Create with DH keys") {
-        std::vector<uint8_t> chain_key(Constants::X_25519_KEY_SIZE, 0x45);
-        std::vector<uint8_t> dh_private(Constants::X_25519_PRIVATE_KEY_SIZE, 0x46);
-        std::vector<uint8_t> dh_public(Constants::X_25519_PUBLIC_KEY_SIZE, 0x47);
+        std::vector<uint8_t> chain_key(kChainKeyBytes, 0x45);
+        std::vector<uint8_t> dh_private(kX25519PrivateKeyBytes, 0x46);
+        std::vector<uint8_t> dh_public(kX25519PublicKeyBytes, 0x47);
         auto result = ChainStep::Create(
             ChainStepType::Sender,
             chain_key,
@@ -63,12 +63,12 @@ TEST_CASE("ChainStep - Basic creation and initialization", "[chain_step]") {
         REQUIRE(pk_result.IsOk());
         auto pk_opt = pk_result.Unwrap();
         REQUIRE(pk_opt.has_value());
-        REQUIRE(pk_opt->size() == Constants::X_25519_PUBLIC_KEY_SIZE);
+        REQUIRE(pk_opt->size() == kX25519PublicKeyBytes);
     }
 }
 TEST_CASE("ChainStep - Symmetric ratchet (sequential messages)", "[chain_step]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
-    std::vector<uint8_t> initial_chain_key(Constants::X_25519_KEY_SIZE, 0x50);
+    std::vector<uint8_t> initial_chain_key(kChainKeyBytes, 0x50);
     auto result = ChainStep::Create(
         ChainStepType::Sender,
         initial_chain_key,
@@ -84,7 +84,7 @@ TEST_CASE("ChainStep - Symmetric ratchet (sequential messages)", "[chain_step]")
         REQUIRE(key.Index() == 0);
         auto operation_result = key.WithKeyMaterial<std::vector<uint8_t>>(
             [](std::span<const uint8_t> key_bytes) -> Result<std::vector<uint8_t>, ProtocolFailure> {
-                REQUIRE(key_bytes.size() == Constants::X_25519_KEY_SIZE);
+                REQUIRE(key_bytes.size() == kMessageKeyBytes);
                 return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(
                     std::vector<uint8_t>(key_bytes.begin(), key_bytes.end())
                 );
@@ -92,7 +92,7 @@ TEST_CASE("ChainStep - Symmetric ratchet (sequential messages)", "[chain_step]")
         );
         REQUIRE(operation_result.IsOk());
         auto key_bytes = operation_result.Unwrap();
-        REQUIRE(key_bytes.size() == Constants::X_25519_KEY_SIZE);
+        REQUIRE(key_bytes.size() == kMessageKeyBytes);
         auto new_index_result = chain_step.GetCurrentIndex();
         REQUIRE(new_index_result.IsOk());
         REQUIRE(new_index_result.Unwrap() == 1);
@@ -123,7 +123,7 @@ TEST_CASE("ChainStep - Symmetric ratchet (sequential messages)", "[chain_step]")
 }
 TEST_CASE("ChainStep - Out-of-order message support", "[chain_step]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
-    std::vector<uint8_t> initial_chain_key(Constants::X_25519_KEY_SIZE, 0x60);
+    std::vector<uint8_t> initial_chain_key(kChainKeyBytes, 0x60);
     auto result = ChainStep::Create(
         ChainStepType::Receiver,
         initial_chain_key,
@@ -143,7 +143,7 @@ TEST_CASE("ChainStep - Out-of-order message support", "[chain_step]") {
         auto key2 = key2_result.Unwrap();
         auto use2_result = key2.WithKeyMaterial<Unit>(
             [](std::span<const uint8_t> bytes) -> Result<Unit, ProtocolFailure> {
-                REQUIRE(bytes.size() == Constants::X_25519_KEY_SIZE);
+                REQUIRE(bytes.size() == kMessageKeyBytes);
                 return Result<Unit, ProtocolFailure>::Ok(Unit{});
             }
         );
@@ -169,9 +169,9 @@ TEST_CASE("ChainStep - Out-of-order message support", "[chain_step]") {
 }
 TEST_CASE("ChainStep - DH ratchet integration", "[chain_step]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
-    std::vector<uint8_t> initial_chain_key(Constants::X_25519_KEY_SIZE, 0x70);
-    std::vector<uint8_t> initial_dh_private(Constants::X_25519_PRIVATE_KEY_SIZE, 0x71);
-    std::vector<uint8_t> initial_dh_public(Constants::X_25519_PUBLIC_KEY_SIZE, 0x72);
+    std::vector<uint8_t> initial_chain_key(kChainKeyBytes, 0x70);
+    std::vector<uint8_t> initial_dh_private(kX25519PrivateKeyBytes, 0x71);
+    std::vector<uint8_t> initial_dh_public(kX25519PublicKeyBytes, 0x72);
     auto result = ChainStep::Create(
         ChainStepType::Sender,
         initial_chain_key,
@@ -196,9 +196,9 @@ TEST_CASE("ChainStep - DH ratchet integration", "[chain_step]") {
         auto index_before = chain_step.GetCurrentIndex();
         REQUIRE(index_before.IsOk());
         REQUIRE(index_before.Unwrap() == 2);
-        std::vector<uint8_t> new_chain_key(Constants::X_25519_KEY_SIZE, 0x80);
-        std::vector<uint8_t> new_dh_private(Constants::X_25519_PRIVATE_KEY_SIZE, 0x81);
-        std::vector<uint8_t> new_dh_public(Constants::X_25519_PUBLIC_KEY_SIZE, 0x82);
+        std::vector<uint8_t> new_chain_key(kChainKeyBytes, 0x80);
+        std::vector<uint8_t> new_dh_private(kX25519PrivateKeyBytes, 0x81);
+        std::vector<uint8_t> new_dh_public(kX25519PublicKeyBytes, 0x82);
         auto update_result = chain_step.UpdateKeysAfterDhRatchet(
             new_chain_key,
             new_dh_private,
@@ -215,7 +215,7 @@ TEST_CASE("ChainStep - DH ratchet integration", "[chain_step]") {
         REQUIRE(*new_pk_opt == new_dh_public);
     }
     SECTION("Update chain key only (no new DH keys)") {
-        std::vector<uint8_t> new_chain_key(Constants::X_25519_KEY_SIZE, 0x90);
+        std::vector<uint8_t> new_chain_key(kChainKeyBytes, 0x90);
         auto update_result = chain_step.UpdateKeysAfterDhRatchet(
             new_chain_key,
             std::nullopt,
@@ -231,7 +231,7 @@ TEST_CASE("ChainStep - DH ratchet integration", "[chain_step]") {
 }
 TEST_CASE("ChainStep - Index management", "[chain_step]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
-    std::vector<uint8_t> chain_key(Constants::X_25519_KEY_SIZE, 0xA0);
+    std::vector<uint8_t> chain_key(kChainKeyBytes, 0xA0);
     auto result = ChainStep::Create(
         ChainStepType::Sender,
         chain_key,
@@ -253,7 +253,7 @@ TEST_CASE("ChainStep - Index management", "[chain_step]") {
 }
 TEST_CASE("ChainStep - Chain key access", "[chain_step]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
-    std::vector<uint8_t> chain_key(Constants::X_25519_KEY_SIZE, 0xB0);
+    std::vector<uint8_t> chain_key(kChainKeyBytes, 0xB0);
     auto result = ChainStep::Create(
         ChainStepType::Sender,
         chain_key,
@@ -266,15 +266,15 @@ TEST_CASE("ChainStep - Chain key access", "[chain_step]") {
         auto key_result = chain_step.GetCurrentChainKey();
         REQUIRE(key_result.IsOk());
         auto key_bytes = key_result.Unwrap();
-        REQUIRE(key_bytes.size() == Constants::X_25519_KEY_SIZE);
+        REQUIRE(key_bytes.size() == kChainKeyBytes);
         SodiumInterop::SecureWipe(std::span<uint8_t>(key_bytes));
     }
 }
 TEST_CASE("ChainStep - DH key handle access", "[chain_step]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
-    std::vector<uint8_t> chain_key(Constants::X_25519_KEY_SIZE, 0xC0);
-    std::vector<uint8_t> dh_private(Constants::X_25519_PRIVATE_KEY_SIZE, 0xC1);
-    std::vector<uint8_t> dh_public(Constants::X_25519_PUBLIC_KEY_SIZE, 0xC2);
+    std::vector<uint8_t> chain_key(kChainKeyBytes, 0xC0);
+    std::vector<uint8_t> dh_private(kX25519PrivateKeyBytes, 0xC1);
+    std::vector<uint8_t> dh_public(kX25519PublicKeyBytes, 0xC2);
     SECTION("SENDER has DH private key handle") {
         auto result = ChainStep::Create(
             ChainStepType::Sender,
@@ -303,7 +303,7 @@ TEST_CASE("ChainStep - DH key handle access", "[chain_step]") {
 }
 TEST_CASE("ChainStep - IKeyProvider interface", "[chain_step]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
-    std::vector<uint8_t> chain_key(Constants::X_25519_KEY_SIZE, 0xD0);
+    std::vector<uint8_t> chain_key(kChainKeyBytes, 0xD0);
     auto result = ChainStep::Create(
         ChainStepType::Sender,
         chain_key,
@@ -318,7 +318,7 @@ TEST_CASE("ChainStep - IKeyProvider interface", "[chain_step]") {
             0,
             [&callback_executed](std::span<const uint8_t> key_bytes) -> Result<Unit, ProtocolFailure> {
                 callback_executed = true;
-                REQUIRE(key_bytes.size() == Constants::X_25519_KEY_SIZE);
+                REQUIRE(key_bytes.size() == kMessageKeyBytes);
                 return Result<Unit, ProtocolFailure>::Ok(Unit{});
             }
         );

@@ -64,8 +64,8 @@ struct EndToEndTestContext {
         auto alice_bundle = std::move(alice_bundle_result).Unwrap();
 
         const std::vector<uint8_t> info(
-            Constants::X3DH_INFO.begin(),
-            Constants::X3DH_INFO.end());
+            kX3dhInfo.begin(),
+            kX3dhInfo.end());
 
         auto shared_secret_result = ctx.alice_identity->X3dhDeriveSharedSecret(bob_bundle, info, true);
         if (shared_secret_result.IsErr()) {
@@ -373,7 +373,7 @@ TEST_CASE("Integration - Bidirectional Communication with DH Ratcheting", "[inte
         auto [alice_connection, bob_connection] = CreatePreparedPair(1, 2);
         REQUIRE(alice_connection->DebugGetKyberSharedSecret() == bob_connection->DebugGetKyberSharedSecret());
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAB);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xAB);
 
         auto alice_dh_result = alice_connection->GetCurrentSenderDhPublicKey();
         REQUIRE(alice_dh_result.IsOk());

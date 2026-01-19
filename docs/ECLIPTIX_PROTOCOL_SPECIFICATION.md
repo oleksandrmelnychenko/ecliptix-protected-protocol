@@ -29,9 +29,8 @@ Classical Diffie-Hellman based protocols, including the Signal Protocol, are vul
 
 1. **Quantum Resistance**: Protect against future quantum adversaries
 2. **Classical Security**: Maintain at least Signal Protocol security level
-3. **Backward Compatibility**: Interoperate with classical-only clients during transition
-4. **Performance**: Minimize additional latency and bandwidth overhead
-5. **Implementation Simplicity**: Avoid complex protocol state machines
+3. **Performance**: Minimize additional latency and bandwidth overhead
+4. **Implementation Simplicity**: Avoid complex protocol state machines
 
 #### 2.3 Related Work
 
@@ -264,7 +263,7 @@ Procedure:
      else:
        DH4 ← empty
   6. dh_concat ← DH1 ‖ DH2 ‖ DH3 ‖ DH4         // 96 or 128 bytes
-  7. SS ← HKDF(dh_concat, null, "Ecliptix-X3DH-v1", 32)
+  7. SS ← HKDF(dh_concat, null, "Ecliptix-X3DH", 32)
   8. (CT, KSS) ← Kyber768.Encap(KPK_B)         // PQ encapsulation
   9. Wipe: EK_sk, DH1, DH2, DH3, DH4, dh_concat
   10. Return (SS, CT, KSS, EK_pk)
@@ -293,7 +292,7 @@ Procedure:
      else:
        DH4 ← empty
   5. dh_concat ← DH1 ‖ DH2 ‖ DH3 ‖ DH4
-  6. SS ← HKDF(dh_concat, null, "Ecliptix-X3DH-v1", 32)
+  6. SS ← HKDF(dh_concat, null, "Ecliptix-X3DH", 32)
   7. KSS ← Kyber768.Decap(CT, KSK_B)           // PQ decapsulation
   8. Wipe: DH1, DH2, DH3, DH4, dh_concat
   9. Return (SS, KSS)
@@ -313,7 +312,7 @@ Output:
 
 Procedure:
   1. hybrid_secret ← SS ‖ KSS                  // 64 bytes
-  2. RK_0 ← HKDF(hybrid_secret, null, "Ecliptix-Hybrid-Init", 32)
+  2. RK_0 ← HKDF(hybrid_secret, null, "Ecliptix-Hybrid-X3DH", 32)
   3. Wipe: hybrid_secret
   4. Return RK_0
 ```
@@ -484,7 +483,7 @@ Procedure:
      else:
        sorted_dh ← IPK_peer ‖ IPK_self
   3. salt ← sorted_dh ‖ KSS                     // 96 bytes
-  4. MDK ← HKDF(RK, salt, "ecliptix-metadata-v1", 32)
+  4. MDK ← HKDF(RK, salt, "Ecliptix-MetadataKey", 32)
   5. Return MDK
 ```
 
@@ -737,7 +736,7 @@ bob_spk_public: 0x... (32 bytes)
 DH1 = X25519(alice_ik_private, bob_spk_public) = 0x...
 DH2 = X25519(alice_ek_private, bob_ik_public) = 0x...
 DH3 = X25519(alice_ek_private, bob_spk_public) = 0x...
-shared_secret = HKDF(DH1‖DH2‖DH3, null, "Ecliptix-X3DH-v1", 32) = 0x...
+shared_secret = HKDF(DH1‖DH2‖DH3, null, "Ecliptix-X3DH", 32) = 0x...
 ```
 
 #### 13.2 Symmetric Ratchet Test Vector
@@ -758,7 +757,7 @@ kyber_ss: 0x... (32 bytes)
 
 sorted_dh = min(ipk_self, ipk_peer) ‖ max(ipk_self, ipk_peer)
 salt = sorted_dh ‖ kyber_ss
-metadata_key = HKDF(root_key, salt, "ecliptix-metadata-v1", 32) = 0x...
+metadata_key = HKDF(root_key, salt, "Ecliptix-MetadataKey", 32) = 0x...
 ```
 
 ---

@@ -21,13 +21,12 @@ public:
     static std::vector<uint8_t> DeriveKyberSeed(
         std::span<const uint8_t> master_key,
         std::string_view membership_id);
-    static constexpr std::string_view ED_25519_CONTEXT = "ecliptix-ed25519-v1";
-    static constexpr std::string_view X_25519_CONTEXT = "ecliptix-x25519-v1";
-    static constexpr std::string_view SIGNED_PRE_KEY_CONTEXT = "ecliptix-spk-v1";
-    static constexpr std::string_view KYBER_CONTEXT = "ecliptix-kyber768-v1";
+    static constexpr std::string_view ED_25519_CONTEXT = "Ecliptix-Ed25519";
+    static constexpr std::string_view X_25519_CONTEXT = "Ecliptix-X25519";
+    static constexpr std::string_view SIGNED_PRE_KEY_CONTEXT = "Ecliptix-SignedPreKey";
+    static constexpr std::string_view KYBER_CONTEXT = "Ecliptix-Kyber768";
 private:
     static constexpr int KEY_SIZE = 32;
-    static constexpr int CURRENT_VERSION = 1;
     static std::vector<uint8_t> HashWithGenericHash(
         std::span<const uint8_t> key,
         std::span<const uint8_t> data,

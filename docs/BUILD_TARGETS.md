@@ -2,8 +2,8 @@
 
 We now produce two binaries so desktop/mobile apps and server-side services can be built independently:
 
-- **Agent target** (`Ecliptix_Protocol_System`, alias `Ecliptix::Protocol`)
-  - Sources: core + C API (`src/c_api/ecliptix_c_api.cpp`) for native/mobile bindings.
+- **Agent target** (`Ecliptix_Protection_Protocol`, alias `Ecliptix::Protocol`)
+  - Sources: core + C API (`src/c_api/epp_common.cpp`) for native/mobile bindings.
   - Output name: `epp_agent` (shared if `ECLIPTIX_BUILD_SHARED=ON`, otherwise static).
 
 - **Relay target** (`Ecliptix_Protocol_Server`, alias `Ecliptix::ProtocolServer`)
@@ -33,6 +33,6 @@ cmake --build build
 ```
 
 Bindings:
-- C#/PInvoke targets the agent library name (`epp_agent`) by default. If you **must** point it at a differently named artifact, define `ECLIPTIX_SERVER` in your C# build to switch the DllImport library name to `epp_relay` (note: the relay target does not expose the C API).
+- C#/PInvoke targets the agent library name (`epp_agent`) by default. If you **must** point it at a differently named artifact, define `ECLIPTIX_SERVER_NATIVE` in your C# build to switch the DllImport library name to `epp_relay` (note: the relay target does not expose the C API).
 
 Both targets retain the same cryptographic guarantees (hybrid DH ratchet with mandatory Kyber, ratchet epochs on envelopes to detect stale state). Pick the target that matches your runtime: use the agent build for native/mobile apps that need the C API or managed bindings; use the relay build for stateless relays or headless services.

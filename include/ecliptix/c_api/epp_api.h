@@ -36,32 +36,40 @@ typedef enum {
     EPP_ERROR_PQ_MISSING = 19
 } EppErrorCode;
 
-typedef struct ProtocolSystemHandle ProtocolSystemHandle;
-typedef struct ProtocolConnectionHandle ProtocolConnectionHandle;
 typedef struct EppIdentityHandle EppIdentityHandle;
+typedef struct EppSessionHandle EppSessionHandle;
+typedef struct EppHandshakeInitiatorHandle EppHandshakeInitiatorHandle;
+typedef struct EppHandshakeResponderHandle EppHandshakeResponderHandle;
+
 typedef struct EppBuffer {
     uint8_t* data;
     size_t length;
 } EppBuffer;
+
+typedef enum {
+    EPP_ENVELOPE_REQUEST = 0,
+    EPP_ENVELOPE_RESPONSE = 1,
+    EPP_ENVELOPE_NOTIFICATION = 2,
+    EPP_ENVELOPE_HEARTBEAT = 3,
+    EPP_ENVELOPE_ERROR_RESPONSE = 4
+} EppEnvelopeType;
 
 typedef struct EppError {
     EppErrorCode code;
     char* message;
 } EppError;
 
-typedef void (*EppEventCallback)(uint32_t connection_id, void* user_data);
-
-typedef struct EppCallbacks {
-    EppEventCallback on_protocol_state_changed;
-    void* user_data;
-} EppCallbacks;
+typedef struct EppSessionConfig {
+    uint32_t max_messages_per_ratchet;
+} EppSessionConfig;
 
 EPP_API const char* epp_version(void);
-
 EPP_API EppErrorCode epp_init(void);
-
 EPP_API void epp_shutdown(void);
 
+// ---------------------------------------------------------------------------
+// Identity Keys
+// ---------------------------------------------------------------------------
 EPP_API EppErrorCode epp_identity_create(
     EppIdentityHandle** out_handle,
     EppError* out_error);
@@ -101,82 +109,92 @@ EPP_API EppErrorCode epp_identity_get_kyber_public(
 
 EPP_API void epp_identity_destroy(EppIdentityHandle* handle);
 
-EPP_API EppErrorCode epp_session_create(
+// ---------------------------------------------------------------------------
+// Handshake + Session
+// ---------------------------------------------------------------------------
+// Create a PreKeyBundle (serialized protobuf) for publishing.
+EPP_API EppErrorCode epp_prekey_bundle_create(
+    const EppIdentityHandle* identity_keys,
+    EppBuffer* out_bundle,
+    EppError* out_error);
+
+// Initiator: start handshake using peer PreKeyBundle bytes.
+EPP_API EppErrorCode epp_handshake_initiator_start(
     EppIdentityHandle* identity_keys,
-    ProtocolSystemHandle** out_handle,
+    const uint8_t* peer_prekey_bundle,
+    size_t peer_prekey_bundle_length,
+    const EppSessionConfig* config,
+    EppHandshakeInitiatorHandle** out_handle,
+    EppBuffer* out_handshake_init,
     EppError* out_error);
 
-EPP_API EppErrorCode epp_session_set_callbacks(
-    ProtocolSystemHandle* handle,
-    const EppCallbacks* callbacks,
+// Initiator: finish handshake using responder ack bytes.
+EPP_API EppErrorCode epp_handshake_initiator_finish(
+    EppHandshakeInitiatorHandle* handle,
+    const uint8_t* handshake_ack,
+    size_t handshake_ack_length,
+    EppSessionHandle** out_session,
     EppError* out_error);
 
-// Begin a handshake with encapsulation to peer's Kyber public key (MANDATORY - Kyber is required).
-// Use this when you know the peer's Kyber key (e.g., after receiving their bundle).
-// The resulting bundle will include kyber_ciphertext for the peer to decapsulate.
-EPP_API EppErrorCode epp_session_begin_handshake(
-    ProtocolSystemHandle* handle,
-    uint32_t connection_id,
-    uint8_t exchange_type,
-    const uint8_t* peer_kyber_public_key,
-    size_t peer_kyber_public_key_length,
-    EppBuffer* out_handshake_message,
+EPP_API void epp_handshake_initiator_destroy(EppHandshakeInitiatorHandle* handle);
+
+// Responder: process handshake init bytes using published local PreKeyBundle.
+EPP_API EppErrorCode epp_handshake_responder_start(
+    EppIdentityHandle* identity_keys,
+    const uint8_t* local_prekey_bundle,
+    size_t local_prekey_bundle_length,
+    const uint8_t* handshake_init,
+    size_t handshake_init_length,
+    const EppSessionConfig* config,
+    EppHandshakeResponderHandle** out_handle,
+    EppBuffer* out_handshake_ack,
     EppError* out_error);
 
-EPP_API EppErrorCode epp_session_complete_handshake(
-    ProtocolSystemHandle* handle,
-    const uint8_t* peer_handshake_message,
-    size_t peer_handshake_message_length,
-    const uint8_t* root_key,
-    size_t root_key_length,
+// Responder: finish handshake after ack is sent.
+EPP_API EppErrorCode epp_handshake_responder_finish(
+    EppHandshakeResponderHandle* handle,
+    EppSessionHandle** out_session,
     EppError* out_error);
 
-// Complete a handshake by deriving the root key (hybrid X3DH/PQ) from the peer handshake payload
-// using the local identity keys. This avoids root-key derivation on the caller side.
-EPP_API EppErrorCode epp_session_complete_handshake_auto(
-    ProtocolSystemHandle* handle,
-    const uint8_t* peer_handshake_message,
-    size_t peer_handshake_message_length,
-    EppError* out_error);
+EPP_API void epp_handshake_responder_destroy(EppHandshakeResponderHandle* handle);
 
+// Encrypt/decrypt envelopes using the session.
 EPP_API EppErrorCode epp_session_encrypt(
-    const ProtocolSystemHandle* handle,
+    EppSessionHandle* handle,
     const uint8_t* plaintext,
     size_t plaintext_length,
+    EppEnvelopeType envelope_type,
+    uint32_t envelope_id,
+    const char* correlation_id,
+    size_t correlation_id_length,
     EppBuffer* out_encrypted_envelope,
     EppError* out_error);
 
 EPP_API EppErrorCode epp_session_decrypt(
-    const ProtocolSystemHandle* handle,
+    EppSessionHandle* handle,
     const uint8_t* encrypted_envelope,
     size_t encrypted_envelope_length,
     EppBuffer* out_plaintext,
+    EppBuffer* out_metadata,
     EppError* out_error);
 
-// Create a protocol system from a pre-shared root key (e.g., OPAQUE) and peer bundle (serialized PublicKeyBundle).
-EPP_API EppErrorCode epp_session_create_from_root(
-    EppIdentityHandle* identity_keys,
-    const uint8_t* root_key,
-    size_t root_key_length,
-    const uint8_t* peer_bundle,
-    size_t peer_bundle_length,
-    bool is_initiator,
-    ProtocolSystemHandle** out_handle,
-    EppError* out_error);
-
-// Export/import full protocol state (serialized ProtocolState protobuf).
+// Export/import session state (serialized ProtocolState protobuf).
 EPP_API EppErrorCode epp_session_serialize(
-    const ProtocolSystemHandle* handle,
+    EppSessionHandle* handle,
     EppBuffer* out_state,
     EppError* out_error);
 
 EPP_API EppErrorCode epp_session_deserialize(
-    EppIdentityHandle* identity_keys,
     const uint8_t* state_bytes,
     size_t state_bytes_length,
-    ProtocolSystemHandle** out_handle,
+    EppSessionHandle** out_handle,
     EppError* out_error);
 
+EPP_API void epp_session_destroy(EppSessionHandle* handle);
+
+// ---------------------------------------------------------------------------
+// Utilities
+// ---------------------------------------------------------------------------
 EPP_API EppErrorCode epp_envelope_validate(
     const uint8_t* encrypted_envelope,
     size_t encrypted_envelope_length,
@@ -191,87 +209,7 @@ EPP_API EppErrorCode epp_derive_root_key(
     size_t out_root_key_length,
     EppError* out_error);
 
-EPP_API EppErrorCode epp_session_is_established(
-    const ProtocolSystemHandle* handle,
-    bool* out_has_connection,
-    EppError* out_error);
-
-EPP_API EppErrorCode epp_session_get_id(
-    const ProtocolSystemHandle* handle,
-    uint32_t* out_connection_id,
-    EppError* out_error);
-
-EPP_API EppErrorCode epp_session_get_chain_indices(
-    const ProtocolSystemHandle* handle,
-    uint32_t* out_sending_index,
-    uint32_t* out_receiving_index,
-    EppError* out_error);
-
-// Get the OPK ID selected during X3DH handshake (for communicating to peer).
-// Returns the ID via out_opk_id and sets out_has_opk_id to true if an OPK was used.
-// If no OPK was used (no OPKs available from peer), out_has_opk_id will be false.
-EPP_API EppErrorCode epp_session_get_used_prekey_id(
-    const ProtocolSystemHandle* handle,
-    bool* out_has_opk_id,
-    uint32_t* out_opk_id,
-    EppError* out_error);
-
-// Get session age in seconds since creation.
-// Application layer can use this to decide when to refresh/rehandshake.
-// Session timeout is no longer enforced by the library - it's the application's responsibility.
-EPP_API EppErrorCode epp_session_age_seconds(
-    const ProtocolSystemHandle* handle,
-    uint64_t* out_age_seconds,
-    EppError* out_error);
-
-// Set Kyber hybrid handshake secrets on the active connection.
-// Call this BEFORE finalizing the connection when using manual Kyber secret setup.
-// This is useful when the Kyber shared secret is derived externally (e.g., from OPAQUE).
-EPP_API EppErrorCode epp_session_set_kyber_secrets(
-    const ProtocolSystemHandle* handle,
-    const uint8_t* kyber_ciphertext,
-    size_t kyber_ciphertext_length,
-    const uint8_t* kyber_shared_secret,
-    size_t kyber_shared_secret_length,
-    EppError* out_error);
-
-EPP_API void epp_session_destroy(const ProtocolSystemHandle* handle);
-
-EPP_API EppErrorCode epp_connection_create(
-    uint32_t connection_id,
-    bool is_initiator,
-    ProtocolConnectionHandle** out_handle,
-    EppError* out_error);
-
-EPP_API EppErrorCode epp_connection_set_peer_bundle(
-    ProtocolConnectionHandle* handle,
-    const uint8_t* peer_bundle,
-    size_t peer_bundle_length,
-    EppError* out_error);
-
-EPP_API EppErrorCode epp_connection_finalize_keys(
-    ProtocolConnectionHandle* handle,
-    const uint8_t* initial_root_key,
-    size_t initial_root_key_length,
-    const uint8_t* peer_dh_public_key,
-    size_t peer_dh_public_key_length,
-    EppError* out_error);
-
-EPP_API EppErrorCode epp_connection_serialize(
-    const ProtocolConnectionHandle* handle,
-    EppBuffer* out_serialized_state,
-    EppError* out_error);
-
-EPP_API EppErrorCode epp_connection_deserialize(
-    const uint8_t* serialized_state,
-    size_t serialized_state_length,
-    uint32_t connection_id,
-    ProtocolConnectionHandle** out_handle,
-    EppError* out_error);
-
-EPP_API void epp_connection_destroy(ProtocolConnectionHandle* handle);
-
-// Secret sharing (Shamir, GF(256), v1 share format)
+// Secret sharing (Shamir, GF(256))
 EPP_API EppErrorCode epp_shamir_split(
     const uint8_t* secret,
     size_t secret_length,
@@ -293,12 +231,14 @@ EPP_API EppErrorCode epp_shamir_reconstruct(
     EppBuffer* out_secret,
     EppError* out_error);
 
+// Memory management
+// Release data for caller-provided buffers (e.g., outputs from API calls).
+EPP_API void epp_buffer_release(EppBuffer* buffer);
+// Allocate a heap-owned buffer struct plus optional capacity.
 EPP_API EppBuffer* epp_buffer_alloc(size_t capacity);
-
+// Free a buffer allocated by epp_buffer_alloc.
 EPP_API void epp_buffer_free(EppBuffer* buffer);
-
 EPP_API void epp_error_free(EppError* error);
-
 EPP_API const char* epp_error_string(EppErrorCode code);
 
 EPP_API EppErrorCode epp_secure_wipe(

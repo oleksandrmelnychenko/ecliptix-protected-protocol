@@ -18,10 +18,10 @@ using namespace ecliptix::proto::common;
 using namespace ecliptix::protocol::test_helpers;
 
 static std::vector<uint8_t> MakeBoundNonce(uint32_t index, uint8_t fill = 0x42) {
-    std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE, fill);
+    std::vector<uint8_t> nonce(kAesGcmNonceBytes, fill);
     const size_t index_offset =
-        ProtocolConstants::NONCE_PREFIX_SIZE + ProtocolConstants::NONCE_COUNTER_SIZE;
-    for (size_t i = 0; i < ProtocolConstants::NONCE_INDEX_SIZE; ++i) {
+        kNoncePrefixBytes + kNonceCounterBytes;
+    for (size_t i = 0; i < kNonceIndexBytes; ++i) {
         nonce[index_offset + i] = static_cast<uint8_t>((index >> (i * 8)) & 0xFF);
     }
     return nonce;
@@ -40,7 +40,7 @@ struct AttackTestContext {
         ctx.alice = std::move(alice);
         ctx.bob = std::move(bob);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAB);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xAB);
 
         auto alice_dh_result = ctx.alice->GetCurrentSenderDhPublicKey();
         if (alice_dh_result.IsErr()) {
@@ -429,7 +429,7 @@ TEST_CASE("Attacks - Wrong Key Decryption Attempts", "[attacks][envelope][key-co
 
         auto eve = CreatePreparedConnection(3, false);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x11);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0x11);
 
         auto alice_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
         auto bob_dh = bob->GetCurrentSenderDhPublicKey().Unwrap().value();
@@ -438,7 +438,7 @@ TEST_CASE("Attacks - Wrong Key Decryption Attempts", "[attacks][envelope][key-co
         REQUIRE(alice->FinalizeChainAndDhKeys(root_key, bob_dh).IsOk());
         REQUIRE(bob->FinalizeChainAndDhKeys(root_key, alice_dh).IsOk());
 
-        std::vector<uint8_t> eve_root_key(Constants::X_25519_KEY_SIZE, 0x22);
+        std::vector<uint8_t> eve_root_key(kRootKeyBytes, 0x22);
         REQUIRE(eve->FinalizeChainAndDhKeys(eve_root_key, alice_dh).IsOk());
 
         auto alice_metadata_key = alice->GetMetadataEncryptionKey().Unwrap();

@@ -85,7 +85,7 @@ internal static partial class SodiumInterop
                         buf => buf.Length <= MAX_BUFFER_SIZE,
                         SodiumFailure.BUFFER_TOO_LARGE(
                             string.Format(SodiumFailureMessages.BUFFER_TOO_LARGE, nonNullBuffer.Length, MAX_BUFFER_SIZE)))
-                    .Bind(validBuffer => validBuffer.Length <= Constants.SMALL_BUFFER_THRESHOLD
+                    .Bind(validBuffer => validBuffer.Length <= Constants.SmallBufferThreshold
                         ? WipeSmallBuffer(validBuffer)
                         : WipeLargeBuffer(validBuffer))
             });
@@ -97,7 +97,7 @@ internal static partial class SodiumInterop
         try
         {
             Result<SodiumSecureMemoryHandle, SodiumFailure> allocResult =
-                SodiumSecureMemoryHandle.Allocate(Constants.X_25519_PRIVATE_KEY_SIZE);
+                SodiumSecureMemoryHandle.Allocate(Constants.X25519PrivateKeyBytes);
             if (allocResult.IsErr)
             {
                 return Result<(SodiumSecureMemoryHandle, byte[]), EcliptixProtocolFailure>.Err(allocResult.UnwrapErr()
@@ -106,7 +106,7 @@ internal static partial class SodiumInterop
 
             SodiumSecureMemoryHandle? skHandle = allocResult.Unwrap();
 
-            byte[] skBytes = SodiumCore.GetRandomBytes(Constants.X_25519_PRIVATE_KEY_SIZE);
+            byte[] skBytes = SodiumCore.GetRandomBytes(Constants.X25519PrivateKeyBytes);
             try
             {
                 Result<Unit, SodiumFailure> writeResult = skHandle.Write(skBytes);
@@ -122,7 +122,7 @@ internal static partial class SodiumInterop
                 SecureWipe(skBytes);
             }
 
-            byte[] tempPrivCopy = new byte[Constants.X_25519_PRIVATE_KEY_SIZE];
+            byte[] tempPrivCopy = new byte[Constants.X25519PrivateKeyBytes];
             try
             {
                 Result<Unit, SodiumFailure> readResult = skHandle.Read(tempPrivCopy);
@@ -146,7 +146,7 @@ internal static partial class SodiumInterop
 
                 byte[] pkBytes = deriveResult.Unwrap();
 
-                if (pkBytes.Length != Constants.X_25519_PUBLIC_KEY_SIZE)
+                if (pkBytes.Length != Constants.X25519PublicKeyBytes)
                 {
                     skHandle.Dispose();
                     SecureWipe(pkBytes);

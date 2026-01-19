@@ -24,13 +24,13 @@ using namespace ecliptix::proto::common;
 using namespace ecliptix::protocol::test_helpers;
 
 static std::vector<uint8_t> MakeMetaNonce(uint64_t nonce_counter, uint32_t message_index) {
-    std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE, 0);
-    for (size_t i = 0; i < ProtocolConstants::NONCE_COUNTER_SIZE; ++i) {
-        nonce[ProtocolConstants::NONCE_PREFIX_SIZE + i] =
+    std::vector<uint8_t> nonce(kAesGcmNonceBytes, 0);
+    for (size_t i = 0; i < kNonceCounterBytes; ++i) {
+        nonce[kNoncePrefixBytes + i] =
             static_cast<uint8_t>((nonce_counter >> (i * 8)) & 0xFF);
     }
-    for (size_t i = 0; i < ProtocolConstants::NONCE_INDEX_SIZE; ++i) {
-        nonce[ProtocolConstants::NONCE_PREFIX_SIZE + ProtocolConstants::NONCE_COUNTER_SIZE + i] =
+    for (size_t i = 0; i < kNonceIndexBytes; ++i) {
+        nonce[kNoncePrefixBytes + kNonceCounterBytes + i] =
             static_cast<uint8_t>((message_index >> (i * 8)) & 0xFF);
     }
     return nonce;
@@ -42,7 +42,7 @@ TEST_CASE("Metadata Key Rotation - Basic Rotation on DH Ratchet", "[security][me
     SECTION("Metadata key rotates on DH ratchet") {
         auto [alice, bob] = CreatePreparedPair(1, 2);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xAA);
 
         auto alice_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
         auto bob_dh = bob->GetCurrentSenderDhPublicKey().Unwrap().value();
@@ -112,7 +112,7 @@ TEST_CASE("Metadata Key Rotation - Forward Secrecy", "[security][metadata_rotati
     SECTION("Old metadata keys cannot decrypt new messages after rotation") {
         auto [alice, bob] = CreatePreparedPair(1, 2);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xBB);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xBB);
 
         auto alice_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
         auto bob_dh = bob->GetCurrentSenderDhPublicKey().Unwrap().value();
@@ -176,7 +176,7 @@ TEST_CASE("Metadata Key Rotation - Uniqueness Across Ratchets", "[security][meta
     SECTION("Each DH ratchet produces unique metadata key") {
         auto [alice, bob] = CreatePreparedPair(1, 2);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xCC);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xCC);
 
         auto alice_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
         auto bob_dh = bob->GetCurrentSenderDhPublicKey().Unwrap().value();
@@ -217,7 +217,7 @@ TEST_CASE("Metadata Key Rotation - Decryption Window", "[security][metadata_rota
     SECTION("Messages encrypted with rotated key cannot be decrypted with old key") {
         auto [alice, bob] = CreatePreparedPair(1, 2);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xDD);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xDD);
 
         auto alice_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
         auto bob_dh = bob->GetCurrentSenderDhPublicKey().Unwrap().value();
@@ -294,7 +294,7 @@ TEST_CASE("Metadata Key Rotation - High-Frequency Ratchets", "[security][metadat
     SECTION("Metadata key remains unique under high-frequency ratcheting") {
         auto [alice, bob] = CreatePreparedPair(1, 2);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xEE);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xEE);
 
         auto alice_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
         auto bob_dh = bob->GetCurrentSenderDhPublicKey().Unwrap().value();
@@ -335,7 +335,7 @@ TEST_CASE("Metadata Key Rotation - Bidirectional Ratchets", "[security][metadata
     SECTION("Both sides maintain independent metadata key rotation") {
         auto [alice, bob] = CreatePreparedPair(1, 2);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xFF);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xFF);
 
         auto alice_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
         auto bob_dh = bob->GetCurrentSenderDhPublicKey().Unwrap().value();
@@ -411,7 +411,7 @@ TEST_CASE("Metadata Key Rotation - Key Derivation Independence", "[security][met
     SECTION("Metadata keys derived independently from message keys") {
         auto [alice, bob] = CreatePreparedPair(1, 2);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x11);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0x11);
 
         auto alice_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
         auto bob_dh = bob->GetCurrentSenderDhPublicKey().Unwrap().value();
@@ -461,7 +461,7 @@ TEST_CASE("Metadata Key Rotation - Cross-Connection Independence", "[security][m
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Different connections produce different metadata keys") {
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x22);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0x22);
 
         auto conn1 = CreatePreparedConnection(1, true);
 

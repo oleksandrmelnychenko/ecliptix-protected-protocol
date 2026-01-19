@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# Ecliptix Protocol System - NuGet Package Build Script
+# Ecliptix Protection Protocol - NuGet Package Build Script
 # Builds and packages the native C++ library for distribution via NuGet
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -98,7 +98,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-print_header "Ecliptix Protocol System - NuGet Build"
+print_header "Ecliptix Protection Protocol - NuGet Build"
 echo "Version: $VERSION"
 echo "Configuration: $CONFIG"
 echo "Skip Build: $SKIP_BUILD"

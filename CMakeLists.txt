@@ -168,25 +168,12 @@ set(ECLIPTIX_CORE_SOURCES
     ${ECLIPTIX_SOURCE_DIR}/identity/identity_keys.cpp
 
     # Protocol - Phase 4
-    ${ECLIPTIX_SOURCE_DIR}/protocol/chain_step/chain_step.cpp
-
-    # Connection - Phase 5
-    ${ECLIPTIX_SOURCE_DIR}/protocol/connection/protocol_connection.cpp
-
-    # Protocol System - Phase 6
-    ${ECLIPTIX_SOURCE_DIR}/protocol/protocol_system.cpp
+    ${ECLIPTIX_SOURCE_DIR}/protocol/nonce.cpp
+    ${ECLIPTIX_SOURCE_DIR}/protocol/handshake.cpp
+    ${ECLIPTIX_SOURCE_DIR}/protocol/session.cpp
 
     # Security - Phase 5
     ${ECLIPTIX_SOURCE_DIR}/security/validation/dh_validator.cpp
-    ${ECLIPTIX_SOURCE_DIR}/security/ratcheting/replay_protection.cpp
-    ${ECLIPTIX_SOURCE_DIR}/security/ratcheting/ratchet_recovery.cpp
-
-    # Utilities
-    ${ECLIPTIX_SOURCE_DIR}/utilities/envelope_builder.cpp
-
-    # Group Messaging - Phase 5
-    ${ECLIPTIX_SOURCE_DIR}/protocol/group/group_member.cpp
-    ${ECLIPTIX_SOURCE_DIR}/protocol/group/group_metadata.cpp
 )
 
 # Common C API sources (shared between client and server)
@@ -197,14 +184,12 @@ set(ECLIPTIX_COMMON_API_SOURCES
 set(ECLIPTIX_CLIENT_SOURCES
     ${ECLIPTIX_CORE_SOURCES}
     ${ECLIPTIX_COMMON_API_SOURCES}
-    ${ECLIPTIX_SOURCE_DIR}/c_api/epp_api.cpp
 )
 
 # Server sources include core + common + server-specific C API
 set(ECLIPTIX_SERVER_SOURCES
     ${ECLIPTIX_CORE_SOURCES}
     ${ECLIPTIX_COMMON_API_SOURCES}
-    ${ECLIPTIX_SOURCE_DIR}/c_api/epp_server_api.cpp
 )
 
 function(configure_protocol_target target_name output_name)

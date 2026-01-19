@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-This document specifies the integration of CRYSTALS-Kyber (ML-KEM FIPS 203) into Ecliptix Protocol System to achieve post-quantum security for key agreement. We implement a **hybrid construction** combining X25519 and Kyber-768, ensuring security if either primitive remains secure.
+This document specifies the integration of CRYSTALS-Kyber (ML-KEM FIPS 203) into Ecliptix Protection Protocol to achieve post-quantum security for key agreement. We implement a **hybrid construction** combining X25519 and Kyber-768, ensuring security if either primitive remains secure.
 
 **Key Design Decisions**:
 - **Kyber Variant**: Kyber-768 (NIST Security Level 3, ~128-bit post-quantum security)
@@ -212,7 +212,7 @@ OQS_STATUS OQS_KEM_decaps(const OQS_KEM *kem,
 ```
 HybridKDF(x25519_ss, kyber_ss, context):
     Input Keying Material (IKM) = x25519_ss || kyber_ss  // 64 bytes
-    Salt = "Ecliptix-PQ-Hybrid-v1" || context            // context-dependent
+    Salt = "Ecliptix-PQ-Hybrid" || context            // context-dependent
 
     MasterSecret = HKDF-Extract(Salt, IKM)               // 32 bytes
     return MasterSecret
@@ -250,7 +250,7 @@ CombineHybridSecrets(
     std::copy_n(kyber_shared_secret.begin(), 32, ikm.begin() + 32);
 
     // Construct salt
-    std::string salt_str = "Ecliptix-PQ-Hybrid-v1::";
+    std::string salt_str = "Ecliptix-PQ-Hybrid::";
     salt_str += context;
     std::vector<uint8_t> salt(salt_str.begin(), salt_str.end());
 
@@ -1176,7 +1176,7 @@ constexpr size_t KYBER_768_CIPHERTEXT_SIZE = 1088;
 constexpr size_t KYBER_768_SHARED_SECRET_SIZE = 32;
 
 // Hybrid KDF contexts
-constexpr std::string_view HYBRID_KDF_SALT = "Ecliptix-PQ-Hybrid-v1";
+constexpr std::string_view HYBRID_KDF_SALT = "Ecliptix-PQ-Hybrid";
 constexpr std::string_view CONTEXT_X3DH = "X3DH-Handshake";
 constexpr std::string_view CONTEXT_RATCHET_DH = "Ratchet-DH";
 constexpr std::string_view CONTEXT_RATCHET_KEM = "PQRatchet-KEM";

@@ -1,4 +1,4 @@
-# Ecliptix Protocol System: Security Audit Report 2025
+# Ecliptix Protection Protocol: Security Audit Report 2025
 
 **Audit Date**: January 2025
 **Auditor**: Internal Security Review
@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-This document records a comprehensive security audit of Ecliptix.Protocol.System that identified and resolved **5 critical security vulnerabilities** in the core protocol implementation. All vulnerabilities have been fixed, tested, and verified.
+This document records a comprehensive security audit of Ecliptix.Protection.Protocol that identified and resolved **5 critical security vulnerabilities** in the core protocol implementation. All vulnerabilities have been fixed, tested, and verified.
 
 **Severity Distribution**:
 - 🔴 **Critical**: 2 vulnerabilities (authentication/forward secrecy breaks)
@@ -56,7 +56,7 @@ Incorrect variable selection during initial port from C# to C++. The sending pri
 ```cpp
 // BEFORE (VULNERABLE):
 auto private_key_result = initial_sending_dh_private_handle_.ReadBytes(
-    Constants::X_25519_PRIVATE_KEY_SIZE);
+    kX25519PrivateKeyBytes);
 persistent_private_bytes = private_key_result.Unwrap();
 
 // Uses WRONG key for receiver chain derivation
@@ -67,7 +67,7 @@ dh_secret = crypto_scalarmult(persistent_private_bytes, peer_dh_public_copy);
 ```cpp
 // AFTER (FIXED):
 auto private_key_result = persistent_dh_private_handle_.ReadBytes(
-    Constants::X_25519_PRIVATE_KEY_SIZE);
+    kX25519PrivateKeyBytes);
 persistent_private_bytes = private_key_result.Unwrap();
 
 // Now uses CORRECT key for receiver chain derivation
@@ -330,10 +330,10 @@ auto write_result = root_key_handle.Write(std::span(
 ```cpp
 // AFTER (FIXED):
 // Validate size BEFORE allocation
-if (proto.root_key().size() != Constants::X_25519_KEY_SIZE) {
+if (proto.root_key().size() != kRootKeyBytes) {
     return Err(EcliptixProtocolFailure::InvalidInput(
         std::format("Invalid root key size: expected {}, got {}",
-                    Constants::X_25519_KEY_SIZE,
+                    kRootKeyBytes,
                     proto.root_key().size())));
 }
 
@@ -584,7 +584,7 @@ valgrind --tool=ctgrind ./ecliptix_tests
 
 ## Conclusion
 
-All **5 critical security vulnerabilities** have been successfully identified, fixed, and verified. The Ecliptix Protocol System is now **production-ready** from a security perspective.
+All **5 critical security vulnerabilities** have been successfully identified, fixed, and verified. The Ecliptix Protection Protocol is now **production-ready** from a security perspective.
 
 **Overall Assessment**:
 - **Before Audit**: 🔴 CRITICAL - Core protocol broken

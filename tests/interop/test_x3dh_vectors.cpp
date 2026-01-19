@@ -38,30 +38,30 @@ struct X3DHTestVector {
     static X3DHTestVector Generate() {
         X3DHTestVector vec;
 
-        vec.alice_identity_private.resize(Constants::X_25519_PRIVATE_KEY_SIZE);
-        vec.alice_identity_public.resize(Constants::X_25519_PUBLIC_KEY_SIZE);
+        vec.alice_identity_private.resize(kX25519PrivateKeyBytes);
+        vec.alice_identity_public.resize(kX25519PublicKeyBytes);
         crypto_box_keypair(vec.alice_identity_public.data(), vec.alice_identity_private.data());
 
-        vec.alice_ephemeral_private.resize(Constants::X_25519_PRIVATE_KEY_SIZE);
-        vec.alice_ephemeral_public.resize(Constants::X_25519_PUBLIC_KEY_SIZE);
+        vec.alice_ephemeral_private.resize(kX25519PrivateKeyBytes);
+        vec.alice_ephemeral_public.resize(kX25519PublicKeyBytes);
         crypto_box_keypair(vec.alice_ephemeral_public.data(), vec.alice_ephemeral_private.data());
 
-        vec.bob_identity_private.resize(Constants::X_25519_PRIVATE_KEY_SIZE);
-        vec.bob_identity_public.resize(Constants::X_25519_PUBLIC_KEY_SIZE);
+        vec.bob_identity_private.resize(kX25519PrivateKeyBytes);
+        vec.bob_identity_public.resize(kX25519PublicKeyBytes);
         crypto_box_keypair(vec.bob_identity_public.data(), vec.bob_identity_private.data());
 
-        vec.bob_signed_pre_key_private.resize(Constants::X_25519_PRIVATE_KEY_SIZE);
-        vec.bob_signed_pre_key_public.resize(Constants::X_25519_PUBLIC_KEY_SIZE);
+        vec.bob_signed_pre_key_private.resize(kX25519PrivateKeyBytes);
+        vec.bob_signed_pre_key_public.resize(kX25519PublicKeyBytes);
         crypto_box_keypair(vec.bob_signed_pre_key_public.data(), vec.bob_signed_pre_key_private.data());
 
-        vec.bob_one_time_pre_key_private.resize(Constants::X_25519_PRIVATE_KEY_SIZE);
-        vec.bob_one_time_pre_key_public.resize(Constants::X_25519_PUBLIC_KEY_SIZE);
+        vec.bob_one_time_pre_key_private.resize(kX25519PrivateKeyBytes);
+        vec.bob_one_time_pre_key_public.resize(kX25519PublicKeyBytes);
         crypto_box_keypair(vec.bob_one_time_pre_key_public.data(), vec.bob_one_time_pre_key_private.data());
 
-        vec.expected_dh1.resize(Constants::X_25519_KEY_SIZE);
-        vec.expected_dh2.resize(Constants::X_25519_KEY_SIZE);
-        vec.expected_dh3.resize(Constants::X_25519_KEY_SIZE);
-        vec.expected_dh4.resize(Constants::X_25519_KEY_SIZE);
+        vec.expected_dh1.resize(kX25519SharedSecretBytes);
+        vec.expected_dh2.resize(kX25519SharedSecretBytes);
+        vec.expected_dh3.resize(kX25519SharedSecretBytes);
+        vec.expected_dh4.resize(kX25519SharedSecretBytes);
 
         const auto dh1_result = crypto_scalarmult(vec.expected_dh1.data(), vec.alice_identity_private.data(), vec.bob_signed_pre_key_public.data());
         const auto dh2_result = crypto_scalarmult(vec.expected_dh2.data(), vec.alice_ephemeral_private.data(), vec.bob_identity_public.data());
@@ -187,12 +187,12 @@ TEST_CASE("X3DH Test Vectors - Basic Key Agreement", "[x3dh][interop][vectors]")
         REQUIRE(bob_bundle_result.IsOk());
         auto bob_bundle = std::move(bob_bundle_result).Unwrap();
 
-        std::vector<uint8_t> info(ProtocolConstants::X3DH_INFO.begin(), ProtocolConstants::X3DH_INFO.end());
+        std::vector<uint8_t> info(kX3dhInfo.begin(), kX3dhInfo.end());
         auto shared_secret_result = alice_keys.X3dhDeriveSharedSecret(bob_bundle, info, true);
         REQUIRE(shared_secret_result.IsOk());
 
         auto shared_secret_handle = std::move(shared_secret_result).Unwrap();
-        REQUIRE(shared_secret_handle.Size() == Constants::X_25519_KEY_SIZE);
+        REQUIRE(shared_secret_handle.Size() == kRootKeyBytes);
     }
 }
 
@@ -202,7 +202,7 @@ TEST_CASE("X3DH Test Vectors - DH Operations Correctness", "[x3dh][interop][vect
     SECTION("Verify DH1: IK_A * SPK_B") {
         const auto vec = X3DHTestVector::Generate();
 
-        std::vector<uint8_t> computed_dh1(Constants::X_25519_KEY_SIZE);
+        std::vector<uint8_t> computed_dh1(kX25519SharedSecretBytes);
         const int result = crypto_scalarmult(
             computed_dh1.data(),
             vec.alice_identity_private.data(),
@@ -216,7 +216,7 @@ TEST_CASE("X3DH Test Vectors - DH Operations Correctness", "[x3dh][interop][vect
     SECTION("Verify DH2: EK_A * IK_B") {
         const auto vec = X3DHTestVector::Generate();
 
-        std::vector<uint8_t> computed_dh2(Constants::X_25519_KEY_SIZE);
+        std::vector<uint8_t> computed_dh2(kX25519SharedSecretBytes);
         const int result = crypto_scalarmult(
             computed_dh2.data(),
             vec.alice_ephemeral_private.data(),
@@ -230,7 +230,7 @@ TEST_CASE("X3DH Test Vectors - DH Operations Correctness", "[x3dh][interop][vect
     SECTION("Verify DH3: EK_A * SPK_B") {
         const auto vec = X3DHTestVector::Generate();
 
-        std::vector<uint8_t> computed_dh3(Constants::X_25519_KEY_SIZE);
+        std::vector<uint8_t> computed_dh3(kX25519SharedSecretBytes);
         const int result = crypto_scalarmult(
             computed_dh3.data(),
             vec.alice_ephemeral_private.data(),
@@ -244,7 +244,7 @@ TEST_CASE("X3DH Test Vectors - DH Operations Correctness", "[x3dh][interop][vect
     SECTION("Verify DH4: EK_A * OPK_B") {
         const auto vec = X3DHTestVector::Generate();
 
-        std::vector<uint8_t> computed_dh4(Constants::X_25519_KEY_SIZE);
+        std::vector<uint8_t> computed_dh4(kX25519SharedSecretBytes);
         const int result = crypto_scalarmult(
             computed_dh4.data(),
             vec.alice_ephemeral_private.data(),
@@ -352,7 +352,7 @@ TEST_CASE("X3DH rejects tampered SPK signature during handshake", "[x3dh][securi
         bob_bundle.GetKyberCiphertext(),
         bob_bundle.GetUsedOpkId());
 
-    std::vector<uint8_t> info(ProtocolConstants::X3DH_INFO.begin(), ProtocolConstants::X3DH_INFO.end());
+    std::vector<uint8_t> info(kX3dhInfo.begin(), kX3dhInfo.end());
     auto shared_secret_result = alice_keys.X3dhDeriveSharedSecret(tampered_bundle, info, true);
 
     REQUIRE(shared_secret_result.IsErr());
@@ -378,7 +378,7 @@ TEST_CASE("X3DH Test Vectors - One-Time PreKey Consumption", "[x3dh][interop][ve
         REQUIRE(bob_bundle.HasOneTimePreKeys());
         REQUIRE(bob_bundle.GetOneTimePreKeyCount() > 0);
 
-        std::vector<uint8_t> info(ProtocolConstants::X3DH_INFO.begin(), ProtocolConstants::X3DH_INFO.end());
+        std::vector<uint8_t> info(kX3dhInfo.begin(), kX3dhInfo.end());
         auto shared_secret_result = alice_keys.X3dhDeriveSharedSecret(bob_bundle, info, true);
         REQUIRE(shared_secret_result.IsOk());
     }
@@ -399,7 +399,7 @@ TEST_CASE("X3DH Test Vectors - One-Time PreKey Consumption", "[x3dh][interop][ve
 
         REQUIRE_FALSE(bob_bundle.HasOneTimePreKeys());
 
-        std::vector<uint8_t> info(ProtocolConstants::X3DH_INFO.begin(), ProtocolConstants::X3DH_INFO.end());
+        std::vector<uint8_t> info(kX3dhInfo.begin(), kX3dhInfo.end());
         auto shared_secret_result = alice_keys.X3dhDeriveSharedSecret(bob_bundle, info, true);
         REQUIRE(shared_secret_result.IsOk());
     }
@@ -434,12 +434,12 @@ TEST_CASE("X3DH Explicit OPK Selection Consumes Key", "[x3dh][opk][consume]") {
     auto alice_kyber = alice_bundle.GetKyberPublicKey();
     REQUIRE(alice_kyber.has_value());
 
-    std::vector<uint8_t> info(ProtocolConstants::X3DH_INFO.begin(), ProtocolConstants::X3DH_INFO.end());
+    std::vector<uint8_t> info(kX3dhInfo.begin(), kX3dhInfo.end());
 
     auto alice_secret_result = alice.X3dhDeriveSharedSecret(bob_bundle, info, true);
     REQUIRE(alice_secret_result.IsOk());
     auto alice_secret_handle = std::move(alice_secret_result).Unwrap();
-    auto alice_root_result = alice_secret_handle.ReadBytes(Constants::X_25519_KEY_SIZE);
+    auto alice_root_result = alice_secret_handle.ReadBytes(kRootKeyBytes);
     REQUIRE(alice_root_result.IsOk());
     auto alice_root = alice_root_result.Unwrap();
 
@@ -462,7 +462,7 @@ TEST_CASE("X3DH Explicit OPK Selection Consumes Key", "[x3dh][opk][consume]") {
     auto bob_secret_result = bob.X3dhDeriveSharedSecret(alice_bundle_with_ct, info, false);
     REQUIRE(bob_secret_result.IsOk());
     auto bob_secret_handle = std::move(bob_secret_result).Unwrap();
-    auto bob_root_result = bob_secret_handle.ReadBytes(Constants::X_25519_KEY_SIZE);
+    auto bob_root_result = bob_secret_handle.ReadBytes(kRootKeyBytes);
     REQUIRE(bob_root_result.IsOk());
     auto bob_root = bob_root_result.Unwrap();
 
@@ -501,7 +501,7 @@ TEST_CASE("X3DH Test Vectors - Ephemeral Key Management", "[x3dh][interop][vecto
         REQUIRE(bob_bundle_result.IsOk());
         auto bob_bundle = std::move(bob_bundle_result).Unwrap();
 
-        std::vector<uint8_t> info(ProtocolConstants::X3DH_INFO.begin(), ProtocolConstants::X3DH_INFO.end());
+        std::vector<uint8_t> info(kX3dhInfo.begin(), kX3dhInfo.end());
 
         auto secret1_result = alice_keys.X3dhDeriveSharedSecret(bob_bundle, info, true);
         REQUIRE(secret1_result.IsOk());
@@ -513,8 +513,8 @@ TEST_CASE("X3DH Test Vectors - Ephemeral Key Management", "[x3dh][interop][vecto
         REQUIRE(secret2_result.IsOk());
         auto secret2_handle = std::move(secret2_result).Unwrap();
 
-        std::vector<uint8_t> secret1_bytes(Constants::X_25519_KEY_SIZE);
-        std::vector<uint8_t> secret2_bytes(Constants::X_25519_KEY_SIZE);
+        std::vector<uint8_t> secret1_bytes(kRootKeyBytes);
+        std::vector<uint8_t> secret2_bytes(kRootKeyBytes);
 
         REQUIRE(secret1_handle.Read(secret1_bytes).IsOk());
         REQUIRE(secret2_handle.Read(secret2_bytes).IsOk());
@@ -527,7 +527,7 @@ TEST_CASE("X3DH Test Vectors - Info String Validation", "[x3dh][interop][vectors
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Standard X3DH info string") {
-        std::vector<uint8_t> standard_info(ProtocolConstants::X3DH_INFO.begin(), ProtocolConstants::X3DH_INFO.end());
+        std::vector<uint8_t> standard_info(kX3dhInfo.begin(), kX3dhInfo.end());
         REQUIRE(standard_info.size() > 0);
         REQUIRE(standard_info.size() < 256);
     }
@@ -546,7 +546,7 @@ TEST_CASE("X3DH Test Vectors - Info String Validation", "[x3dh][interop][vectors
         REQUIRE(bob_bundle_result.IsOk());
         auto bob_bundle = std::move(bob_bundle_result).Unwrap();
 
-        std::string custom_info_str = "Custom-X3DH-v2";
+        std::string custom_info_str = "Custom-X3DH";
         std::vector<uint8_t> custom_info(custom_info_str.begin(), custom_info_str.end());
 
         auto result = alice_keys.X3dhDeriveSharedSecret(bob_bundle, custom_info, true);
@@ -563,17 +563,17 @@ TEST_CASE("X3DH Test Vectors - Key Length Validation", "[x3dh][interop][vectors]
         auto keys = std::move(keys_result).Unwrap();
 
         auto identity_x25519 = keys.GetIdentityX25519PublicKeyCopy();
-        REQUIRE(identity_x25519.size() == Constants::X_25519_PUBLIC_KEY_SIZE);
+        REQUIRE(identity_x25519.size() == kX25519PublicKeyBytes);
 
         auto identity_ed25519 = keys.GetIdentityEd25519PublicKeyCopy();
-        REQUIRE(identity_ed25519.size() == Constants::ED_25519_PUBLIC_KEY_SIZE);
+        REQUIRE(identity_ed25519.size() == kEd25519PublicKeyBytes);
 
         auto bundle_result = keys.CreatePublicBundle();
         REQUIRE(bundle_result.IsOk());
         auto bundle = std::move(bundle_result).Unwrap();
 
-        REQUIRE(bundle.GetSignedPreKeyPublic().size() == Constants::X_25519_PUBLIC_KEY_SIZE);
-        REQUIRE(bundle.GetSignedPreKeySignature().size() == Constants::ED_25519_SIGNATURE_SIZE);
+        REQUIRE(bundle.GetSignedPreKeyPublic().size() == kX25519PublicKeyBytes);
+        REQUIRE(bundle.GetSignedPreKeySignature().size() == kEd25519SignatureBytes);
         REQUIRE(bundle.GetOneTimePreKeyCount() == 5);
     }
 }
@@ -595,7 +595,7 @@ TEST_CASE("X3DH Test Vectors - Cross-Session Consistency", "[x3dh][interop][vect
         REQUIRE(bob_bundle_result.IsOk());
         auto bob_bundle = std::move(bob_bundle_result).Unwrap();
 
-        std::vector<uint8_t> info(ProtocolConstants::X3DH_INFO.begin(), ProtocolConstants::X3DH_INFO.end());
+        std::vector<uint8_t> info(kX3dhInfo.begin(), kX3dhInfo.end());
 
         auto secret1_result = alice_keys.X3dhDeriveSharedSecret(bob_bundle, info, true);
         REQUIRE(secret1_result.IsOk());

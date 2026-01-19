@@ -28,7 +28,7 @@ TEST_CASE("Fuzzing - Random Metadata Corruption", "[fuzzing][envelope][metadata]
     SECTION("Corrupt 10,000 encrypted metadata blocks at random positions") {
         auto conn = CreatePreparedConnection(1, true);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAB);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xAB);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -88,7 +88,7 @@ TEST_CASE("Fuzzing - Random Nonce Lengths", "[fuzzing][envelope][nonce]") {
     SECTION("Test 5000 nonces with random lengths from 0 to 100 bytes") {
         auto conn = CreatePreparedConnection(1, false);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xCD);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xCD);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -136,7 +136,7 @@ TEST_CASE("Fuzzing - Random Payload Sizes", "[fuzzing][envelope][payload]") {
     SECTION("Encrypt payloads with random sizes from 0 to 10MB") {
         auto [alice, bob] = CreatePreparedPair(1, 2);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xEF);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xEF);
 
         auto alice_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
         auto bob_dh = bob->GetCurrentSenderDhPublicKey().Unwrap().value();
@@ -232,7 +232,7 @@ TEST_CASE("Fuzzing - Invalid Key Sizes", "[fuzzing][envelope][keys]") {
 
             auto finalize_result = conn->FinalizeChainAndDhKeys(random_root_key, peer_pk);
 
-            if (root_key_size == Constants::X_25519_KEY_SIZE) {
+            if (root_key_size == kRootKeyBytes) {
                 if (finalize_result.IsOk()) {
                     ++accepted_valid_keys;
                 }
@@ -254,7 +254,7 @@ TEST_CASE("Fuzzing - Malformed AAD", "[fuzzing][envelope][aad]") {
     SECTION("Test 5000 random AAD sizes and contents") {
         auto conn = CreatePreparedConnection(1, true);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x12);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0x12);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -318,7 +318,7 @@ TEST_CASE("Fuzzing - Boundary Value Testing", "[fuzzing][envelope][boundaries]")
     SECTION("Test edge case message indices: 0, 1, MAX_UINT32-1, MAX_UINT32") {
         auto conn = CreatePreparedConnection(1, false);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x34);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0x34);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -338,7 +338,7 @@ TEST_CASE("Fuzzing - Boundary Value Testing", "[fuzzing][envelope][boundaries]")
         uint32_t processed_edge_cases = 0;
 
         for (const uint32_t index : edge_indices) {
-            std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE, static_cast<uint8_t>(index & 0xFF));
+            std::vector<uint8_t> nonce(kAesGcmNonceBytes, static_cast<uint8_t>(index & 0xFF));
             auto process_result = conn->ProcessReceivedMessage(index, nonce);
             if (process_result.IsOk()) {
                 ++processed_edge_cases;
@@ -355,7 +355,7 @@ TEST_CASE("Fuzzing - Random Bit Flips in Ciphertext", "[fuzzing][envelope][bitfl
     SECTION("Flip random bits in 10,000 encrypted payloads") {
         auto [alice, bob] = CreatePreparedPair(1, 2);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x56);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0x56);
 
         auto alice_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
         auto bob_dh = bob->GetCurrentSenderDhPublicKey().Unwrap().value();
@@ -435,7 +435,7 @@ TEST_CASE("Fuzzing - Empty and Null Inputs", "[fuzzing][envelope][empty]") {
     SECTION("Test 1000 empty payloads, nonces, and AAD combinations") {
         auto [alice, bob] = CreatePreparedPair(1, 2);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x78);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0x78);
 
         auto kyber_encapsulate = KyberInterop::Encapsulate(bob->GetKyberPublicKeyCopy());
         REQUIRE(kyber_encapsulate.IsOk());
@@ -482,15 +482,15 @@ TEST_CASE("Fuzzing - Empty and Null Inputs", "[fuzzing][envelope][empty]") {
                     auto bob_root = bob->DebugGetRootKey();
                     auto alice_priv = alice->DebugGetCurrentDhPrivate();
                     auto bob_priv = bob->DebugGetCurrentDhPrivate();
-                    std::vector<uint8_t> dh_a(Constants::X_25519_KEY_SIZE);
-                    std::vector<uint8_t> dh_b(Constants::X_25519_KEY_SIZE);
-                    if (alice_priv.size() == Constants::X_25519_PRIVATE_KEY_SIZE &&
+                    std::vector<uint8_t> dh_a(kX25519SharedSecretBytes);
+                    std::vector<uint8_t> dh_b(kX25519SharedSecretBytes);
+                    if (alice_priv.size() == kX25519PrivateKeyBytes &&
                         bob_current_dh.IsOk() && bob_current_dh.Unwrap().has_value()) {
                         const int dh_ret = crypto_scalarmult(
                             dh_a.data(), alice_priv.data(), bob_current_dh.Unwrap()->data());
                         (void) dh_ret;
                     }
-                    if (bob_priv.size() == Constants::X_25519_PRIVATE_KEY_SIZE &&
+                    if (bob_priv.size() == kX25519PrivateKeyBytes &&
                         alice_dh_pub.IsOk() && alice_dh_pub.Unwrap().has_value()) {
                         const int dh_ret = crypto_scalarmult(
                             dh_b.data(), bob_priv.data(), alice_dh_pub.Unwrap()->data());
@@ -502,20 +502,20 @@ TEST_CASE("Fuzzing - Empty and Null Inputs", "[fuzzing][envelope][empty]") {
                     auto hybrid_result = KyberInterop::CombineHybridSecrets(
                         dh_b,
                         kyber_ss,
-                        ProtocolConstants::HYBRID_DH_RATCHET_INFO);
+                        kHybridRatchetInfo);
                     if (hybrid_result.IsOk()) {
-                        auto hybrid_bytes_result = hybrid_result.Unwrap().ReadBytes(Constants::X_25519_KEY_SIZE);
+                        auto hybrid_bytes_result = hybrid_result.Unwrap().ReadBytes(kRootKeyBytes);
                         if (hybrid_bytes_result.IsOk()) {
                             auto hkdf_output = Hkdf::DeriveKeyBytes(
                                 hybrid_bytes_result.Unwrap(),
-                                Constants::X_25519_KEY_SIZE * 2,
+                                kRootKeyBytes * 2,
                                 pre_bob_root,
-                                std::vector<uint8_t>(ProtocolConstants::HYBRID_DH_RATCHET_INFO.begin(),
-                                                     ProtocolConstants::HYBRID_DH_RATCHET_INFO.end()));
+                                std::vector<uint8_t>(kHybridRatchetInfo.begin(),
+                                                     kHybridRatchetInfo.end()));
                             if (hkdf_output.IsOk()) {
                                 auto hkdf = hkdf_output.Unwrap();
                                 expected_root.assign(hkdf.begin(),
-                                                     hkdf.begin() + Constants::X_25519_KEY_SIZE);
+                                                     hkdf.begin() + kRootKeyBytes);
                             }
                         }
                     }
@@ -636,7 +636,7 @@ TEST_CASE("Fuzzing - Repeated Values Stress Test", "[fuzzing][envelope][repeated
     SECTION("Send 5000 identical messages - ensure unique ciphertexts") {
         auto [alice, bob] = CreatePreparedPair(1, 2);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x9A);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0x9A);
 
         auto alice_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
         auto bob_dh = bob->GetCurrentSenderDhPublicKey().Unwrap().value();

@@ -1,15 +1,14 @@
 # EPP.Relay
 
-High-performance native Ecliptix Protection Protocol relay (server) implementation for .NET applications.
+High-performance native Ecliptix Protection Protocol relay/server bindings for .NET applications.
 
 ## Features
 
-- **X3DH Key Agreement** - Extended Triple Diffie-Hellman for secure initial key exchange
-- **Double Ratchet Algorithm** - Forward secrecy and break-in recovery
-- **Post-Quantum Cryptography** - Kyber hybrid mode for quantum-resistant encryption
-- **AES-256-GCM Encryption** - Authenticated encryption for messages
-- **Secure Memory Management** - Guard pages, memory locking via libsodium
-- **Cross-Platform** - Windows, Linux, macOS (x64 and ARM64)
+- Hybrid X3DH + Kyber handshake (mandatory PQ)
+- Double ratchet session encryption
+- AES-256-GCM authenticated encryption
+- Secure memory via libsodium
+- Cross-platform native library
 
 ## Installation
 
@@ -23,91 +22,44 @@ Or add to your project file:
 <PackageReference Include="EPP.Relay" Version="1.0.0" />
 ```
 
-### GitHub Packages
-
-Add the GitHub Packages source to your NuGet configuration:
-
-```xml
-<configuration>
-  <packageSources>
-    <add key="github" value="https://nuget.pkg.github.com/oleksandrmelnychenko/index.json" />
-  </packageSources>
-</configuration>
-```
-
-## Quick Start
+## Quick Start (Interop)
 
 ```csharp
 using EPP;
 using EPP.Relay;
 
-// Initialize the library (once per application)
-RelayNativeInterop.ecliptix_initialize();
+RelayNativeInterop.epp_init();
 
-// Create identity keys
-var identityKeysResult = EcliptixIdentityKeysWrapper.Create();
-if (identityKeysResult.IsErr)
-{
-    Console.WriteLine($"Failed: {identityKeysResult.UnwrapErr().Message}");
-    return;
-}
+RelayNativeInterop.epp_identity_create(out var identity, out var error);
+RelayNativeInterop.epp_prekey_bundle_create(identity, out var bundle, out error);
+RelayNativeInterop.epp_buffer_release(ref bundle);
 
-using var identityKeys = identityKeysResult.Unwrap();
+var config = new EppSessionConfig { MaxMessagesPerRatchet = 200 };
+RelayNativeInterop.epp_handshake_responder_start(
+    identity, localBundleBytes, (nuint)localBundleBytes.Length,
+    handshakeInitBytes, (nuint)handshakeInitBytes.Length, ref config,
+    out var responderHandle, out var handshakeAck, out error);
+RelayNativeInterop.epp_buffer_release(ref handshakeAck);
 
-// Get public keys for sharing
-var publicX25519 = identityKeys.GetPublicX25519().Unwrap();
-var publicEd25519 = identityKeys.GetPublicEd25519().Unwrap();
+RelayNativeInterop.epp_handshake_responder_finish(
+    responderHandle, out var sessionHandle, out error);
 
-// Create protocol system for server
-var systemResult = EcliptixProtocolSystemServerWrapper.Create(identityKeys);
-using var protocolSystem = systemResult.Unwrap();
-
-// Send encrypted message
-byte[] plaintext = System.Text.Encoding.UTF8.GetBytes("Hello, secure world!");
-var sendResult = protocolSystem.SendMessage(plaintext);
-if (sendResult.IsOk)
-{
-    byte[] encrypted = sendResult.Unwrap();
-    // Send encrypted to peer...
-}
-
-// Receive and decrypt message
-var receiveResult = protocolSystem.ReceiveMessage(encryptedFromPeer);
-if (receiveResult.IsOk)
-{
-    byte[] decrypted = receiveResult.Unwrap();
-    string message = System.Text.Encoding.UTF8.GetString(decrypted);
-}
-
-// Cleanup (once per application)
-RelayNativeInterop.ecliptix_shutdown();
+RelayNativeInterop.epp_session_destroy(sessionHandle);
+RelayNativeInterop.epp_identity_destroy(identity);
+RelayNativeInterop.epp_shutdown();
 ```
+
+Note: For higher-level C# wrappers, see `bindings/csharp/README.md` in the repo.
 
 ## Platform Support
 
 | Platform | Architecture | Status |
 |----------|--------------|--------|
 | Windows  | x64          | Supported |
-| Windows  | x86          | Supported |
 | Linux    | x64          | Supported |
 | Linux    | ARM64        | Supported |
-| macOS    | x64 (Intel)  | Supported |
-| macOS    | ARM64 (Apple Silicon) | Supported |
-
-## Performance
-
-| Operation | Latency |
-|-----------|---------|
-| X3DH Key Agreement | ~150μs |
-| Message Encryption | ~12μs |
-| Message Decryption | ~14μs |
-
-## Security
-
-- All cryptographic operations use constant-time implementations
-- Sensitive memory is securely wiped after use
-- Guard pages prevent buffer overflows
-- Memory is locked to prevent swapping to disk
+| macOS    | x64          | Supported |
+| macOS    | ARM64        | Supported |
 
 ## License
 

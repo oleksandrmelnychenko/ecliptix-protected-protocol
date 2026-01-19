@@ -9,7 +9,7 @@
 using namespace ecliptix::protocol::crypto;
 
 
-TEST_CASE("KyberInterop - Initialize is idempotent", "[kyber][init]") {
+TEST_CASE("KyberInterop - Initialize is idempotent (comprehensive)", "[kyber][init]") {
     auto init1 = KyberInterop::Initialize();
     auto init2 = KyberInterop::Initialize();
     auto init3 = KyberInterop::Initialize();

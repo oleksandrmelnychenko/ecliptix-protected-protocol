@@ -15,10 +15,10 @@ TEST_CASE("AES-GCM Security - Nonce Reuse Attack Detection", "[security][aes-gcm
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Reusing same nonce with different plaintexts produces different ciphertexts") {
-        std::vector<uint8_t> key(Constants::AES_KEY_SIZE);
+        std::vector<uint8_t> key(kAesKeyBytes);
         randombytes_buf(key.data(), key.size());
 
-        std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE);
+        std::vector<uint8_t> nonce(kAesGcmNonceBytes);
         randombytes_buf(nonce.data(), nonce.size());
 
         std::string plaintext1 = "First message with same nonce";
@@ -38,16 +38,16 @@ TEST_CASE("AES-GCM Security - Nonce Reuse Attack Detection", "[security][aes-gcm
         auto ct_with_tag1 = std::move(result1).Unwrap();
         auto ct_with_tag2 = std::move(result2).Unwrap();
 
-        REQUIRE(ct_with_tag1.size() == pt1.size() + Constants::AES_GCM_TAG_SIZE);
-        REQUIRE(ct_with_tag2.size() == pt2.size() + Constants::AES_GCM_TAG_SIZE);
+        REQUIRE(ct_with_tag1.size() == pt1.size() + kAesGcmTagBytes);
+        REQUIRE(ct_with_tag2.size() == pt2.size() + kAesGcmTagBytes);
         REQUIRE(ct_with_tag1 != ct_with_tag2);
     }
 
     SECTION("Nonce reuse XOR attack demonstration but auth tag prevents forgery") {
-        std::vector<uint8_t> key(Constants::AES_KEY_SIZE);
+        std::vector<uint8_t> key(kAesKeyBytes);
         randombytes_buf(key.data(), key.size());
 
-        std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE);
+        std::vector<uint8_t> nonce(kAesGcmNonceBytes);
         randombytes_buf(nonce.data(), nonce.size());
 
         std::vector<uint8_t> pt1(100, 0x00);
@@ -63,8 +63,8 @@ TEST_CASE("AES-GCM Security - Nonce Reuse Attack Detection", "[security][aes-gcm
         auto ct_with_tag1 = std::move(result1).Unwrap();
         auto ct_with_tag2 = std::move(result2).Unwrap();
 
-        std::vector<uint8_t> ct1(ct_with_tag1.begin(), ct_with_tag1.end() - Constants::AES_GCM_TAG_SIZE);
-        std::vector<uint8_t> ct2(ct_with_tag2.begin(), ct_with_tag2.end() - Constants::AES_GCM_TAG_SIZE);
+        std::vector<uint8_t> ct1(ct_with_tag1.begin(), ct_with_tag1.end() - kAesGcmTagBytes);
+        std::vector<uint8_t> ct2(ct_with_tag2.begin(), ct_with_tag2.end() - kAesGcmTagBytes);
 
         std::vector<uint8_t> xor_result(100);
         for (size_t i = 0; i < 100; ++i) {
@@ -83,10 +83,10 @@ TEST_CASE("AES-GCM Security - Nonce Reuse Attack Detection", "[security][aes-gcm
     }
 
     SECTION("100 messages with same nonce all produce unique outputs") {
-        std::vector<uint8_t> key(Constants::AES_KEY_SIZE);
+        std::vector<uint8_t> key(kAesKeyBytes);
         randombytes_buf(key.data(), key.size());
 
-        std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE);
+        std::vector<uint8_t> nonce(kAesGcmNonceBytes);
         randombytes_buf(nonce.data(), nonce.size());
 
         std::vector<uint8_t> ad(16, 0xBB);
@@ -113,10 +113,10 @@ TEST_CASE("AES-GCM Security - Authentication Tag Forgery Attempts", "[security][
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Modified ciphertext with correct tag fails decryption") {
-        std::vector<uint8_t> key(Constants::AES_KEY_SIZE);
+        std::vector<uint8_t> key(kAesKeyBytes);
         randombytes_buf(key.data(), key.size());
 
-        std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE);
+        std::vector<uint8_t> nonce(kAesGcmNonceBytes);
         randombytes_buf(nonce.data(), nonce.size());
 
         std::vector<uint8_t> plaintext(1000);
@@ -129,7 +129,7 @@ TEST_CASE("AES-GCM Security - Authentication Tag Forgery Attempts", "[security][
 
         auto ciphertext_with_tag = std::move(encrypt_result).Unwrap();
 
-        for (size_t i = 0; i < std::min(size_t(100), ciphertext_with_tag.size() - Constants::AES_GCM_TAG_SIZE); ++i) {
+        for (size_t i = 0; i < std::min(size_t(100), ciphertext_with_tag.size() - kAesGcmTagBytes); ++i) {
             auto modified_ct = ciphertext_with_tag;
             modified_ct[i] ^= 0x01;
 
@@ -139,10 +139,10 @@ TEST_CASE("AES-GCM Security - Authentication Tag Forgery Attempts", "[security][
     }
 
     SECTION("Correct ciphertext with modified tag fails decryption") {
-        std::vector<uint8_t> key(Constants::AES_KEY_SIZE);
+        std::vector<uint8_t> key(kAesKeyBytes);
         randombytes_buf(key.data(), key.size());
 
-        std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE);
+        std::vector<uint8_t> nonce(kAesGcmNonceBytes);
         randombytes_buf(nonce.data(), nonce.size());
 
         std::vector<uint8_t> plaintext(1000);
@@ -155,9 +155,9 @@ TEST_CASE("AES-GCM Security - Authentication Tag Forgery Attempts", "[security][
 
         auto ciphertext_with_tag = std::move(encrypt_result).Unwrap();
 
-        for (size_t i = 0; i < Constants::AES_GCM_TAG_SIZE; ++i) {
+        for (size_t i = 0; i < kAesGcmTagBytes; ++i) {
             auto modified = ciphertext_with_tag;
-            size_t tag_start = modified.size() - Constants::AES_GCM_TAG_SIZE;
+            size_t tag_start = modified.size() - kAesGcmTagBytes;
             modified[tag_start + i] ^= 0x01;
 
             auto decrypt_result = AesGcm::Decrypt(key, nonce, modified, ad);
@@ -166,10 +166,10 @@ TEST_CASE("AES-GCM Security - Authentication Tag Forgery Attempts", "[security][
     }
 
     SECTION("Zero authentication tag always fails") {
-        std::vector<uint8_t> key(Constants::AES_KEY_SIZE);
+        std::vector<uint8_t> key(kAesKeyBytes);
         randombytes_buf(key.data(), key.size());
 
-        std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE);
+        std::vector<uint8_t> nonce(kAesGcmNonceBytes);
         randombytes_buf(nonce.data(), nonce.size());
 
         std::vector<uint8_t> plaintext(100);
@@ -183,8 +183,8 @@ TEST_CASE("AES-GCM Security - Authentication Tag Forgery Attempts", "[security][
         auto ciphertext_with_tag = std::move(encrypt_result).Unwrap();
 
         std::vector<uint8_t> modified = ciphertext_with_tag;
-        size_t tag_start = modified.size() - Constants::AES_GCM_TAG_SIZE;
-        for (size_t i = 0; i < Constants::AES_GCM_TAG_SIZE; ++i) {
+        size_t tag_start = modified.size() - kAesGcmTagBytes;
+        for (size_t i = 0; i < kAesGcmTagBytes; ++i) {
             modified[tag_start + i] = 0x00;
         }
 
@@ -193,10 +193,10 @@ TEST_CASE("AES-GCM Security - Authentication Tag Forgery Attempts", "[security][
     }
 
     SECTION("Random tag brute force always fails (1000 attempts)") {
-        std::vector<uint8_t> key(Constants::AES_KEY_SIZE);
+        std::vector<uint8_t> key(kAesKeyBytes);
         randombytes_buf(key.data(), key.size());
 
-        std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE);
+        std::vector<uint8_t> nonce(kAesGcmNonceBytes);
         randombytes_buf(nonce.data(), nonce.size());
 
         std::vector<uint8_t> plaintext(100);
@@ -211,9 +211,9 @@ TEST_CASE("AES-GCM Security - Authentication Tag Forgery Attempts", "[security][
 
         for (int attempt = 0; attempt < 1000; ++attempt) {
             auto modified = ciphertext_with_tag;
-            size_t tag_start = modified.size() - Constants::AES_GCM_TAG_SIZE;
+            size_t tag_start = modified.size() - kAesGcmTagBytes;
 
-            randombytes_buf(&modified[tag_start], Constants::AES_GCM_TAG_SIZE);
+            randombytes_buf(&modified[tag_start], kAesGcmTagBytes);
 
             auto decrypt_result = AesGcm::Decrypt(key, nonce, modified, ad);
 
@@ -232,10 +232,10 @@ TEST_CASE("AES-GCM Security - Bit-Flipping Attack Resistance", "[security][aes-g
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Single bit flip in ciphertext detected") {
-        std::vector<uint8_t> key(Constants::AES_KEY_SIZE);
+        std::vector<uint8_t> key(kAesKeyBytes);
         randombytes_buf(key.data(), key.size());
 
-        std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE);
+        std::vector<uint8_t> nonce(kAesGcmNonceBytes);
         randombytes_buf(nonce.data(), nonce.size());
 
         std::vector<uint8_t> plaintext(256);
@@ -247,7 +247,7 @@ TEST_CASE("AES-GCM Security - Bit-Flipping Attack Resistance", "[security][aes-g
         REQUIRE(encrypt_result.IsOk());
 
         auto ciphertext_with_tag = std::move(encrypt_result).Unwrap();
-        size_t ciphertext_len = ciphertext_with_tag.size() - Constants::AES_GCM_TAG_SIZE;
+        size_t ciphertext_len = ciphertext_with_tag.size() - kAesGcmTagBytes;
 
         for (size_t byte_idx = 0; byte_idx < std::min(ciphertext_len, size_t(100)); ++byte_idx) {
             for (int bit_idx = 0; bit_idx < 8; ++bit_idx) {
@@ -261,10 +261,10 @@ TEST_CASE("AES-GCM Security - Bit-Flipping Attack Resistance", "[security][aes-g
     }
 
     SECTION("Multiple random bit flips detected") {
-        std::vector<uint8_t> key(Constants::AES_KEY_SIZE);
+        std::vector<uint8_t> key(kAesKeyBytes);
         randombytes_buf(key.data(), key.size());
 
-        std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE);
+        std::vector<uint8_t> nonce(kAesGcmNonceBytes);
         randombytes_buf(nonce.data(), nonce.size());
 
         std::vector<uint8_t> plaintext(256);
@@ -276,7 +276,7 @@ TEST_CASE("AES-GCM Security - Bit-Flipping Attack Resistance", "[security][aes-g
         REQUIRE(encrypt_result.IsOk());
 
         auto ciphertext_with_tag = std::move(encrypt_result).Unwrap();
-        size_t ciphertext_len = ciphertext_with_tag.size() - Constants::AES_GCM_TAG_SIZE;
+        size_t ciphertext_len = ciphertext_with_tag.size() - kAesGcmTagBytes;
 
         std::mt19937 rng(std::chrono::steady_clock::now().time_since_epoch().count());
         std::uniform_int_distribution<size_t> byte_dist(0, ciphertext_len - 1);
@@ -302,10 +302,10 @@ TEST_CASE("AES-GCM Security - Associated Data Tampering Detection", "[security][
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("Modified associated data fails decryption") {
-        std::vector<uint8_t> key(Constants::AES_KEY_SIZE);
+        std::vector<uint8_t> key(kAesKeyBytes);
         randombytes_buf(key.data(), key.size());
 
-        std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE);
+        std::vector<uint8_t> nonce(kAesGcmNonceBytes);
         randombytes_buf(nonce.data(), nonce.size());
 
         std::vector<uint8_t> plaintext(100);
@@ -328,10 +328,10 @@ TEST_CASE("AES-GCM Security - Associated Data Tampering Detection", "[security][
     }
 
     SECTION("Empty vs non-empty associated data are different") {
-        std::vector<uint8_t> key(Constants::AES_KEY_SIZE);
+        std::vector<uint8_t> key(kAesKeyBytes);
         randombytes_buf(key.data(), key.size());
 
-        std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE);
+        std::vector<uint8_t> nonce(kAesGcmNonceBytes);
         randombytes_buf(nonce.data(), nonce.size());
 
         std::vector<uint8_t> plaintext(100);
@@ -363,7 +363,7 @@ TEST_CASE("AES-GCM Security - Concurrent Encryption Safety", "[security][aes-gcm
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("1000 concurrent encryptions produce unique nonces") {
-        std::vector<uint8_t> key(Constants::AES_KEY_SIZE);
+        std::vector<uint8_t> key(kAesKeyBytes);
         randombytes_buf(key.data(), key.size());
 
         std::vector<uint8_t> plaintext(100);
@@ -376,8 +376,8 @@ TEST_CASE("AES-GCM Security - Concurrent Encryption Safety", "[security][aes-gcm
 
         for (int i = 0; i < 1000; ++i) {
             threads.emplace_back([&, i]() {
-                nonces[i].resize(Constants::AES_GCM_NONCE_SIZE);
-                randombytes_buf(nonces[i].data(), Constants::AES_GCM_NONCE_SIZE);
+                nonces[i].resize(kAesGcmNonceBytes);
+                randombytes_buf(nonces[i].data(), kAesGcmNonceBytes);
             });
         }
 
@@ -397,10 +397,10 @@ TEST_CASE("AES-GCM Security - Large Payload Handling", "[security][aes-gcm][boun
     REQUIRE(SodiumInterop::Initialize().IsOk());
 
     SECTION("10 MB payload encryption/decryption") {
-        std::vector<uint8_t> key(Constants::AES_KEY_SIZE);
+        std::vector<uint8_t> key(kAesKeyBytes);
         randombytes_buf(key.data(), key.size());
 
-        std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE);
+        std::vector<uint8_t> nonce(kAesGcmNonceBytes);
         randombytes_buf(nonce.data(), nonce.size());
 
         std::vector<uint8_t> plaintext(10 * 1024 * 1024);
@@ -412,7 +412,7 @@ TEST_CASE("AES-GCM Security - Large Payload Handling", "[security][aes-gcm][boun
         REQUIRE(encrypt_result.IsOk());
 
         auto ciphertext_with_tag = std::move(encrypt_result).Unwrap();
-        REQUIRE(ciphertext_with_tag.size() == plaintext.size() + Constants::AES_GCM_TAG_SIZE);
+        REQUIRE(ciphertext_with_tag.size() == plaintext.size() + kAesGcmTagBytes);
 
         auto decrypt_result = AesGcm::Decrypt(key, nonce, ciphertext_with_tag, ad);
         REQUIRE(decrypt_result.IsOk());

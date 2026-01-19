@@ -10,7 +10,7 @@
 
 ## Executive Summary
 
-This document specifies **zk-SNARK circuits** for Ecliptix Protocol System that enable **metadata-private ratcheting**. Clients prove they correctly performed ratchet operations without revealing the actual keys or state transitions.
+This document specifies **zk-SNARK circuits** for Ecliptix Protection Protocol that enable **metadata-private ratcheting**. Clients prove they correctly performed ratchet operations without revealing the actual keys or state transitions.
 
 **Key Innovation**: Traditional E2EE reveals metadata (message counts, ratchet steps). Ecliptix's ZK mode hides this metadata while maintaining verifiability.
 

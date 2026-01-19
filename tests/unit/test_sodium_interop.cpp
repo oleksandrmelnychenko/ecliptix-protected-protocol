@@ -78,8 +78,8 @@ TEST_CASE("SodiumInterop - X25519 Key Generation", "[sodium][crypto][keygen]") {
         auto result = SodiumInterop::GenerateX25519KeyPair("test");
         REQUIRE(result.IsOk());
         auto [sk_handle, pk_bytes] = std::move(result).Unwrap();
-        REQUIRE(sk_handle.Size() == Constants::X_25519_PRIVATE_KEY_SIZE);
-        REQUIRE(pk_bytes.size() == Constants::X_25519_PUBLIC_KEY_SIZE);
+        REQUIRE(sk_handle.Size() == kX25519PrivateKeyBytes);
+        REQUIRE(pk_bytes.size() == kX25519PublicKeyBytes);
         REQUIRE_FALSE(sk_handle.IsInvalid());
     }
     SECTION("Generated keys are different") {
@@ -99,8 +99,8 @@ TEST_CASE("SodiumInterop - Ed25519 Key Generation", "[sodium][crypto][keygen]") 
         auto result = SodiumInterop::GenerateEd25519KeyPair();
         REQUIRE(result.IsOk());
         auto [sk, pk] = std::move(result).Unwrap();
-        REQUIRE(sk.size() == Constants::ED_25519_SECRET_KEY_SIZE);
-        REQUIRE(pk.size() == Constants::ED_25519_PUBLIC_KEY_SIZE);
+        REQUIRE(sk.size() == kEd25519SecretKeyBytes);
+        REQUIRE(pk.size() == kEd25519PublicKeyBytes);
     }
     SECTION("Generated keys are different") {
         auto result1 = SodiumInterop::GenerateEd25519KeyPair();

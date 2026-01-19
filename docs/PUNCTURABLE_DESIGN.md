@@ -10,7 +10,7 @@
 
 ## Executive Summary
 
-This document specifies **puncturable encryption** for Ecliptix Protocol System using **GGM (Goldreich-Goldwasser-Micali) binary trees**. This achieves **cryptographic forward secrecy** without relying on physical deletion, providing a mathematically provable security guarantee that distinguishes Ecliptix from Signal and all other E2EE messengers.
+This document specifies **puncturable encryption** for Ecliptix Protection Protocol using **GGM (Goldreich-Goldwasser-Micali) binary trees**. This achieves **cryptographic forward secrecy** without relying on physical deletion, providing a mathematically provable security guarantee that distinguishes Ecliptix from Signal and all other E2EE messengers.
 
 **Key Innovation**: Traditional ratcheting relies on "delete the key" for forward secrecy. GGM puncturing makes old keys **mathematically unusable** even if an attacker recovers deleted memory.
 

@@ -54,7 +54,7 @@ namespace ecliptix::protocol::crypto {
     Result<Unit, SodiumFailure> SodiumInterop::WipeSmallBuffer(std::span<uint8_t> buffer) {
         try {
             volatile uint8_t *vbuf = buffer.data();
-            for (size_t i = ProtocolConstants::ZERO_VALUE; i < buffer.size(); ++i) {
+            for (size_t i = 0; i < buffer.size(); ++i) {
                 vbuf[i] = SodiumConstants::SECURE_WIPE_PATTERN;
             }
             return Result<Unit, SodiumFailure>::Ok(unit);
@@ -100,7 +100,7 @@ namespace ecliptix::protocol::crypto {
     SodiumInterop::GenerateX25519KeyPair(std::string_view key_purpose) {
         try {
             auto sk_handle_result = SecureMemoryHandle::Allocate(
-                Constants::X_25519_PRIVATE_KEY_SIZE);
+                kX25519PrivateKeyBytes);
             if (sk_handle_result.IsErr()) {
                 return Result<std::pair<SecureMemoryHandle, std::vector<uint8_t> >,
                     ProtocolFailure>::Err(
@@ -108,7 +108,7 @@ namespace ecliptix::protocol::crypto {
                         sk_handle_result.UnwrapErr()));
             }
             SecureMemoryHandle sk_handle = std::move(sk_handle_result).Unwrap();
-            std::vector<uint8_t> sk_bytes = GetRandomBytes(Constants::X_25519_PRIVATE_KEY_SIZE);
+            std::vector<uint8_t> sk_bytes = GetRandomBytes(kX25519PrivateKeyBytes);
             auto write_result = sk_handle.Write(std::span<const uint8_t>(sk_bytes));
             SecureWipe(std::span(sk_bytes));
             if (write_result.IsErr()) {
@@ -117,7 +117,7 @@ namespace ecliptix::protocol::crypto {
                     ProtocolFailure::FromSodiumFailure(
                         write_result.UnwrapErr()));
             }
-            std::vector<uint8_t> temp_sk(Constants::X_25519_PRIVATE_KEY_SIZE);
+            std::vector<uint8_t> temp_sk(kX25519PrivateKeyBytes);
             if (auto read_result = sk_handle.Read(std::span(temp_sk)); read_result.IsErr()) {
                 SecureWipe(std::span(temp_sk));
                 return Result<std::pair<SecureMemoryHandle, std::vector<uint8_t> >,
@@ -125,7 +125,7 @@ namespace ecliptix::protocol::crypto {
                     ProtocolFailure::FromSodiumFailure(
                         read_result.UnwrapErr()));
             }
-            std::vector<uint8_t> pk_bytes(Constants::X_25519_PUBLIC_KEY_SIZE);
+            std::vector<uint8_t> pk_bytes(kX25519PublicKeyBytes);
             if (crypto_scalarmult_base(pk_bytes.data(), temp_sk.data()) != SodiumConstants::SUCCESS) {
                 SecureWipe(std::span(temp_sk));
                 return Result<std::pair<SecureMemoryHandle, std::vector<uint8_t> >,
@@ -134,7 +134,7 @@ namespace ecliptix::protocol::crypto {
                         "Failed to derive " + std::string(key_purpose) + " public key"));
             }
             SecureWipe(std::span(temp_sk));
-            if (pk_bytes.size() != Constants::X_25519_PUBLIC_KEY_SIZE) {
+            if (pk_bytes.size() != kX25519PublicKeyBytes) {
                 return Result<std::pair<SecureMemoryHandle, std::vector<uint8_t> >,
                     ProtocolFailure>::Err(
                     ProtocolFailure::DeriveKey(
@@ -155,8 +155,8 @@ namespace ecliptix::protocol::crypto {
     Result<std::pair<std::vector<uint8_t>, std::vector<uint8_t> >, ProtocolFailure>
     SodiumInterop::GenerateEd25519KeyPair() {
         try {
-            std::vector<uint8_t> pk(Constants::ED_25519_PUBLIC_KEY_SIZE);
-            std::vector<uint8_t> sk(Constants::ED_25519_SECRET_KEY_SIZE);
+            std::vector<uint8_t> pk(kEd25519PublicKeyBytes);
+            std::vector<uint8_t> sk(kEd25519SecretKeyBytes);
             if (crypto_sign_keypair(pk.data(), sk.data()) != SodiumConstants::SUCCESS) {
                 SecureWipe(std::span(sk));
                 return Result<std::pair<std::vector<uint8_t>, std::vector<uint8_t> >,
@@ -186,7 +186,7 @@ namespace ecliptix::protocol::crypto {
         uint32_t value;
         do {
             value = randombytes_uniform(UINT32_MAX);
-        } while (ensure_non_zero && value == ProtocolConstants::ZERO_VALUE);
+        } while (ensure_non_zero && value == 0);
         return value;
     }
 

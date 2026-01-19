@@ -13,16 +13,26 @@ public enum EppErrorCode
     ErrorEncryption = 6,
     ErrorDecryption = 7,
     ErrorDecode = 8,
-    ErrorBufferTooSmall = 9,
-    ErrorObjectDisposed = 10,
-    ErrorPrepareLocal = 11,
-    ErrorOutOfMemory = 12,
-    ErrorSodiumFailure = 13,
-    ErrorNullPointer = 14,
-    ErrorInvalidState = 15,
-    ErrorReplayAttack = 16,
-    ErrorSessionExpired = 17,
+    ErrorEncode = 9,
+    ErrorBufferTooSmall = 10,
+    ErrorObjectDisposed = 11,
+    ErrorPrepareLocal = 12,
+    ErrorOutOfMemory = 13,
+    ErrorSodiumFailure = 14,
+    ErrorNullPointer = 15,
+    ErrorInvalidState = 16,
+    ErrorReplayAttack = 17,
+    ErrorSessionExpired = 18,
     ErrorPqMissing = 19
+}
+
+public enum EppEnvelopeType
+{
+    Request = 0,
+    Response = 1,
+    Notification = 2,
+    Heartbeat = 3,
+    ErrorResponse = 4
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -41,12 +51,8 @@ public struct EppError
     public readonly string GetMessage() => Message != IntPtr.Zero ? Marshal.PtrToStringAnsi(Message) ?? string.Empty : string.Empty;
 }
 
-[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-public delegate void EppProtocolEventCallback(uint connectionId, IntPtr userData);
-
 [StructLayout(LayoutKind.Sequential)]
-public struct EppCallbacks
+public struct EppSessionConfig
 {
-    public EppProtocolEventCallback? OnProtocolStateChanged;
-    public IntPtr UserData;
+    public uint MaxMessagesPerRatchet;
 }

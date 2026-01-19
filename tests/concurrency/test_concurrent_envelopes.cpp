@@ -26,7 +26,7 @@ TEST_CASE("Concurrency - Parallel Nonce Generation", "[concurrency][envelope][no
     SECTION("100 threads generating 1000 nonces each - no collisions") {
         auto conn = CreatePreparedConnection(1, true);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAB);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xAB);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -80,7 +80,7 @@ TEST_CASE("Concurrency - Parallel Message Preparation", "[concurrency][envelope]
     SECTION("50 threads preparing 500 messages each") {
         auto conn = CreatePreparedConnection(1, true);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xCD);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xCD);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -135,7 +135,7 @@ TEST_CASE("Concurrency - Parallel Metadata Encryption", "[concurrency][envelope]
     SECTION("50 threads encrypting 1000 metadata blocks each") {
         auto conn = CreatePreparedConnection(1, true);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xEF);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xEF);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -205,7 +205,7 @@ TEST_CASE("Concurrency - Bidirectional Concurrent Communication", "[concurrency]
     SECTION("50 threads each direction - 1000 messages per thread") {
         auto [alice, bob] = CreatePreparedPair(1, 2);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x12);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0x12);
 
         auto alice_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
         auto bob_dh = bob->GetCurrentSenderDhPublicKey().Unwrap().value();
@@ -272,7 +272,7 @@ TEST_CASE("Concurrency - Race Condition Detection", "[concurrency][envelope][rac
     SECTION("Stress test with 100 threads × 500 operations") {
         auto conn = CreatePreparedConnection(1, true);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x34);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0x34);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -318,7 +318,7 @@ TEST_CASE("Concurrency - Concurrent Replay Protection Checks", "[concurrency][en
     SECTION("100 threads checking replay protection for 500 unique nonces each") {
         auto conn = CreatePreparedConnection(1, false);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x56);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0x56);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -373,7 +373,7 @@ TEST_CASE("Concurrency - Concurrent Metadata Encryption and Decryption", "[concu
     SECTION("20 threads encrypting + 20 threads decrypting - 1000 envelopes each") {
         auto conn = CreatePreparedConnection(1, true);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x78);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0x78);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();

@@ -42,20 +42,20 @@ struct TestKeyMaterial {
 
     static TestKeyMaterial Generate() {
         TestKeyMaterial material;
-        material.root_key = SodiumInterop::GetRandomBytes(Constants::X_25519_KEY_SIZE);
-        material.peer_dh_public_key.resize(Constants::X_25519_PUBLIC_KEY_SIZE);
+        material.root_key = SodiumInterop::GetRandomBytes(kRootKeyBytes);
+        material.peer_dh_public_key.resize(kX25519PublicKeyBytes);
 
-        std::vector<uint8_t> peer_dh_private(Constants::X_25519_PRIVATE_KEY_SIZE);
+        std::vector<uint8_t> peer_dh_private(kX25519PrivateKeyBytes);
         const int dh_result = crypto_box_keypair(
             material.peer_dh_public_key.data(),
             peer_dh_private.data()
         );
         REQUIRE(dh_result == 0);
 
-        material.ed25519_pub = SodiumInterop::GetRandomBytes(Constants::ED_25519_PUBLIC_KEY_SIZE);
-        material.identity_x25519_pub = SodiumInterop::GetRandomBytes(Constants::X_25519_PUBLIC_KEY_SIZE);
+        material.ed25519_pub = SodiumInterop::GetRandomBytes(kEd25519PublicKeyBytes);
+        material.identity_x25519_pub = SodiumInterop::GetRandomBytes(kX25519PublicKeyBytes);
         material.signed_pre_key_pub = material.peer_dh_public_key;
-        material.signed_pre_key_sig = SodiumInterop::GetRandomBytes(Constants::ED_25519_SIGNATURE_SIZE);
+        material.signed_pre_key_sig = SodiumInterop::GetRandomBytes(kEd25519SignatureBytes);
         auto kyber_pair = KyberInterop::GenerateKyber768KeyPair("test-bundle");
         REQUIRE(kyber_pair.IsOk());
         material.kyber_public_key = std::move(kyber_pair.Unwrap().second);
@@ -137,7 +137,7 @@ TEST_CASE("State Transitions - Normal Flow: Create → SetPeer → Finalize → 
         REQUIRE(key_result.IsOk());
 
         auto key = std::move(key_result).Unwrap();
-        REQUIRE(key.size() == Constants::AES_KEY_SIZE);
+        REQUIRE(key.size() == kAesKeyBytes);
     }
 }
 
@@ -174,7 +174,7 @@ TEST_CASE("State Transitions - Unfinalized Violations: ProcessReceivedMessage", 
     auto conn = CreateUnfinalizedConnection();
 
     SECTION("ProcessReceivedMessage before finalization must fail") {
-        std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE, 0xAA);
+        std::vector<uint8_t> nonce(kAesGcmNonceBytes, 0xAA);
         auto result = conn->ProcessReceivedMessage(0, nonce);
         REQUIRE(result.IsErr());
 
@@ -188,7 +188,7 @@ TEST_CASE("State Transitions - Unfinalized Violations: ProcessReceivedMessage", 
         auto peer_result = conn->SetPeerBundle(material.GetBundle());
         REQUIRE(peer_result.IsOk());
 
-        std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE, 0xAA);
+        std::vector<uint8_t> nonce(kAesGcmNonceBytes, 0xAA);
         auto recv_result = conn->ProcessReceivedMessage(0, nonce);
         REQUIRE(recv_result.IsErr());
 
@@ -230,7 +230,7 @@ TEST_CASE("State Transitions - Unfinalized Violations: ExecuteReceivingRatchet",
     auto conn = CreateUnfinalizedConnection();
 
     SECTION("ExecuteReceivingRatchet before finalization must fail") {
-        std::vector<uint8_t> fake_dh_key(Constants::X_25519_PUBLIC_KEY_SIZE, 0x42);
+        std::vector<uint8_t> fake_dh_key(kX25519PublicKeyBytes, 0x42);
 
         auto kyber_ct = EncapsulateTo(conn->GetKyberPublicKeyCopy());
         auto result = conn->ExecuteReceivingRatchet(fake_dh_key, kyber_ct);
@@ -246,7 +246,7 @@ TEST_CASE("State Transitions - Unfinalized Violations: ExecuteReceivingRatchet",
         auto peer_result = conn->SetPeerBundle(material.GetBundle());
         REQUIRE(peer_result.IsOk());
 
-        std::vector<uint8_t> fake_dh_key(Constants::X_25519_PUBLIC_KEY_SIZE, 0x42);
+        std::vector<uint8_t> fake_dh_key(kX25519PublicKeyBytes, 0x42);
         auto kyber_ct = EncapsulateTo(conn->GetKyberPublicKeyCopy());
         auto ratchet_result = conn->ExecuteReceivingRatchet(fake_dh_key, kyber_ct);
         REQUIRE(ratchet_result.IsErr());
@@ -406,7 +406,7 @@ TEST_CASE("State Transitions - Operations After Successful Finalization", "[boun
             REQUIRE(result.IsOk());
 
             auto nonce = std::move(result).Unwrap();
-            REQUIRE(nonce.size() == Constants::AES_GCM_NONCE_SIZE);
+            REQUIRE(nonce.size() == kAesGcmNonceBytes);
 
             nonces.push_back(std::move(nonce));
         }
@@ -429,7 +429,7 @@ TEST_CASE("State Transitions - Invalid Root Key Size", "[boundaries][state][vali
     REQUIRE(peer_result.IsOk());
 
     SECTION("Too short root key fails") {
-        std::vector<uint8_t> short_root_key(Constants::X_25519_KEY_SIZE - 1, 0x42);
+        std::vector<uint8_t> short_root_key(kRootKeyBytes - 1, 0x42);
 
         auto result = conn->FinalizeChainAndDhKeys(
             short_root_key,
@@ -439,7 +439,7 @@ TEST_CASE("State Transitions - Invalid Root Key Size", "[boundaries][state][vali
     }
 
     SECTION("Too long root key fails") {
-        std::vector<uint8_t> long_root_key(Constants::X_25519_KEY_SIZE + 1, 0x42);
+        std::vector<uint8_t> long_root_key(kRootKeyBytes + 1, 0x42);
 
         auto result = conn->FinalizeChainAndDhKeys(
             long_root_key,
@@ -469,7 +469,7 @@ TEST_CASE("State Transitions - Invalid DH Public Key Size", "[boundaries][state]
     REQUIRE(peer_result.IsOk());
 
     SECTION("Too short DH key fails") {
-        std::vector<uint8_t> short_dh_key(Constants::X_25519_PUBLIC_KEY_SIZE - 1, 0x42);
+        std::vector<uint8_t> short_dh_key(kX25519PublicKeyBytes - 1, 0x42);
 
         auto result = conn->FinalizeChainAndDhKeys(
             material.root_key,
@@ -479,7 +479,7 @@ TEST_CASE("State Transitions - Invalid DH Public Key Size", "[boundaries][state]
     }
 
     SECTION("Too long DH key fails") {
-        std::vector<uint8_t> long_dh_key(Constants::X_25519_PUBLIC_KEY_SIZE + 1, 0x42);
+        std::vector<uint8_t> long_dh_key(kX25519PublicKeyBytes + 1, 0x42);
 
         auto result = conn->FinalizeChainAndDhKeys(
             material.root_key,

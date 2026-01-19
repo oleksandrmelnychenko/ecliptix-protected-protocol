@@ -6,15 +6,14 @@
 #include <openssl/err.h>
 #include <memory>
 
-static_assert(ecliptix::protocol::Constants::AES_GCM_NONCE_SIZE == 12,
+static_assert(ecliptix::protocol::kAesGcmNonceBytes == 12,
               "GCM nonce must be 12 bytes per NIST SP 800-38D Section 8");
-static_assert(ecliptix::protocol::Constants::AES_KEY_SIZE == 32,
+static_assert(ecliptix::protocol::kAesKeyBytes == 32,
               "AES-256-GCM requires 32-byte (256-bit) keys");
-static_assert(ecliptix::protocol::Constants::AES_GCM_TAG_SIZE == 16,
+static_assert(ecliptix::protocol::kAesGcmTagBytes == 16,
               "GCM authentication tag must be 16 bytes (128 bits)");
 
 namespace ecliptix::protocol::crypto {
-    using Constants = Constants;
     using OpenSSL = OpenSSLConstants;
 
     namespace {
@@ -45,17 +44,17 @@ namespace ecliptix::protocol::crypto {
         std::span<const uint8_t> nonce,
         std::span<const uint8_t> plaintext,
         std::span<const uint8_t> associated_data) {
-        if (key.size() != Constants::AES_KEY_SIZE) {
+        if (key.size() != kAesKeyBytes) {
             return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidInput(
                     ecliptix::compat::format("AES-256-GCM key must be {} bytes, got {}",
-                                Constants::AES_KEY_SIZE, key.size())));
+                                kAesKeyBytes, key.size())));
         }
-        if (nonce.size() != Constants::AES_GCM_NONCE_SIZE) {
+        if (nonce.size() != kAesGcmNonceBytes) {
             return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidInput(
                     ecliptix::compat::format("AES-GCM nonce must be {} bytes, got {}",
-                                Constants::AES_GCM_NONCE_SIZE, nonce.size())));
+                                kAesGcmNonceBytes, nonce.size())));
         }
         EVP_CIPHER_CTX_ptr ctx(EVP_CIPHER_CTX_new());
         if (!ctx) {
@@ -80,7 +79,7 @@ namespace ecliptix::protocol::crypto {
                     ecliptix::compat::format("Failed to set key and nonce: {}", GetOpenSSLError())));
         }
         if (!associated_data.empty()) {
-            int outlen = ProtocolConstants::ZERO_VALUE;
+            int outlen = 0;
             if (EVP_EncryptUpdate(ctx.get(), nullptr, &outlen,
                                   associated_data.data(),
                                   static_cast<int>(associated_data.size())) != OpenSSL::SUCCESS) {
@@ -89,8 +88,8 @@ namespace ecliptix::protocol::crypto {
                         ecliptix::compat::format("Failed to add associated data: {}", GetOpenSSLError())));
             }
         }
-        std::vector<uint8_t> output(plaintext.size() + Constants::AES_GCM_TAG_SIZE);
-        int ciphertext_len = ProtocolConstants::ZERO_VALUE;
+        std::vector<uint8_t> output(plaintext.size() + kAesGcmTagBytes);
+        int ciphertext_len = 0;
         if (EVP_EncryptUpdate(ctx.get(), output.data(), &ciphertext_len,
                               plaintext.data(),
                               static_cast<int>(plaintext.size())) != OpenSSL::SUCCESS) {
@@ -102,7 +101,7 @@ namespace ecliptix::protocol::crypto {
                 ProtocolFailure::Generic(
                     ecliptix::compat::format("Encryption failed: {}", GetOpenSSLError())));
         }
-        int final_len = ProtocolConstants::ZERO_VALUE;
+        int final_len = 0;
         if (EVP_EncryptFinal_ex(ctx.get(), output.data() + ciphertext_len, &final_len) != OpenSSL::SUCCESS) {
             {
                 auto _wipe = SodiumInterop::SecureWipe(std::span(output));
@@ -114,7 +113,7 @@ namespace ecliptix::protocol::crypto {
         }
         ciphertext_len += final_len;
         if (EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_GET_TAG,
-                                Constants::AES_GCM_TAG_SIZE,
+                                kAesGcmTagBytes,
                                 output.data() + ciphertext_len) != OpenSSL::SUCCESS) {
             {
                 auto _wipe = SodiumInterop::SecureWipe(std::span(output));
@@ -124,7 +123,7 @@ namespace ecliptix::protocol::crypto {
                 ProtocolFailure::Generic(
                     ecliptix::compat::format("Failed to get authentication tag: {}", GetOpenSSLError())));
         }
-        output.resize(ciphertext_len + Constants::AES_GCM_TAG_SIZE);
+        output.resize(ciphertext_len + kAesGcmTagBytes);
         return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(std::move(output));
     }
 
@@ -134,25 +133,25 @@ namespace ecliptix::protocol::crypto {
         std::span<const uint8_t> nonce,
         std::span<const uint8_t> ciphertext_with_tag,
         std::span<const uint8_t> associated_data) {
-        if (key.size() != Constants::AES_KEY_SIZE) {
+        if (key.size() != kAesKeyBytes) {
             return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidInput(
                     ecliptix::compat::format("AES-256-GCM key must be {} bytes, got {}",
-                                Constants::AES_KEY_SIZE, key.size())));
+                                kAesKeyBytes, key.size())));
         }
-        if (nonce.size() != Constants::AES_GCM_NONCE_SIZE) {
+        if (nonce.size() != kAesGcmNonceBytes) {
             return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidInput(
                     ecliptix::compat::format("AES-GCM nonce must be {} bytes, got {}",
-                                Constants::AES_GCM_NONCE_SIZE, nonce.size())));
+                                kAesGcmNonceBytes, nonce.size())));
         }
-        if (ciphertext_with_tag.size() < Constants::AES_GCM_TAG_SIZE) {
+        if (ciphertext_with_tag.size() < kAesGcmTagBytes) {
             return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidInput(
                     ecliptix::compat::format("Ciphertext too small: {} bytes (minimum {} for tag)",
-                                ciphertext_with_tag.size(), Constants::AES_GCM_TAG_SIZE)));
+                                ciphertext_with_tag.size(), kAesGcmTagBytes)));
         }
-        size_t ciphertext_len = ciphertext_with_tag.size() - Constants::AES_GCM_TAG_SIZE;
+        size_t ciphertext_len = ciphertext_with_tag.size() - kAesGcmTagBytes;
         std::span<const uint8_t> ciphertext = ciphertext_with_tag.subspan(0, ciphertext_len);
         std::span<const uint8_t> tag = ciphertext_with_tag.subspan(ciphertext_len);
         EVP_CIPHER_CTX_ptr ctx(EVP_CIPHER_CTX_new());
@@ -178,7 +177,7 @@ namespace ecliptix::protocol::crypto {
                     ecliptix::compat::format("Failed to set key and nonce: {}", GetOpenSSLError())));
         }
         if (!associated_data.empty()) {
-            int outlen = ProtocolConstants::ZERO_VALUE;
+            int outlen = 0;
             if (EVP_DecryptUpdate(ctx.get(), nullptr, &outlen,
                                   associated_data.data(),
                                   static_cast<int>(associated_data.size())) != OpenSSL::SUCCESS) {
@@ -188,7 +187,7 @@ namespace ecliptix::protocol::crypto {
             }
         }
         std::vector<uint8_t> output(ciphertext_len);
-        int plaintext_len = ProtocolConstants::ZERO_VALUE;
+        int plaintext_len = 0;
         if (EVP_DecryptUpdate(ctx.get(), output.data(), &plaintext_len,
                               ciphertext.data(),
                               static_cast<int>(ciphertext.size())) != OpenSSL::SUCCESS) {
@@ -202,7 +201,7 @@ namespace ecliptix::protocol::crypto {
         }
         std::vector tag_copy(tag.begin(), tag.end());
         if (EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_TAG,
-                                Constants::AES_GCM_TAG_SIZE,
+                                kAesGcmTagBytes,
                                 tag_copy.data()) != OpenSSL::SUCCESS) {
             {
                 auto _wipe = SodiumInterop::SecureWipe(std::span(output));
@@ -218,7 +217,7 @@ namespace ecliptix::protocol::crypto {
             auto _wipe = SodiumInterop::SecureWipe(std::span(tag_copy));
             (void) _wipe;
         }
-        int final_len = ProtocolConstants::ZERO_VALUE;
+        int final_len = 0;
         if (const int ret = EVP_DecryptFinal_ex(ctx.get(), output.data() + plaintext_len, &final_len);
             ret != OpenSSL::SUCCESS) {
             {

@@ -20,7 +20,7 @@ Alice                                                    Bob
   │    DH3 = DH(EK_A, SPK_B)
   │    DH4 = DH(EK_A, OPK_B)  [if available]
   │
-  └─ HKDF-SHA256(DH1 || DH2 || DH3 || DH4, info="Ecliptix-X3DH-v1")
+  └─ HKDF-SHA256(DH1 || DH2 || DH3 || DH4, info="Ecliptix-X3DH")
        └─> Initial Shared Secret (32 bytes) = "Initial Root Key"
 ```
 
@@ -81,7 +81,7 @@ Input: opaque_session_key (32 bytes), user_context (non-empty, e.g., user id has
 Root = HKDF-SHA256(
     IKM  = opaque_session_key,
     salt = user_context,
-    info = "Ecliptix-OPAQUE-Root-v1",
+    info = "Ecliptix-OPAQUE-Root",
     output_length = 32 bytes
 )
 ```
@@ -89,7 +89,7 @@ Root = HKDF-SHA256(
 Guidelines:
 - Require the 32-byte session key; reject other sizes.
 - Always supply a non-empty, user-bound context to prevent cross-user reuse on shared devices.
-- Use `DeriveOpaqueMessagingRoot()` (C++) or `ecliptix_derive_root_from_opaque_session_key()` (C API) to get the root, then call `FinalizeChainAndDhKeys(root, peer_dh_pk)`.
+- Use `epp_derive_root_key()` (C API) or HKDF with `Ecliptix-OPAQUE-Root` info to derive the root, then initialize the session with the new handshake/state flow.
 - Wipe the OPAQUE session key and derived root after seeding the ratchet; do not persist the session key or reuse a previous messaging root across logins/resumptions.
 
 ### 1.3 Symmetric Ratchet (Per-Message Key Derivation)
@@ -366,7 +366,7 @@ Result<std::vector<uint8_t>, EcliptixProtocolFailure> GenerateNextNonce() {
     nonce_counter_.store(current + 1);
 
     // Generate 12-byte nonce
-    std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE);
+    std::vector<uint8_t> nonce(kAesGcmNonceBytes);
 
     // First 4 bytes: per-session random prefix
     std::copy(nonce_prefix_.begin(), nonce_prefix_.end(), nonce.begin());
@@ -509,39 +509,28 @@ handle.Write(new_data);  // Old data automatically wiped
 ```cpp
 namespace ecliptix::protocol {
 
-struct ProtocolConstants {
-    // HKDF Info Strings (Domain Separation)
-    static constexpr std::string_view X3DH_INFO = "Ecliptix-X3DH-v1";
-    static constexpr std::string_view MSG_INFO = "Ecliptix-Msg";
-    static constexpr std::string_view CHAIN_INFO = "Ecliptix-Chain";
-    static constexpr std::string_view DH_RATCHET_INFO = "Ecliptix-DH-Ratchet";
-    static constexpr std::string_view INITIAL_SENDER_CHAIN_INFO = "Ecliptix-Initial-Sender";
-    static constexpr std::string_view INITIAL_RECEIVER_CHAIN_INFO = "Ecliptix-Initial-Receiver";
-    static constexpr std::string_view METADATA_ENCRYPTION_INFO = "ecliptix-metadata-v1";
+inline constexpr std::string_view kX3dhInfo = "Ecliptix-X3DH";
+inline constexpr std::string_view kMessageInfo = "Ecliptix-Msg";
+inline constexpr std::string_view kChainInfo = "Ecliptix-Chain";
+inline constexpr std::string_view kDhRatchetInfo = "Ecliptix-DH-Ratchet";
+inline constexpr std::string_view kInitialSenderChainInfo = "Ecliptix-Initial-Sender";
+inline constexpr std::string_view kInitialReceiverChainInfo = "Ecliptix-Initial-Receiver";
+inline constexpr std::string_view kMetadataKeyInfo = "Ecliptix-MetadataKey";
 
-    // Ratchet Parameters
-    static constexpr uint32_t RESET_INDEX = 0;
-    static constexpr uint32_t DEFAULT_MESSAGE_COUNT_BEFORE_RATCHET = 100;
-    static constexpr uint32_t MAX_SKIP_MESSAGE_KEYS = 1000;
-    static constexpr uint32_t MESSAGE_KEY_CACHE_WINDOW = 2000;
+inline constexpr uint64_t kMessagesPerRatchet = 1000; // default per-session limit
+inline constexpr size_t kMaxSkippedMessageKeys = 1000;
+inline constexpr size_t kMaxChainLength = 10000;
 
-    // Protocol Parameters
-    static constexpr int64_t INITIAL_NONCE_COUNTER = 0;
-    static constexpr int64_t MAX_NONCE_COUNTER = std::numeric_limits<int32_t>::max();
-    static constexpr size_t RANDOM_NONCE_PREFIX_SIZE = 8;
-    static constexpr size_t HKDF_OUTPUT_BUFFER_MULTIPLIER = 2;  // For 64-byte output
-
-    // Recovery Parameters
-    static constexpr uint32_t CLEANUP_THRESHOLD = 5000;
-    static constexpr uint32_t INDEX_OVERFLOW_BUFFER = 1000000;
-
-    // Timeouts
-    static constexpr std::chrono::hours SESSION_TIMEOUT{24};
-    static constexpr std::chrono::minutes NONCE_LIFETIME{5};
-};
+inline constexpr size_t kNoncePrefixBytes = 4;
+inline constexpr size_t kNonceCounterBytes = 4;
+inline constexpr size_t kNonceIndexBytes = 4;
+inline constexpr uint64_t kMaxNonceCounter = 0xFFFFFFFFull;
 
 } // namespace ecliptix::protocol
 ```
+
+Note: The active per-session ratchet limit is carried in `ProtocolState.max_messages_per_ratchet`
+and negotiated during handshake. `kMessagesPerRatchet` is the default value used by APIs.
 
 ## 8. Error Handling Strategy
 
@@ -550,17 +539,18 @@ struct ProtocolConstants {
 ```cpp
 // Already established in codebase
 Result<SecureMemoryHandle, EcliptixProtocolFailure> DeriveMessageKey(uint32_t index) {
-    TRY(chain_key_bytes, chain_key_handle_.ReadBytes(32));
+    TRY(chain_key_bytes, chain_key_handle_.ReadBytes(kChainKeyBytes));
 
-    std::vector<uint8_t> message_key(32);
+    std::vector<uint8_t> message_key(kMessageKeyBytes);
+    std::vector<uint8_t> message_info(kMessageInfo.begin(), kMessageInfo.end());
     TRY_UNIT(Hkdf::DeriveKey(
         chain_key_bytes,
         std::span<uint8_t>(message_key),
         std::nullopt,  // No salt
-        ProtocolConstants::MSG_INFO
+        message_info
     ));
 
-    TRY(handle, SecureMemoryHandle::Allocate(32));
+    TRY(handle, SecureMemoryHandle::Allocate(kMessageKeyBytes));
     TRY_UNIT(handle.Write(message_key));
 
     SodiumInterop::SecureWipe(std::span<uint8_t>(message_key));
@@ -662,12 +652,11 @@ Generate test vectors from C# implementation:
 - [ ] DhValidator for public key validation
 
 ### Phase 4E: Main API
-- [ ] EcliptixProtocolSystem class
-- [ ] CreateConnection method
-- [ ] SendMessage method
-- [ ] ReceiveMessage method
-- [ ] State serialization (ToProtoState)
-- [ ] State deserialization (FromProtoState)
+- [ ] HandshakeInitiator/HandshakeResponder API
+- [ ] Session API (Encrypt/Decrypt)
+- [ ] Session serialization (ToProtoState)
+- [ ] Session deserialization (FromProtoState)
+- [ ] PreKey bundle creation/validation
 
 ### Phase 4F: Testing
 - [ ] ChainStep unit tests

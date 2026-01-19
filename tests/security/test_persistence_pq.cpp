@@ -19,7 +19,7 @@ TEST_CASE("Persisted state rejects tampered Kyber artifacts", "[persistence][pq]
     auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("persistence-peer");
     REQUIRE(peer_keypair.IsOk());
     auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
-    std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x24);
+    std::vector<uint8_t> root_key(kRootKeyBytes, 0x24);
     REQUIRE(conn->FinalizeChainAndDhKeys(root_key, peer_pk).IsOk());
 
     auto state_result = conn->ToProtoState();

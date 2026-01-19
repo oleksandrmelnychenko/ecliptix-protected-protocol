@@ -59,12 +59,9 @@ namespace ecliptix::protocol::crypto {
     std::vector<uint8_t> MasterKeyDerivation::BuildContextData(
         const std::string_view context,
         const std::string_view membership_id) {
-        const size_t total_size = sizeof(int32_t) + context.size() + membership_id.size();
+        const size_t total_size = context.size() + membership_id.size();
         std::vector<uint8_t> result(total_size);
         size_t offset = 0;
-        constexpr int32_t version = CURRENT_VERSION;
-        std::memcpy(result.data() + offset, &version, sizeof(version));
-        offset += sizeof(version);
         std::memcpy(result.data() + offset, context.data(), context.size());
         offset += context.size();
         std::memcpy(result.data() + offset, membership_id.data(), membership_id.size());

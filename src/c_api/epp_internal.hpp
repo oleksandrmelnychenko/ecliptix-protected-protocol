@@ -3,44 +3,46 @@
  * @brief Internal shared types and helpers for EPP C API implementations
  *
  * This header is NOT part of the public API. It provides shared definitions
- * used by both the client (epp_api.cpp) and server (epp_server_api.cpp) APIs.
+ * used by the EPP C API implementation.
  */
 
 #ifndef EPP_INTERNAL_HPP
 #define EPP_INTERNAL_HPP
 
-#include "ecliptix/protocol/protocol_system.hpp"
 #include "ecliptix/identity/identity_keys.hpp"
-#include "ecliptix/models/bundles/local_public_key_bundle.hpp"
+#include "ecliptix/protocol/handshake.hpp"
+#include "ecliptix/protocol/session.hpp"
 #include "ecliptix/core/result.hpp"
-#include "protocol/key_exchange.pb.h"
 #include <memory>
 #include <string>
 #include <span>
-
-// Forward declarations for internal use
-namespace ecliptix::protocol {
-class ProtocolSystem;
-class IProtocolEventHandler;
-}
-
-namespace ecliptix::protocol::identity {
-class IdentityKeys;
-}
-
-/**
- * @brief Opaque handle wrapping a ProtocolSystem instance
- */
-struct ProtocolSystemHandle {
-    std::unique_ptr<ecliptix::protocol::ProtocolSystem> system;
-    std::shared_ptr<ecliptix::protocol::IProtocolEventHandler> event_handler;
-};
 
 /**
  * @brief Opaque handle wrapping identity keys
  */
 struct EppIdentityHandle {
     std::unique_ptr<ecliptix::protocol::identity::IdentityKeys> identity_keys;
+};
+
+/**
+ * @brief Opaque handle wrapping a protocol session
+ */
+struct EppSessionHandle {
+    std::unique_ptr<ecliptix::protocol::Session> session;
+};
+
+/**
+ * @brief Opaque handle wrapping a handshake initiator
+ */
+struct EppHandshakeInitiatorHandle {
+    std::unique_ptr<ecliptix::protocol::HandshakeInitiator> handshake;
+};
+
+/**
+ * @brief Opaque handle wrapping a handshake responder
+ */
+struct EppHandshakeResponderHandle {
+    std::unique_ptr<ecliptix::protocol::HandshakeResponder> handshake;
 };
 
 /**
@@ -52,8 +54,6 @@ namespace epp::internal {
 
 using namespace ecliptix::protocol;
 using namespace ecliptix::protocol::identity;
-using namespace ecliptix::protocol::models;
-using ecliptix::proto::protocol::PublicKeyBundle;
 
 /**
  * @brief Ensure libsodium is initialized
@@ -89,26 +89,6 @@ bool validate_output_handle(const void* handle, EppError* out_error);
  * @return true on success, false on failure (fills out_error)
  */
 bool copy_to_buffer(std::span<const uint8_t> input, EppBuffer* out_buffer, EppError* out_error);
-
-/**
- * @brief Build a LocalPublicKeyBundle from a protobuf PublicKeyBundle
- * @return Result containing the bundle or an error
- */
-Result<LocalPublicKeyBundle, ProtocolFailure> build_local_bundle(const PublicKeyBundle& proto_bundle);
-
-/**
- * @brief Event handler implementation for C API callbacks
- */
-class CApiEventHandler : public IProtocolEventHandler {
-public:
-    CApiEventHandler(EppEventCallback callback, void* user_data);
-    void OnProtocolStateChanged(uint32_t connection_id) override;
-    void OnRatchetRequired(uint32_t connection_id, const std::string& reason) override;
-
-private:
-    EppEventCallback callback_;
-    void* user_data_;
-};
 
 } // namespace epp::internal
 

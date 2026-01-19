@@ -24,7 +24,7 @@ TEST_CASE("Performance - High-Throughput Envelope Generation", "[performance][en
         RatchetConfig perf_config(1'000'000);
         auto conn = CreatePreparedConnection(1, true, perf_config);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAB);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xAB);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -90,7 +90,7 @@ TEST_CASE("Performance - Sustained Message Encryption", "[performance][envelope]
 
         auto bob = CreatePreparedConnection(2, false, perf_config);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xCD);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xCD);
 
         auto alice_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
         auto bob_dh = bob->GetCurrentSenderDhPublicKey().Unwrap().value();
@@ -175,7 +175,7 @@ TEST_CASE("Performance - Memory Efficiency Under Load", "[performance][envelope]
         RatchetConfig perf_config(1'000'000);
         auto conn = CreatePreparedConnection(1, true, perf_config);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xEF);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xEF);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -225,7 +225,7 @@ TEST_CASE("Performance - Nonce Generation Throughput", "[performance][envelope][
         RatchetConfig perf_config(1'000'000);
         auto conn = CreatePreparedConnection(1, true, perf_config);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x12);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0x12);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -265,7 +265,7 @@ TEST_CASE("Performance - Bulk Metadata Encryption", "[performance][envelope][met
         RatchetConfig perf_config(1'000'000);
         auto conn = CreatePreparedConnection(1, true, perf_config);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x34);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0x34);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -318,7 +318,7 @@ TEST_CASE("Performance - Large Payload Throughput", "[performance][envelope][pay
 
         auto bob = CreatePreparedConnection(2, false, perf_config);
 
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x56);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0x56);
 
         auto alice_dh = alice->GetCurrentSenderDhPublicKey().Unwrap().value();
         auto bob_dh = bob->GetCurrentSenderDhPublicKey().Unwrap().value();

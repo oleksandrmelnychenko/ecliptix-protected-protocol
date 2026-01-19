@@ -22,15 +22,15 @@ using namespace ecliptix::protocol::test_helpers;
 
 
 static std::vector<uint8_t> MakeTestNonce(uint64_t idx) {
-    std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE, 0);
+    std::vector<uint8_t> nonce(kAesGcmNonceBytes, 0);
 
-    for (size_t i = 0; i < ProtocolConstants::NONCE_COUNTER_SIZE; ++i) {
-        nonce[ProtocolConstants::NONCE_PREFIX_SIZE + i] =
+    for (size_t i = 0; i < kNonceCounterBytes; ++i) {
+        nonce[kNoncePrefixBytes + i] =
             static_cast<uint8_t>((idx >> (i * 8)) & 0xFF);
     }
 
-    for (size_t i = 0; i < ProtocolConstants::NONCE_INDEX_SIZE; ++i) {
-        nonce[ProtocolConstants::NONCE_PREFIX_SIZE + ProtocolConstants::NONCE_COUNTER_SIZE + i] =
+    for (size_t i = 0; i < kNonceIndexBytes; ++i) {
+        nonce[kNoncePrefixBytes + kNonceCounterBytes + i] =
             static_cast<uint8_t>((idx >> (i * 8)) & 0xFF);
     }
 
@@ -76,10 +76,10 @@ TEST_CASE("ProtocolConnection - SetPeerBundle", "[connection]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Set peer bundle before finalization succeeds") {
         auto conn = CreatePreparedConnection(1, true);
-        std::vector<uint8_t> ed25519_pub(Constants::ED_25519_PUBLIC_KEY_SIZE, 0x01);
-        std::vector<uint8_t> x25519_pub(Constants::X_25519_PUBLIC_KEY_SIZE, 0x02);
-        std::vector<uint8_t> spk_pub(Constants::X_25519_PUBLIC_KEY_SIZE, 0x03);
-        std::vector<uint8_t> spk_sig(Constants::ED_25519_SIGNATURE_SIZE, 0x04);
+        std::vector<uint8_t> ed25519_pub(kEd25519PublicKeyBytes, 0x01);
+        std::vector<uint8_t> x25519_pub(kX25519PublicKeyBytes, 0x02);
+        std::vector<uint8_t> spk_pub(kX25519PublicKeyBytes, 0x03);
+        std::vector<uint8_t> spk_sig(kEd25519SignatureBytes, 0x04);
         auto kyber_keypair = KyberInterop::GenerateKyber768KeyPair("peer-bundle");
         REQUIRE(kyber_keypair.IsOk());
         auto kyber_public = std::move(kyber_keypair.Unwrap().second);
@@ -102,17 +102,17 @@ TEST_CASE("ProtocolConnection - SetPeerBundle", "[connection]") {
     }
     SECTION("Cannot set peer bundle after finalization") {
         auto conn = CreatePreparedConnection(1, true);
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
-        std::vector<uint8_t> peer_dh_pub(Constants::X_25519_PUBLIC_KEY_SIZE, 0xBB);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xAA);
+        std::vector<uint8_t> peer_dh_pub(kX25519PublicKeyBytes, 0xBB);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer-dh");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
         auto finalize_result = conn->FinalizeChainAndDhKeys(root_key, peer_pk);
         REQUIRE(finalize_result.IsOk());
-        std::vector<uint8_t> ed25519_pub(Constants::ED_25519_PUBLIC_KEY_SIZE, 0x01);
-        std::vector<uint8_t> x25519_pub(Constants::X_25519_PUBLIC_KEY_SIZE, 0x02);
-        std::vector<uint8_t> spk_pub(Constants::X_25519_PUBLIC_KEY_SIZE, 0x03);
-        std::vector<uint8_t> spk_sig(Constants::ED_25519_SIGNATURE_SIZE, 0x04);
+        std::vector<uint8_t> ed25519_pub(kEd25519PublicKeyBytes, 0x01);
+        std::vector<uint8_t> x25519_pub(kX25519PublicKeyBytes, 0x02);
+        std::vector<uint8_t> spk_pub(kX25519PublicKeyBytes, 0x03);
+        std::vector<uint8_t> spk_sig(kEd25519SignatureBytes, 0x04);
         auto kyber_keypair = KyberInterop::GenerateKyber768KeyPair("peer-bundle");
         REQUIRE(kyber_keypair.IsOk());
         auto kyber_public = std::move(kyber_keypair.Unwrap().second);
@@ -134,7 +134,7 @@ TEST_CASE("ProtocolConnection - Finalization", "[connection]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Successful finalization") {
         auto conn = CreatePreparedConnection(1, true);
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer-dh");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -143,7 +143,7 @@ TEST_CASE("ProtocolConnection - Finalization", "[connection]") {
     }
     SECTION("Cannot finalize twice") {
         auto conn = CreatePreparedConnection(1, true);
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -163,7 +163,7 @@ TEST_CASE("ProtocolConnection - Finalization", "[connection]") {
     }
     SECTION("Reject invalid peer DH public key size") {
         auto conn = CreatePreparedConnection(1, true);
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xAA);
         std::vector<uint8_t> bad_peer_pk(16, 0xBB);  
         auto finalize_result = conn->FinalizeChainAndDhKeys(root_key, bad_peer_pk);
         REQUIRE(finalize_result.IsErr());
@@ -230,7 +230,7 @@ TEST_CASE("ProtocolConnection - Message preparation", "[connection]") {
     }
     SECTION("Prepare message after finalization succeeds") {
         auto conn = CreatePreparedConnection(1, true);
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -243,7 +243,7 @@ TEST_CASE("ProtocolConnection - Message preparation", "[connection]") {
     }
     SECTION("Multiple message preparation increments index") {
         auto conn = CreatePreparedConnection(1, true);
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -269,7 +269,7 @@ TEST_CASE("ProtocolConnection - Message processing", "[connection]") {
     }
     SECTION("Process message after finalization succeeds") {
         auto conn = CreatePreparedConnection(1, false);
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -285,7 +285,7 @@ TEST_CASE("ProtocolConnection - DH ratchet operations", "[connection]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Perform receiving ratchet with valid key") {
         auto conn = CreatePreparedConnection(1, false);
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -302,7 +302,7 @@ TEST_CASE("ProtocolConnection - DH ratchet operations", "[connection]") {
     }
     SECTION("Reject invalid DH key size") {
         auto conn = CreatePreparedConnection(1, false);
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -328,7 +328,7 @@ TEST_CASE("ProtocolConnection - State queries", "[connection]") {
         REQUIRE(key_result.IsOk());
         auto key_opt = key_result.Unwrap();
         REQUIRE(key_opt.has_value());
-        REQUIRE(key_opt->size() == Constants::X_25519_PUBLIC_KEY_SIZE);
+        REQUIRE(key_opt->size() == kX25519PublicKeyBytes);
     }
     SECTION("Get metadata encryption key before finalization fails") {
         auto conn = CreatePreparedConnection(1, true);
@@ -337,7 +337,7 @@ TEST_CASE("ProtocolConnection - State queries", "[connection]") {
     }
     SECTION("Get metadata encryption key after finalization succeeds") {
         auto conn = CreatePreparedConnection(1, true);
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -346,7 +346,7 @@ TEST_CASE("ProtocolConnection - State queries", "[connection]") {
         auto key_result = conn->GetMetadataEncryptionKey();
         REQUIRE(key_result.IsOk());
         auto key = key_result.Unwrap();
-        REQUIRE(key.size() == Constants::AES_KEY_SIZE);
+        REQUIRE(key.size() == kAesKeyBytes);
     }
 }
 TEST_CASE("ProtocolConnection - SyncWithRemoteState", "[connection]") {
@@ -358,7 +358,7 @@ TEST_CASE("ProtocolConnection - SyncWithRemoteState", "[connection]") {
     }
     SECTION("Successful sync with remote state") {
         auto conn = CreatePreparedConnection(1, true);
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -369,7 +369,7 @@ TEST_CASE("ProtocolConnection - SyncWithRemoteState", "[connection]") {
     }
     SECTION("Sync advances receiving chain") {
         auto conn = CreatePreparedConnection(1, false);
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -384,7 +384,7 @@ TEST_CASE("ProtocolConnection - SyncWithRemoteState", "[connection]") {
     }
     SECTION("Sync advances sending chain") {
         auto conn = CreatePreparedConnection(1, true);
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -401,7 +401,7 @@ TEST_CASE("ProtocolConnection - SyncWithRemoteState", "[connection]") {
     }
     SECTION("Reject sync with gap too large") {
         auto conn = CreatePreparedConnection(1, true);
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -418,7 +418,7 @@ TEST_CASE("ProtocolConnection - Event Handler", "[connection]") {
         auto conn = CreatePreparedConnection(42, true);
         conn->SetEventHandler(handler);
         REQUIRE(handler->call_count == 0);
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x11);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0x11);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -431,7 +431,7 @@ TEST_CASE("ProtocolConnection - Event Handler", "[connection]") {
         auto handler = std::make_shared<MockEventHandler>();
         auto conn = CreatePreparedConnection(99, true);
         conn->SetEventHandler(handler);
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x22);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0x22);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -448,7 +448,7 @@ TEST_CASE("ProtocolConnection - Event Handler", "[connection]") {
         auto conn = CreatePreparedConnection(1, true);
         conn->SetEventHandler(handler);
         conn->SetEventHandler(nullptr);
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x33);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0x33);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -466,7 +466,7 @@ TEST_CASE("ProtocolConnection - Event Handler", "[connection]") {
         auto alice_dh_opt = alice_dh_result.Unwrap();
         REQUIRE(alice_dh_opt.has_value());
         auto alice_dh = alice_dh_opt.value();
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x44);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0x44);
         auto bob_keypair = SodiumInterop::GenerateX25519KeyPair("bob");
         REQUIRE(bob_keypair.IsOk());
         auto [bob_sk, bob_pk] = std::move(bob_keypair).Unwrap();
@@ -504,7 +504,7 @@ TEST_CASE("ProtocolConnection - Reflection Attack Protection", "[connection][sec
         auto alice_dh_option = std::move(alice_dh_key).Unwrap();
         REQUIRE(alice_dh_option.has_value());
         auto alice_dh = std::move(alice_dh_option).value();
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x42);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0x42);
         auto finalize_result = alice->FinalizeChainAndDhKeys(root_key, alice_dh);
         REQUIRE(finalize_result.IsErr());
         auto error = std::move(finalize_result).UnwrapErr();
@@ -515,7 +515,7 @@ TEST_CASE("ProtocolConnection - Reflection Attack Protection", "[connection][sec
         auto bob_keypair = SodiumInterop::GenerateX25519KeyPair("bob");
         REQUIRE(bob_keypair.IsOk());
         auto [bob_sk, bob_pk] = std::move(bob_keypair).Unwrap();
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0x42);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0x42);
         auto finalize_result = alice->FinalizeChainAndDhKeys(root_key, bob_pk);
         REQUIRE(finalize_result.IsOk());
     }
@@ -524,7 +524,7 @@ TEST_CASE("ProtocolConnection - Sprint 1.5B: Nonce Counter Never Resets (CVE Fix
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("Nonce counter continues monotonically after DH ratchet (CVE-2024-XXXXX fix)") {
         auto conn = CreatePreparedConnection(1, true);
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -538,9 +538,9 @@ TEST_CASE("ProtocolConnection - Sprint 1.5B: Nonce Counter Never Resets (CVE Fix
         REQUIRE(nonce1.IsOk());
         auto nonce1_bytes = std::move(nonce1).Unwrap();
         uint32_t counter_before_ratchet = 0;
-        for (size_t i = 0; i < ProtocolConstants::NONCE_COUNTER_SIZE; ++i) {
+        for (size_t i = 0; i < kNonceCounterBytes; ++i) {
             counter_before_ratchet |=
-                static_cast<uint32_t>(nonce1_bytes[ProtocolConstants::NONCE_PREFIX_SIZE + i]) << (i * 8);
+                static_cast<uint32_t>(nonce1_bytes[kNoncePrefixBytes + i]) << (i * 8);
         }
         REQUIRE(counter_before_ratchet >= 100);
         auto new_peer_keypair = SodiumInterop::GenerateX25519KeyPair("new-peer");
@@ -553,9 +553,9 @@ TEST_CASE("ProtocolConnection - Sprint 1.5B: Nonce Counter Never Resets (CVE Fix
         REQUIRE(nonce2.IsOk());
         auto nonce2_bytes = std::move(nonce2).Unwrap();
         uint32_t counter_after_ratchet = 0;
-        for (size_t i = 0; i < ProtocolConstants::NONCE_COUNTER_SIZE; ++i) {
+        for (size_t i = 0; i < kNonceCounterBytes; ++i) {
             counter_after_ratchet |=
-                static_cast<uint32_t>(nonce2_bytes[ProtocolConstants::NONCE_PREFIX_SIZE + i]) << (i * 8);
+                static_cast<uint32_t>(nonce2_bytes[kNoncePrefixBytes + i]) << (i * 8);
         }
         REQUIRE(counter_after_ratchet > counter_before_ratchet);
         REQUIRE(counter_after_ratchet >= 101);
@@ -564,7 +564,7 @@ TEST_CASE("ProtocolConnection - Sprint 1.5B: Nonce Counter Never Resets (CVE Fix
         auto handler = std::make_shared<MockEventHandler>();
         auto conn = CreatePreparedConnection(1, true);
         conn->SetEventHandler(handler);
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -581,7 +581,7 @@ TEST_CASE("ProtocolConnection - Sprint 1.5B: Nonce Uniqueness Across Ratchet", "
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("No nonce reuse across DH ratchet boundary") {
         auto conn = CreatePreparedConnection(1, true);
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xAA);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xAA);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -617,7 +617,7 @@ TEST_CASE("ProtocolConnection - Sprint 1.5B: Concurrent Send + Ratchet Stress Te
     REQUIRE(SodiumInterop::Initialize().IsOk());
     SECTION("No nonce collisions under concurrent load") {
         auto conn = CreatePreparedConnection(1, true);
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xBB);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xBB);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
@@ -660,14 +660,14 @@ TEST_CASE("ProtocolConnection - Sprint 1.5B: MAX_CHAIN_LENGTH Enforcement", "[co
     SECTION("Chain length enforcement triggers ratchet requirement") {
         RatchetConfig config(50000);
         auto conn = CreatePreparedConnection(1, true, config);
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xCC);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xCC);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();
         auto finalize_result = conn->FinalizeChainAndDhKeys(root_key, peer_pk);
         REQUIRE(finalize_result.IsOk());
         bool chain_length_error_detected = false;
-        for (uint32_t i = 0; i < ProtocolConstants::MAX_CHAIN_LENGTH + 100; ++i) {
+        for (uint32_t i = 0; i < kMaxChainLength + 100; ++i) {
             auto msg_result = conn->PrepareNextSendMessage();
             if (msg_result.IsErr()) {
                 auto err = std::move(msg_result).UnwrapErr();
@@ -686,7 +686,7 @@ TEST_CASE("ProtocolConnection - Sprint 1.5B: Ratchet Warning Reset", "[connectio
         auto handler = std::make_shared<MockEventHandler>();
         auto conn = CreatePreparedConnection(1, true);
         conn->SetEventHandler(handler);
-        std::vector<uint8_t> root_key(Constants::X_25519_KEY_SIZE, 0xDD);
+        std::vector<uint8_t> root_key(kRootKeyBytes, 0xDD);
         auto peer_keypair = SodiumInterop::GenerateX25519KeyPair("test-peer");
         REQUIRE(peer_keypair.IsOk());
         auto [peer_sk, peer_pk] = std::move(peer_keypair).Unwrap();

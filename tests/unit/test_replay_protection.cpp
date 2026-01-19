@@ -9,7 +9,7 @@ using namespace ecliptix::protocol;
 using namespace ecliptix::protocol::security;
 using namespace std::chrono_literals;
 std::vector<uint8_t> CreateNonce(uint64_t value) {
-    std::vector<uint8_t> nonce(Constants::AES_GCM_NONCE_SIZE);
+    std::vector<uint8_t> nonce(kAesGcmNonceBytes);
     for (size_t i = 0; i < sizeof(uint64_t) && i < nonce.size(); ++i) {
         nonce[i] = static_cast<uint8_t>((value >> (i * 8)) & 0xFF);
     }
