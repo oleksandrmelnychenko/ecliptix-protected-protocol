@@ -1,5 +1,6 @@
 #include "ecliptix/identity/identity_keys.hpp"
 #include "ecliptix/core/constants.hpp"
+#include "ecliptix/protocol/constants.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/crypto/hkdf.hpp"
 #include "ecliptix/crypto/master_key_derivation.hpp"
@@ -165,7 +166,7 @@ namespace ecliptix::protocol::identity {
     }
 
     Result<X25519KeyPair, ProtocolFailure> IdentityKeys::GenerateX25519IdentityKeys() {
-        auto result = SodiumInterop::GenerateX25519KeyPair("identity-x25519");
+        auto result = SodiumInterop::GenerateX25519KeyPair(kPurposeIdentityX25519);
         if (result.IsErr()) {
             return Result<X25519KeyPair, ProtocolFailure>::Err(result.UnwrapErr());
         }
@@ -175,7 +176,7 @@ namespace ecliptix::protocol::identity {
     }
 
     Result<X25519KeyPair, ProtocolFailure> IdentityKeys::GenerateX25519SignedPreKey() {
-        auto result = SodiumInterop::GenerateX25519KeyPair("signed-pre-key");
+        auto result = SodiumInterop::GenerateX25519KeyPair(kPurposeSignedPreKey);
         if (result.IsErr()) {
             return Result<X25519KeyPair, ProtocolFailure>::Err(result.UnwrapErr());
         }
@@ -277,7 +278,7 @@ namespace ecliptix::protocol::identity {
                 opks_result.UnwrapErr());
         }
         auto opks = std::move(opks_result).Unwrap();
-        auto kyber_result = KyberInterop::GenerateKyber768KeyPair("identity-kyber");
+        auto kyber_result = KyberInterop::GenerateKyber768KeyPair(kPurposeIdentityKyber);
         if (kyber_result.IsErr()) {
             return Result<IdentityKeys, ProtocolFailure>::Err(
                 ProtocolFailure::FromSodiumFailure(kyber_result.UnwrapErr()));
@@ -376,9 +377,9 @@ namespace ecliptix::protocol::identity {
         }
         auto ed_material = Ed25519KeyPair(std::move(ed_handle), std::move(ed_public));
         auto x_seed = MasterKeyDerivation::DeriveX25519Seed(master_key, membership_id);
-        x_seed[0] &= 248;
-        x_seed[31] &= 127;
-        x_seed[31] |= 64;
+        x_seed[0] &= kX25519ClampByte0;
+        x_seed[31] &= kX25519ClampByte31Low;
+        x_seed[31] |= kX25519ClampByte31High;
         std::vector<uint8_t> x_public(crypto_scalarmult_BYTES);
         if (crypto_scalarmult_base(x_public.data(), x_seed.data()) != 0) {
             SodiumInterop::SecureWipe(std::span(x_seed));
@@ -405,9 +406,9 @@ namespace ecliptix::protocol::identity {
         std::vector<uint8_t> spk_secret(kX25519PrivateKeyBytes);
         std::memcpy(spk_secret.data(), spk_seed.data(), kX25519PrivateKeyBytes);
         SodiumInterop::SecureWipe(std::span(spk_seed));
-        spk_secret[0] &= 248;
-        spk_secret[31] &= 127;
-        spk_secret[31] |= 64;
+        spk_secret[0] &= kX25519ClampByte0;
+        spk_secret[31] &= kX25519ClampByte31Low;
+        spk_secret[31] |= kX25519ClampByte31High;
         std::vector<uint8_t> spk_public(crypto_scalarmult_BYTES);
         if (crypto_scalarmult_base(spk_public.data(), spk_secret.data()) != 0) {
             SodiumInterop::SecureWipe(std::span(spk_secret));
@@ -445,7 +446,7 @@ namespace ecliptix::protocol::identity {
         }
         auto opks = std::move(opks_result).Unwrap();
         auto kyber_seed = MasterKeyDerivation::DeriveKyberSeed(master_key, membership_id);
-        auto kyber_result = KyberInterop::GenerateKyber768KeyPairFromSeed(kyber_seed, "identity-kyber");
+        auto kyber_result = KyberInterop::GenerateKyber768KeyPairFromSeed(kyber_seed, kPurposeIdentityKyber);
         SodiumInterop::SecureWipe(std::span(kyber_seed));
         if (kyber_result.IsErr()) {
             return Result<IdentityKeys, ProtocolFailure>::Err(
@@ -542,7 +543,7 @@ namespace ecliptix::protocol::identity {
             SodiumInterop::SecureWipe(std::span(ephemeral_x25519_public_.value()));
         }
         ephemeral_x25519_public_.reset();
-        if (auto result = SodiumInterop::GenerateX25519KeyPair("ephemeral-x25519"); result.IsOk()) {
+        if (auto result = SodiumInterop::GenerateX25519KeyPair(kPurposeEphemeralX25519); result.IsOk()) {
             auto [handle, public_key] = std::move(result).Unwrap();
             ephemeral_secret_key_handle_ = std::move(handle);
             ephemeral_x25519_public_ = std::move(public_key);

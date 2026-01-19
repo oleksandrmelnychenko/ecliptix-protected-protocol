@@ -183,7 +183,7 @@ extern "C" {
 // ----------------------------------------------------------------------------
 
 const char* epp_version(void) {
-    return "1.0.0";
+    return EPP_LIBRARY_VERSION;
 }
 
 EppErrorCode epp_init(void) {
@@ -212,8 +212,7 @@ EppErrorCode epp_identity_create(
         return EPP_ERROR_NULL_POINTER;
     }
 
-    constexpr uint32_t default_one_time_key_count = 100;
-    auto result = IdentityKeys::Create(default_one_time_key_count);
+    auto result = IdentityKeys::Create(EPP_DEFAULT_ONE_TIME_KEY_COUNT);
     if (result.IsErr()) {
         return fill_error_from_failure(out_error, std::move(result).UnwrapErr());
     }
@@ -251,14 +250,11 @@ EppErrorCode epp_identity_create_from_seed(
         return EPP_ERROR_INVALID_INPUT;
     }
 
-    constexpr uint32_t default_one_time_key_count = 100;
-    constexpr std::string_view default_membership_id = "default";
-
     const std::span master_key_span(seed, seed_length);
     auto result = IdentityKeys::CreateFromMasterKey(
         master_key_span,
-        default_membership_id,
-        default_one_time_key_count
+        ecliptix::protocol::kDefaultMembershipId,
+        EPP_DEFAULT_ONE_TIME_KEY_COUNT
     );
 
     if (result.IsErr()) {
@@ -304,14 +300,13 @@ EppErrorCode epp_identity_create_with_context(
         return EPP_ERROR_INVALID_INPUT;
     }
 
-    constexpr uint32_t default_one_time_key_count = 100;
     const std::span master_key_span(seed, seed_length);
     const std::string_view membership_view(membership_id, membership_id_length);
 
     auto result = IdentityKeys::CreateFromMasterKey(
         master_key_span,
         membership_view,
-        default_one_time_key_count
+        EPP_DEFAULT_ONE_TIME_KEY_COUNT
     );
 
     if (result.IsErr()) {
@@ -521,6 +516,10 @@ EppErrorCode epp_handshake_initiator_start(
         return out_error ? out_error->code : EPP_ERROR_INVALID_INPUT;
     }
 
+    if (peer_prekey_bundle_length > ecliptix::protocol::kMaxProtobufMessageSize) {
+        fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Message too large");
+        return EPP_ERROR_INVALID_INPUT;
+    }
     ecliptix::proto::protocol::PreKeyBundle peer_bundle;
     if (!peer_bundle.ParseFromArray(peer_prekey_bundle, static_cast<int>(peer_prekey_bundle_length))) {
         fill_error(out_error, EPP_ERROR_DECODE, "Failed to parse peer PreKeyBundle");
@@ -579,6 +578,10 @@ EppErrorCode epp_handshake_initiator_finish(
         return out_error ? out_error->code : EPP_ERROR_NULL_POINTER;
     }
 
+    if (handshake_ack_length > ecliptix::protocol::kMaxProtobufMessageSize) {
+        fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Message too large");
+        return EPP_ERROR_INVALID_INPUT;
+    }
     ecliptix::proto::protocol::HandshakeAck ack;
     if (!ack.ParseFromArray(handshake_ack, static_cast<int>(handshake_ack_length))) {
         fill_error(out_error, EPP_ERROR_DECODE, "Failed to parse HandshakeAck");
@@ -634,6 +637,10 @@ EppErrorCode epp_handshake_responder_start(
         return out_error ? out_error->code : EPP_ERROR_INVALID_INPUT;
     }
 
+    if (local_prekey_bundle_length > ecliptix::protocol::kMaxProtobufMessageSize) {
+        fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Message too large");
+        return EPP_ERROR_INVALID_INPUT;
+    }
     ecliptix::proto::protocol::PreKeyBundle local_bundle;
     if (!local_bundle.ParseFromArray(local_prekey_bundle, static_cast<int>(local_prekey_bundle_length))) {
         fill_error(out_error, EPP_ERROR_DECODE, "Failed to parse local PreKeyBundle");
@@ -796,6 +803,10 @@ EppErrorCode epp_session_decrypt(
         return out_error ? out_error->code : EPP_ERROR_NULL_POINTER;
     }
 
+    if (encrypted_envelope_length > ecliptix::protocol::kMaxProtobufMessageSize) {
+        fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Message too large");
+        return EPP_ERROR_INVALID_INPUT;
+    }
     ecliptix::proto::protocol::SecureEnvelope envelope;
     if (!envelope.ParseFromArray(encrypted_envelope, static_cast<int>(encrypted_envelope_length))) {
         fill_error(out_error, EPP_ERROR_DECODE, "Failed to parse SecureEnvelope");
@@ -886,6 +897,10 @@ EppErrorCode epp_session_deserialize(
         return out_error ? out_error->code : EPP_ERROR_NULL_POINTER;
     }
 
+    if (state_bytes_length > ecliptix::protocol::kMaxProtobufMessageSize) {
+        fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Message too large");
+        return EPP_ERROR_INVALID_INPUT;
+    }
     ecliptix::proto::protocol::ProtocolState state;
     if (!state.ParseFromArray(state_bytes, static_cast<int>(state_bytes_length))) {
         fill_error(out_error, EPP_ERROR_DECODE, "Failed to parse ProtocolState");
@@ -922,6 +937,10 @@ EppErrorCode epp_envelope_validate(
     EppError* out_error) {
     if (!validate_buffer_param(encrypted_envelope, encrypted_envelope_length, out_error)) {
         return out_error ? out_error->code : EPP_ERROR_NULL_POINTER;
+    }
+    if (encrypted_envelope_length > ecliptix::protocol::kMaxProtobufMessageSize) {
+        fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Message too large");
+        return EPP_ERROR_INVALID_INPUT;
     }
 
     ecliptix::proto::protocol::SecureEnvelope envelope;
@@ -1150,6 +1169,10 @@ EppErrorCode epp_shamir_reconstruct(
     }
     if (share_length == 0 || share_count == 0) {
         fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Share length or count is invalid");
+        return EPP_ERROR_INVALID_INPUT;
+    }
+    if (share_length > ecliptix::protocol::kMaxShareSize) {
+        fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Share too large");
         return EPP_ERROR_INVALID_INPUT;
     }
     if (share_length * share_count != shares_length) {

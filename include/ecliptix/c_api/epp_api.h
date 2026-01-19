@@ -13,6 +13,9 @@ extern "C" {
 #define EPP_API_VERSION_MINOR 0
 #define EPP_API_VERSION_PATCH 0
 
+#define EPP_DEFAULT_ONE_TIME_KEY_COUNT 100
+#define EPP_LIBRARY_VERSION "1.0.0"
+
 typedef enum {
     EPP_SUCCESS = 0,
     EPP_ERROR_GENERIC = 1,

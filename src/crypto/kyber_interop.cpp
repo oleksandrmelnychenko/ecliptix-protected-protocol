@@ -1,6 +1,7 @@
 #include "ecliptix/crypto/kyber_interop.hpp"
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/crypto/hkdf.hpp"
+#include "ecliptix/protocol/constants.hpp"
 #include <sodium.h>
 #include <oqs/oqs.h>
 #include <oqs/rand.h>
@@ -17,26 +18,27 @@ namespace ecliptix::protocol::crypto {
         thread_local bool g_kyber_seeded_mode = false;
 
         void seeded_randombytes(uint8_t* buf, const size_t len) {
-            if (!g_kyber_seeded_mode || g_kyber_seed.size() < 32) {
+            using namespace ecliptix::protocol;
+            if (!g_kyber_seeded_mode || g_kyber_seed.size() < kKyberSeedKeyBytes) {
                 randombytes_buf(buf, len);
                 return;
             }
 
             const uint8_t* key = g_kyber_seed.data();
-            uint8_t nonce[8] = {};
-            if (g_kyber_seed.size() >= 40) {
-                std::memcpy(nonce, g_kyber_seed.data() + 32, 8);
+            uint8_t nonce[kKyberSeedNonceBytes] = {};
+            if (g_kyber_seed.size() >= kKyberSeedWithNonceBytes) {
+                std::memcpy(nonce, g_kyber_seed.data() + kKyberSeedNonceOffset, kKyberSeedNonceBytes);
             }
 
             size_t offset = 0;
             while (offset < len) {
-                uint8_t nonce_with_counter[8];
+                uint8_t nonce_with_counter[kKyberSeedNonceBytes];
                 uint64_t effective_nonce = 0;
-                std::memcpy(&effective_nonce, nonce, 8);
+                std::memcpy(&effective_nonce, nonce, kKyberSeedNonceBytes);
                 effective_nonce ^= g_kyber_stream_counter;
-                std::memcpy(nonce_with_counter, &effective_nonce, 8);
+                std::memcpy(nonce_with_counter, &effective_nonce, kKyberSeedNonceBytes);
 
-                const size_t block_len = std::min(len - offset, static_cast<size_t>(64));
+                const size_t block_len = std::min(len - offset, kChacha20BlockBytes);
 
                 std::vector<uint8_t> zeros(block_len, 0);
                 crypto_stream_chacha20_xor(
@@ -374,7 +376,7 @@ namespace ecliptix::protocol::crypto {
         std::copy_n(x25519_shared_secret.begin(), 32, ikm.begin());
         std::copy_n(kyber_shared_secret.begin(), 32, ikm.begin() + 32);
 
-        std::string salt_str = "Ecliptix-PQ-Hybrid::";
+        std::string salt_str(protocol::kHybridSaltPrefix);
         salt_str += context;
         std::vector<uint8_t> salt(salt_str.begin(), salt_str.end());
 

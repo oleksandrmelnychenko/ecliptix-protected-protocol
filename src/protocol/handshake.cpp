@@ -855,6 +855,10 @@ namespace ecliptix::protocol {
                 chain_limit.UnwrapErr());
         }
 
+        if (init_message_bytes.size() > kMaxProtobufMessageSize) {
+            return Result<std::unique_ptr<HandshakeResponder>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("Message too large"));
+        }
         ecliptix::proto::protocol::HandshakeInit init_message;
         if (!init_message.ParseFromArray(init_message_bytes.data(),
                                          static_cast<int>(init_message_bytes.size()))) {
