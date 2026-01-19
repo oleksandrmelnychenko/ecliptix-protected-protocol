@@ -253,6 +253,7 @@ endif()
 
 if(ECLIPTIX_BUILD_SERVER_TARGET)
     configure_protocol_target(Ecliptix_Protocol_Server "epp_relay" ${ECLIPTIX_SERVER_SOURCES})
+    target_compile_definitions(Ecliptix_Protocol_Server PRIVATE EPP_SERVER_BUILD)
     add_library(Ecliptix::ProtocolServer ALIAS Ecliptix_Protocol_Server)
 endif()
 

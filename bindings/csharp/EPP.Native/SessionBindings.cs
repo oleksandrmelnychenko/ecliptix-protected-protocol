@@ -212,6 +212,7 @@ public sealed class IdentityKeys : IDisposable
     }
 }
 
+#if !ECLIPTIX_SERVER_NATIVE
 public sealed class HandshakeInitiator : IDisposable
 {
     private IntPtr _handle;
@@ -349,6 +350,7 @@ public sealed class HandshakeInitiatorStart
         HandshakeInit = handshakeInit;
     }
 }
+#endif
 
 public sealed class HandshakeResponder : IDisposable
 {

@@ -17,9 +17,11 @@ struct EppSessionHandle {
     std::unique_ptr<ecliptix::protocol::Session> session;
 };
 
+#ifndef EPP_SERVER_BUILD
 struct EppHandshakeInitiatorHandle {
     std::unique_ptr<ecliptix::protocol::HandshakeInitiator> handshake;
 };
+#endif
 
 struct EppHandshakeResponderHandle {
     std::unique_ptr<ecliptix::protocol::HandshakeResponder> handshake;

@@ -41,7 +41,9 @@ typedef enum {
 
 typedef struct EppIdentityHandle EppIdentityHandle;
 typedef struct EppSessionHandle EppSessionHandle;
+#ifndef EPP_SERVER_BUILD
 typedef struct EppHandshakeInitiatorHandle EppHandshakeInitiatorHandle;
+#endif
 typedef struct EppHandshakeResponderHandle EppHandshakeResponderHandle;
 
 typedef struct EppBuffer {
@@ -113,6 +115,7 @@ EPP_API EppErrorCode epp_prekey_bundle_create(
     EppBuffer* out_bundle,
     EppError* out_error);
 
+#ifndef EPP_SERVER_BUILD
 EPP_API EppErrorCode epp_handshake_initiator_start(
     EppIdentityHandle* identity_keys,
     const uint8_t* peer_prekey_bundle,
@@ -130,6 +133,7 @@ EPP_API EppErrorCode epp_handshake_initiator_finish(
     EppError* out_error);
 
 EPP_API void epp_handshake_initiator_destroy(EppHandshakeInitiatorHandle* handle);
+#endif
 
 EPP_API EppErrorCode epp_handshake_responder_start(
     EppIdentityHandle* identity_keys,

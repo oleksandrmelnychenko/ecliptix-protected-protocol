@@ -72,6 +72,7 @@ public static class NativeInterop
         out EppBuffer outBundle,
         out EppError outError);
 
+#if !ECLIPTIX_SERVER_NATIVE
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     public static extern EppErrorCode epp_handshake_initiator_start(
         IntPtr identityKeys,
@@ -92,6 +93,7 @@ public static class NativeInterop
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     public static extern void epp_handshake_initiator_destroy(IntPtr handle);
+#endif
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     public static extern EppErrorCode epp_handshake_responder_start(

@@ -463,6 +463,7 @@ EppErrorCode epp_prekey_bundle_create(
     return EPP_SUCCESS;
 }
 
+#ifndef EPP_SERVER_BUILD
 EppErrorCode epp_handshake_initiator_start(
     EppIdentityHandle* identity_keys,
     const uint8_t* peer_prekey_bundle,
@@ -580,6 +581,7 @@ EppErrorCode epp_handshake_initiator_finish(
 void epp_handshake_initiator_destroy(EppHandshakeInitiatorHandle* handle) {
     delete handle;
 }
+#endif
 
 EppErrorCode epp_handshake_responder_start(
     EppIdentityHandle* identity_keys,
