@@ -53,4 +53,4 @@ private:
     void* ptr_;
     size_t size_;
 };
-} 
+}

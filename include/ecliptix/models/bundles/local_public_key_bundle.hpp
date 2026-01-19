@@ -91,4 +91,4 @@ private:
     std::optional<std::vector<uint8_t>> kyber_ciphertext_;
     std::optional<uint32_t> used_one_time_pre_key_id_;
 };
-} 
+}

@@ -70,9 +70,6 @@ EPP_API const char* epp_version(void);
 EPP_API EppErrorCode epp_init(void);
 EPP_API void epp_shutdown(void);
 
-// ---------------------------------------------------------------------------
-// Identity Keys
-// ---------------------------------------------------------------------------
 EPP_API EppErrorCode epp_identity_create(
     EppIdentityHandle** out_handle,
     EppError* out_error);
@@ -103,7 +100,6 @@ EPP_API EppErrorCode epp_identity_get_ed25519_public(
     size_t out_key_length,
     EppError* out_error);
 
-// Get the identity Kyber (ML-KEM-768) public key (1184 bytes).
 EPP_API EppErrorCode epp_identity_get_kyber_public(
     const EppIdentityHandle* handle,
     uint8_t* out_key,
@@ -112,16 +108,11 @@ EPP_API EppErrorCode epp_identity_get_kyber_public(
 
 EPP_API void epp_identity_destroy(EppIdentityHandle* handle);
 
-// ---------------------------------------------------------------------------
-// Handshake + Session
-// ---------------------------------------------------------------------------
-// Create a PreKeyBundle (serialized protobuf) for publishing.
 EPP_API EppErrorCode epp_prekey_bundle_create(
     const EppIdentityHandle* identity_keys,
     EppBuffer* out_bundle,
     EppError* out_error);
 
-// Initiator: start handshake using peer PreKeyBundle bytes.
 EPP_API EppErrorCode epp_handshake_initiator_start(
     EppIdentityHandle* identity_keys,
     const uint8_t* peer_prekey_bundle,
@@ -131,7 +122,6 @@ EPP_API EppErrorCode epp_handshake_initiator_start(
     EppBuffer* out_handshake_init,
     EppError* out_error);
 
-// Initiator: finish handshake using responder ack bytes.
 EPP_API EppErrorCode epp_handshake_initiator_finish(
     EppHandshakeInitiatorHandle* handle,
     const uint8_t* handshake_ack,
@@ -141,7 +131,6 @@ EPP_API EppErrorCode epp_handshake_initiator_finish(
 
 EPP_API void epp_handshake_initiator_destroy(EppHandshakeInitiatorHandle* handle);
 
-// Responder: process handshake init bytes using published local PreKeyBundle.
 EPP_API EppErrorCode epp_handshake_responder_start(
     EppIdentityHandle* identity_keys,
     const uint8_t* local_prekey_bundle,
@@ -153,7 +142,6 @@ EPP_API EppErrorCode epp_handshake_responder_start(
     EppBuffer* out_handshake_ack,
     EppError* out_error);
 
-// Responder: finish handshake after ack is sent.
 EPP_API EppErrorCode epp_handshake_responder_finish(
     EppHandshakeResponderHandle* handle,
     EppSessionHandle** out_session,
@@ -161,7 +149,6 @@ EPP_API EppErrorCode epp_handshake_responder_finish(
 
 EPP_API void epp_handshake_responder_destroy(EppHandshakeResponderHandle* handle);
 
-// Encrypt/decrypt envelopes using the session.
 EPP_API EppErrorCode epp_session_encrypt(
     EppSessionHandle* handle,
     const uint8_t* plaintext,
@@ -181,7 +168,6 @@ EPP_API EppErrorCode epp_session_decrypt(
     EppBuffer* out_metadata,
     EppError* out_error);
 
-// Export/import session state (serialized ProtocolState protobuf).
 EPP_API EppErrorCode epp_session_serialize(
     EppSessionHandle* handle,
     EppBuffer* out_state,
@@ -195,9 +181,6 @@ EPP_API EppErrorCode epp_session_deserialize(
 
 EPP_API void epp_session_destroy(EppSessionHandle* handle);
 
-// ---------------------------------------------------------------------------
-// Utilities
-// ---------------------------------------------------------------------------
 EPP_API EppErrorCode epp_envelope_validate(
     const uint8_t* encrypted_envelope,
     size_t encrypted_envelope_length,
@@ -212,7 +195,6 @@ EPP_API EppErrorCode epp_derive_root_key(
     size_t out_root_key_length,
     EppError* out_error);
 
-// Secret sharing (Shamir, GF(256))
 EPP_API EppErrorCode epp_shamir_split(
     const uint8_t* secret,
     size_t secret_length,
@@ -234,12 +216,10 @@ EPP_API EppErrorCode epp_shamir_reconstruct(
     EppBuffer* out_secret,
     EppError* out_error);
 
-// Memory management
-// Release data for caller-provided buffers (e.g., outputs from API calls).
 EPP_API void epp_buffer_release(EppBuffer* buffer);
-// Allocate a heap-owned buffer struct plus optional capacity.
+
 EPP_API EppBuffer* epp_buffer_alloc(size_t capacity);
-// Free a buffer allocated by epp_buffer_alloc.
+
 EPP_API void epp_buffer_free(EppBuffer* buffer);
 EPP_API void epp_error_free(EppError* error);
 EPP_API const char* epp_error_string(EppErrorCode code);

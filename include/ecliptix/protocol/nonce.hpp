@@ -28,4 +28,4 @@ private:
     State state_{};
 };
 
-}  // namespace ecliptix::protocol
+}

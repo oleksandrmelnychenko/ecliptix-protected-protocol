@@ -66,4 +66,4 @@ namespace ecliptix::protocol {
         return state_;
     }
 
-}  // namespace ecliptix::protocol
+}

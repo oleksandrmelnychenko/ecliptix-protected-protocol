@@ -32,4 +32,4 @@ struct IdentityKeyBundle {
     IdentityKeyBundle(const IdentityKeyBundle&) = delete;
     IdentityKeyBundle& operator=(const IdentityKeyBundle&) = delete;
 };
-} 
+}

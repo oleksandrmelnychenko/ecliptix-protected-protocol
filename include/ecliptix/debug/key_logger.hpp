@@ -1,17 +1,5 @@
 #pragma once
 
-/**
- * @file key_logger.hpp
- * @brief Debug logging utilities for cryptographic keys and protocol state.
- *
- * SECURITY WARNING: This module logs cryptographic keys to stdout.
- * Only enable ECLIPTIX_DEBUG_KEYS for development/debugging to verify
- * algorithm correctness between C++ and C# implementations.
- * NEVER enable in production builds.
- *
- * Enable via CMake: -DECLIPTIX_DEBUG_KEYS=ON
- */
-
 #include <cstdint>
 #include <cstdio>
 #include <span>
@@ -21,10 +9,6 @@
 
 namespace ecliptix::debug {
 
-// ============================================================================
-// Side identifiers - always defined so types are available
-// ============================================================================
-
 enum class Side {
     Client,
     Server,
@@ -33,9 +17,6 @@ enum class Side {
 
 #ifdef ECLIPTIX_DEBUG_KEYS
 
-/**
- * @brief Converts bytes to lowercase hex string.
- */
 inline std::string ToHex(std::span<const uint8_t> data) {
     static constexpr char hex_chars[] = "0123456789abcdef";
     std::string result;
@@ -47,9 +28,6 @@ inline std::string ToHex(std::span<const uint8_t> data) {
     return result;
 }
 
-/**
- * @brief Converts bytes to hex string, truncated for large keys.
- */
 inline std::string ToHexTruncated(std::span<const uint8_t> data, size_t max_bytes = 64) {
     if (data.size() <= max_bytes) {
         return ToHex(data);
@@ -66,10 +44,6 @@ inline const char* SideToString(Side side) {
         default: return "UNKNOWN";
     }
 }
-
-// ============================================================================
-// Core logging macros
-// ============================================================================
 
 #define EPP_LOG_KEY(side, operation, key_name, data) \
     do { \
@@ -119,10 +93,6 @@ inline const char* SideToString(Side side) {
         fflush(stdout); \
     } while(0)
 
-// ============================================================================
-// Identity Keys Logging
-// ============================================================================
-
 inline void LogIdentityKeysCreated(
     Side side,
     std::span<const uint8_t> ed25519_public,
@@ -167,10 +137,6 @@ inline void LogEphemeralKeyGenerated(
     EPP_LOG_KEY(side, "EPHEMERAL", "ephemeral_public", public_key);
     EPP_LOG_KEY(side, "EPHEMERAL", "ephemeral_private", private_key);
 }
-
-// ============================================================================
-// X3DH Logging
-// ============================================================================
 
 inline void LogX3DHStart(Side side, bool is_initiator) {
     EPP_LOG_SECTION(side, is_initiator ? "X3DH INITIATOR" : "X3DH RESPONDER");
@@ -254,10 +220,6 @@ inline void LogHybridCombination(
     EPP_LOG_KEY(side, "HYBRID", "hybrid_result", hybrid_result);
 }
 
-// ============================================================================
-// Double Ratchet Logging
-// ============================================================================
-
 inline void LogChainKeyDerivation(
     Side side,
     const char* chain_type,
@@ -303,10 +265,6 @@ inline void LogKyberRatchet(
     EPP_LOG_KEY(side, "KYBER_RATCHET", "shared_secret", kyber_shared_secret);
 }
 
-// ============================================================================
-// Encryption/Decryption Logging
-// ============================================================================
-
 inline void LogEncryption(
     Side side,
     uint32_t message_index,
@@ -343,10 +301,6 @@ inline void LogDecryption(
     EPP_LOG_MSG(side, "DECRYPT", triggered_ratchet ? "triggered_ratchet: YES" : "triggered_ratchet: NO");
 }
 
-// ============================================================================
-// Nonce Logging
-// ============================================================================
-
 inline void LogNonce(
     Side side,
     const char* operation,
@@ -360,10 +314,6 @@ inline void LogNonce(
     EPP_LOG_VALUE(side, operation, "nonce_index", index);
     EPP_LOG_KEY(side, operation, "final_nonce", final_nonce);
 }
-
-// ============================================================================
-// Connection State Logging
-// ============================================================================
 
 inline void LogConnectionCreated(
     Side side,
@@ -381,9 +331,8 @@ inline void LogConnectionCreated(
     EPP_LOG_KEY(side, "CONN", "initial_dh_public", initial_dh_public);
 }
 
-#else // !ECLIPTIX_DEBUG_KEYS
+#else
 
-// No-op implementations when ECLIPTIX_DEBUG_KEYS is not defined
 #define EPP_LOG_KEY(side, operation, key_name, data) ((void)0)
 #define EPP_LOG_KEY_IDX(side, operation, key_name, index, data) ((void)0)
 #define EPP_LOG_VALUE(side, operation, name, value) ((void)0)
@@ -422,6 +371,6 @@ inline void LogNonce(Side, const char*, std::span<const uint8_t>, uint32_t, uint
 inline void LogConnectionCreated(Side, uint32_t, bool, std::span<const uint8_t>,
     std::span<const uint8_t>, std::span<const uint8_t>) {}
 
-#endif // ECLIPTIX_DEBUG_KEYS
+#endif
 
-} // namespace ecliptix::debug
+}

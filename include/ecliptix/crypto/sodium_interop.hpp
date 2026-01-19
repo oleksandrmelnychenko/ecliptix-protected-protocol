@@ -39,4 +39,4 @@ private:
     SodiumInterop(const SodiumInterop&) = delete;
     SodiumInterop& operator=(const SodiumInterop&) = delete;
 };
-} 
+}

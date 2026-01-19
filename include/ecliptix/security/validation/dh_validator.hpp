@@ -57,4 +57,4 @@ private:
         std::span<const uint8_t> a,
         std::span<const uint8_t> b);
 };
-} 
+}

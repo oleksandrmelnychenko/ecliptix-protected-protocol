@@ -1397,4 +1397,4 @@ namespace ecliptix::protocol {
         return session_result;
     }
 
-}  // namespace ecliptix::protocol
+}

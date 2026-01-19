@@ -63,4 +63,4 @@ struct ErrorMessages {
     static constexpr std::string_view AES_GCM_DECRYPTION_FAILED = "AES-GCM decryption failed (authentication tag mismatch)";
     static constexpr std::string_view CIPHERTEXT_TOO_SMALL = "Ciphertext too small";
 };
-} 
+}

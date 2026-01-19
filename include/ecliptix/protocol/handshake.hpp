@@ -69,4 +69,4 @@ private:
     std::vector<uint8_t> ack_bytes_{};
 };
 
-}  // namespace ecliptix::protocol
+}

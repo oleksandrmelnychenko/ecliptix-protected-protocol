@@ -34,4 +34,4 @@ private:
     crypto::SecureMemoryHandle secret_key_handle_;
     std::vector<uint8_t> public_key_;
 };
-} 
+}

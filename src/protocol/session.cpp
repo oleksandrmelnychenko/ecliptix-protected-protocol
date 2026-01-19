@@ -1238,4 +1238,4 @@ namespace ecliptix::protocol {
         return is_initiator_;
     }
 
-}  // namespace ecliptix::protocol
+}

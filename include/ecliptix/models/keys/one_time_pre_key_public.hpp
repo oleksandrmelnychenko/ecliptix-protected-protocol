@@ -33,4 +33,4 @@ private:
     std::vector<uint8_t> public_key_;
     std::optional<std::vector<uint8_t>> kyber_public_;
 };
-} 
+}

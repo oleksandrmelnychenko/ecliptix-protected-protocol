@@ -1,11 +1,3 @@
-/**
- * @file epp_common.cpp
- * @brief Shared C API implementations for both client and server libraries
- *
- * This file contains all functions that are shared between the client (epp_api)
- * and server (epp_server_api) C API implementations to avoid duplicate symbols.
- */
-
 #include "ecliptix/c_api/epp_api.h"
 #include "epp_internal.hpp"
 #include "ecliptix/identity/identity_keys.hpp"
@@ -36,10 +28,6 @@ using namespace ecliptix::protocol;
 using namespace ecliptix::protocol::identity;
 using namespace ecliptix::protocol::crypto;
 using crypto::KyberInterop;
-
-// ============================================================================
-// Internal Helper Implementations
-// ============================================================================
 
 namespace epp::internal {
 
@@ -168,19 +156,11 @@ bool copy_to_buffer(const std::span<const uint8_t> input, EppBuffer* out_buffer,
     return true;
 }
 
-} // namespace epp::internal
-
-// ============================================================================
-// Shared C API Implementations
-// ============================================================================
+}
 
 using namespace epp::internal;
 
 extern "C" {
-
-// ----------------------------------------------------------------------------
-// Version & Initialization
-// ----------------------------------------------------------------------------
 
 const char* epp_version(void) {
     return EPP_LIBRARY_VERSION;
@@ -196,10 +176,6 @@ EppErrorCode epp_init(void) {
 
 void epp_shutdown(void) {
 }
-
-// ----------------------------------------------------------------------------
-// Identity Keys Management
-// ----------------------------------------------------------------------------
 
 EppErrorCode epp_identity_create(
     EppIdentityHandle** out_handle,
@@ -407,10 +383,6 @@ EppErrorCode epp_identity_get_kyber_public(
 void epp_identity_destroy(EppIdentityHandle* handle) {
     delete handle;
 }
-
-// ----------------------------------------------------------------------------
-// Protocol Handshake + Session
-// ----------------------------------------------------------------------------
 
 EppErrorCode epp_prekey_bundle_create(
     const EppIdentityHandle* identity_keys,
@@ -927,10 +899,6 @@ void epp_session_destroy(EppSessionHandle* handle) {
     delete handle;
 }
 
-// ----------------------------------------------------------------------------
-// Envelope & Key Derivation
-// ----------------------------------------------------------------------------
-
 EppErrorCode epp_envelope_validate(
     const uint8_t* encrypted_envelope,
     const size_t encrypted_envelope_length,
@@ -1065,10 +1033,6 @@ EppErrorCode epp_derive_root_key(
     return EPP_SUCCESS;
 }
 
-// ----------------------------------------------------------------------------
-// Shamir Secret Sharing
-// ----------------------------------------------------------------------------
-
 EppErrorCode epp_shamir_split(
     const uint8_t* secret,
     const size_t secret_length,
@@ -1202,10 +1166,6 @@ EppErrorCode epp_shamir_reconstruct(
     return EPP_SUCCESS;
 }
 
-// ----------------------------------------------------------------------------
-// Memory & Error Management
-// ----------------------------------------------------------------------------
-
 void epp_buffer_release(EppBuffer* buffer) {
     if (!buffer) {
         return;
@@ -1291,4 +1251,4 @@ EppErrorCode epp_secure_wipe(uint8_t* data, const size_t length) {
     return EPP_SUCCESS;
 }
 
-} // extern "C"
+}

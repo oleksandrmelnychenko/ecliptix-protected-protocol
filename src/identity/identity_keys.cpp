@@ -300,7 +300,7 @@ namespace ecliptix::protocol::identity {
         auto identity_keys = IdentityKeys(std::move(material));
 
 #ifdef ECLIPTIX_DEBUG_KEYS
-        // Log all generated identity keys
+
         {
             auto ed_pub = identity_keys.GetIdentityEd25519PublicCopy();
             auto ed_priv_result = identity_keys.identity_ed25519_secret_key_handle_.ReadBytes(kEd25519SecretKeyBytes);
@@ -326,7 +326,6 @@ namespace ecliptix::protocol::identity {
                     identity_keys.signed_pre_key_signature_,
                     kyber_pub, kyber_priv);
 
-                // Log OPKs
                 for (const auto& opk : identity_keys.one_time_pre_keys_) {
                     auto opk_pub = opk.GetPublicKeyCopy();
                     auto opk_priv_result = opk.GetPrivateKeyHandle().ReadBytes(kX25519PrivateKeyBytes);
@@ -464,7 +463,7 @@ namespace ecliptix::protocol::identity {
         auto identity_keys = IdentityKeys(std::move(material));
 
 #ifdef ECLIPTIX_DEBUG_KEYS
-        // Log all generated identity keys (from master key)
+
         {
             auto ed_pub = identity_keys.GetIdentityEd25519PublicCopy();
             auto ed_priv_result = identity_keys.identity_ed25519_secret_key_handle_.ReadBytes(kEd25519SecretKeyBytes);
@@ -490,7 +489,6 @@ namespace ecliptix::protocol::identity {
                     identity_keys.signed_pre_key_signature_,
                     kyber_pub, kyber_priv);
 
-                // Log OPKs
                 for (const auto& opk : identity_keys.one_time_pre_keys_) {
                     auto opk_pub = opk.GetPublicKeyCopy();
                     auto opk_priv_result = opk.GetPrivateKeyHandle().ReadBytes(kX25519PrivateKeyBytes);
@@ -533,9 +531,9 @@ namespace ecliptix::protocol::identity {
 
     void IdentityKeys::GenerateEphemeralKeyPair() {
         std::unique_lock lock(*lock_);
-        
+
         if (ephemeral_secret_key_handle_.has_value() && ephemeral_x25519_public_.has_value()) {
-            return;  
+            return;
         }
 
         ephemeral_secret_key_handle_.reset();
@@ -565,8 +563,7 @@ namespace ecliptix::protocol::identity {
     }
 
     void IdentityKeys::ClearEphemeralKeyPairLocked() {
-        
-        
+
         if (ephemeral_secret_key_handle_.has_value()) {
             ephemeral_secret_key_handle_.reset();
         }
@@ -697,11 +694,6 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
         const LocalPublicKeyBundle &remote_bundle,
         const std::optional<uint32_t> one_time_pre_key_id,
         std::span<uint8_t> dh_results_output) {
-        
-        
-        
-        
-        
 
         fprintf(stderr, "[X3DH-INITIATOR] Starting initiator DH calculations\n");
         fprintf(stderr, "[X3DH-INITIATOR] peer_spk prefix: %02x%02x%02x%02x (size=%zu)\n",
@@ -753,9 +745,9 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
         std::memcpy(dh_results_output.data() + offset, dh3.data(), kX25519SharedSecretBytes);
         offset += kX25519SharedSecretBytes;
         SodiumInterop::SecureWipe(std::span(dh3));
-        
+
         if (one_time_pre_key_id.has_value() && remote_bundle.HasOneTimePreKeys()) {
-            
+
             const OneTimePreKeyPublic* target_opk = nullptr;
             for (const auto& opk : remote_bundle.GetOneTimePreKeys()) {
                 if (opk.GetOneTimePreKeyId() == one_time_pre_key_id.value()) {
@@ -797,11 +789,6 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
         const LocalPublicKeyBundle &remote_bundle,
         std::optional<uint32_t> used_one_time_pre_key_id,
         std::span<uint8_t> dh_results_output) {
-        
-        
-        
-        
-        
 
         fprintf(stderr, "[X3DH-RESPONDER] Starting responder DH calculations\n");
 
@@ -823,7 +810,6 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
         fprintf(stderr, "[X3DH-RESPONDER] my_identity_public prefix: %02x%02x%02x%02x\n",
             identity_x25519_public_[0], identity_x25519_public_[1], identity_x25519_public_[2], identity_x25519_public_[3]);
 
-        
         auto spk_read_result = signed_pre_key_secret_key_handle_.ReadBytes(
             kX25519PrivateKeyBytes);
         if (spk_read_result.IsErr()) {
@@ -832,7 +818,6 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
         }
         auto spk_secret = std::move(spk_read_result).Unwrap();
 
-        
         auto id_read_result = identity_x25519_secret_key_handle_.ReadBytes(
             kX25519PrivateKeyBytes);
         if (id_read_result.IsErr()) {
@@ -844,7 +829,6 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
 
         size_t offset = 0;
 
-        
         std::vector<uint8_t> dh1(kX25519SharedSecretBytes);
         if (crypto_scalarmult(dh1.data(), spk_secret.data(), peer_identity.data()) != 0) {
             SodiumInterop::SecureWipe(std::span(spk_secret));
@@ -858,7 +842,6 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
         offset += kX25519SharedSecretBytes;
         SodiumInterop::SecureWipe(std::span(dh1));
 
-        
         std::vector<uint8_t> dh2(kX25519SharedSecretBytes);
         if (crypto_scalarmult(dh2.data(), identity_secret.data(), peer_ephemeral.data()) != 0) {
             SodiumInterop::SecureWipe(std::span(spk_secret));
@@ -872,7 +855,6 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
         offset += kX25519SharedSecretBytes;
         SodiumInterop::SecureWipe(std::span(dh2));
 
-        
         std::vector<uint8_t> dh3(kX25519SharedSecretBytes);
         if (crypto_scalarmult(dh3.data(), spk_secret.data(), peer_ephemeral.data()) != 0) {
             SodiumInterop::SecureWipe(std::span(spk_secret));
@@ -886,9 +868,6 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
         offset += kX25519SharedSecretBytes;
         SodiumInterop::SecureWipe(std::span(dh3));
 
-        
-        
-        
         if (used_one_time_pre_key_id.has_value()) {
             fprintf(stderr, "[X3DH-RESPONDER] Initiator used OPK ID: %u\n", used_one_time_pre_key_id.value());
             const OneTimePreKey* opk = FindOneTimePreKeyByIdLocked(used_one_time_pre_key_id.value());
@@ -927,7 +906,6 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
             fprintf(stderr, "[X3DH-RESPONDER] No OPK ID provided by initiator, skipping DH4\n");
         }
 
-        
         SodiumInterop::SecureWipe(std::span(spk_secret));
         SodiumInterop::SecureWipe(std::span(identity_secret));
 
@@ -954,7 +932,7 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
         std::optional<uint32_t> used_one_time_pre_key_id;
 
         if (is_initiator) {
-            
+
             auto eph_read_result = ephemeral_secret_key_handle_.value().ReadBytes(
                 kX25519PrivateKeyBytes);
             if (eph_read_result.IsErr()) {
@@ -971,10 +949,6 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
             }
             auto identity_secret = std::move(id_read_result).Unwrap();
 
-            
-            
-            
-            
             std::optional<uint32_t> opk_to_use = remote_bundle.GetUsedOneTimePreKeyId();
             const char *opk_source = nullptr;
             if (opk_to_use.has_value()) {
@@ -1011,12 +985,10 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
             }
             dh_offset = std::move(dh_result).Unwrap();
         } else {
-            
-            
-            
+
             used_one_time_pre_key_id = selected_one_time_pre_key_id_.has_value()
-                ? selected_one_time_pre_key_id_  
-                : remote_bundle.GetUsedOneTimePreKeyId();  
+                ? selected_one_time_pre_key_id_
+                : remote_bundle.GetUsedOneTimePreKeyId();
             fprintf(stderr, "[X3DH] Responder using OPK ID: %s (source: %s)\n",
                 used_one_time_pre_key_id.has_value() ? std::to_string(used_one_time_pre_key_id.value()).c_str() : "none",
                 selected_one_time_pre_key_id_.has_value() ? "server pre-selected" : "client bundle");
@@ -1043,7 +1015,6 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
                 hkdf_result.UnwrapErr());
         }
 
-        
         std::vector<uint8_t> kyber_ciphertext;
         std::vector<uint8_t> kyber_ss_bytes;
         bool used_stored_artifacts = false;
@@ -1057,7 +1028,7 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
             kyber_ss_bytes = pending_kyber_handshake_->kyber_shared_secret;
             used_stored_artifacts = true;
         } else if (has_peer_ciphertext) {
-            
+
             const auto& peer_ciphertext = remote_bundle.GetKyberCiphertext().value();
             auto decap_result = DecapsulateKyberCiphertextLocked(
                 std::span<const uint8_t>(peer_ciphertext.data(), peer_ciphertext.size()));
@@ -1069,10 +1040,10 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
             auto artifacts = std::move(decap_result).Unwrap();
             kyber_ciphertext = std::move(artifacts.kyber_ciphertext);
             kyber_ss_bytes = std::move(artifacts.kyber_shared_secret);
-            
+
             used_stored_artifacts = false;
         } else {
-            
+
             const auto &remote_kyber_public = remote_bundle.GetKyberPublic().value();
             auto encaps_result = KyberInterop::Encapsulate(remote_kyber_public);
             if (encaps_result.IsErr()) {
@@ -1105,7 +1076,6 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
                 hybrid_result.UnwrapErr());
         }
 
-        
         if (!used_stored_artifacts) {
             pending_kyber_handshake_ = HybridHandshakeArtifacts{
                 std::move(kyber_ciphertext),
@@ -1116,7 +1086,6 @@ Result<Unit, ProtocolFailure> IdentityKeys::ValidateRemoteBundle(
         (void) _wipe_pq;
         auto handle = std::move(hybrid_result).Unwrap();
 
-        
         if (is_initiator) {
             ClearEphemeralKeyPairLocked();
         }

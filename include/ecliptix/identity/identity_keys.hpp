@@ -122,4 +122,4 @@ private:
     std::optional<uint32_t> selected_one_time_pre_key_id_;
     mutable std::unique_ptr<std::shared_mutex> lock_;
 };
-} 
+}

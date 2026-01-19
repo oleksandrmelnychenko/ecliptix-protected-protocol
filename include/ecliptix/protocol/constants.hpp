@@ -60,33 +60,27 @@ inline constexpr std::string_view kKeyConfirmInitInfo = "Ecliptix-KeyConfirm-I";
 inline constexpr std::string_view kKeyConfirmRespInfo = "Ecliptix-KeyConfirm-R";
 inline constexpr std::string_view kTranscriptLabel = "Ecliptix-Handshake-Transcript";
 
-// X25519 RFC 7748 Clamping Masks
-inline constexpr uint8_t kX25519ClampByte0 = 0xF8;      // 248: clear 3 low bits
-inline constexpr uint8_t kX25519ClampByte31Low = 0x7F;  // 127: clear high bit
-inline constexpr uint8_t kX25519ClampByte31High = 0x40; // 64: set second-high bit
+inline constexpr uint8_t kX25519ClampByte0 = 0xF8;
+inline constexpr uint8_t kX25519ClampByte31Low = 0x7F;
+inline constexpr uint8_t kX25519ClampByte31High = 0x40;
 
-// Kyber Hybrid Seeding Constants
 inline constexpr size_t kKyberSeedKeyBytes = 32;
 inline constexpr size_t kKyberSeedWithNonceBytes = 40;
 inline constexpr size_t kKyberSeedNonceOffset = 32;
 inline constexpr size_t kKyberSeedNonceBytes = 8;
 inline constexpr size_t kChacha20BlockBytes = 64;
 
-// Key Derivation Purpose Strings
 inline constexpr std::string_view kPurposeIdentityX25519 = "identity-x25519";
 inline constexpr std::string_view kPurposeSignedPreKey = "signed-pre-key";
 inline constexpr std::string_view kPurposeIdentityKyber = "identity-kyber";
 inline constexpr std::string_view kPurposeEphemeralX25519 = "ephemeral-x25519";
 
-// Hybrid PQ Salt Prefix
 inline constexpr std::string_view kHybridSaltPrefix = "Ecliptix-PQ-Hybrid::";
 
-// C API Defaults
 inline constexpr uint32_t kDefaultOneTimeKeyCount = 100;
 inline constexpr std::string_view kDefaultMembershipId = "default";
 
-// Protobuf Size Limits (security)
 inline constexpr size_t kMaxProtobufMessageSize = static_cast<size_t>(std::numeric_limits<int>::max());
-inline constexpr size_t kMaxShareSize = 65536; // 64KB max per share
+inline constexpr size_t kMaxShareSize = 65536;
 
-}  // namespace ecliptix::protocol
+}

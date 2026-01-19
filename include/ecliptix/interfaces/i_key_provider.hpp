@@ -35,4 +35,4 @@ public:
         return result_holder;
     }
 };
-} 
+}

@@ -50,4 +50,4 @@ private:
     std::vector<uint8_t> public_key_;
     std::vector<uint8_t> signature_;
 };
-} 
+}

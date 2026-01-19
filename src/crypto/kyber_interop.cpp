@@ -327,14 +327,13 @@ namespace ecliptix::protocol::crypto {
                 );
                 return Unit{};
             });
-            
+
             if (write_result.IsErr()) {
-                
+
             }
             return Unit{};
         });
 
-        
         FreeKyber768Instance(kem);
 
         if (access_result.IsErr()) {
@@ -562,4 +561,4 @@ namespace ecliptix::protocol::crypto {
         }
         return Result<Unit, SodiumFailure>::Ok(Unit{});
     }
-} 
+}

@@ -76,4 +76,4 @@ private:
     mutable std::mutex lock_;
 };
 
-}  // namespace ecliptix::protocol
+}

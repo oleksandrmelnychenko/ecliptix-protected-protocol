@@ -45,4 +45,4 @@ private:
     IKeyProvider* provider_;
     uint32_t index_;
 };
-} 
+}

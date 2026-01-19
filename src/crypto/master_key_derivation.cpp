@@ -30,7 +30,7 @@ namespace ecliptix::protocol::crypto {
         auto context_data_1 = BuildContextData(KYBER_CONTEXT, membership_id);
         auto part1 = HashWithGenericHash(master_key, context_data_1, KEY_SIZE);
 
-        std::string extended_context = std::string(KYBER_CONTEXT) + "-part2";
+        std::string extended_context = std::string(KYBER_CONTEXT) + std::string(KYBER_CONTEXT_PART2_SUFFIX);
         auto context_data_2 = BuildContextData(extended_context, membership_id);
         auto part2 = HashWithGenericHash(master_key, context_data_2, KEY_SIZE);
 

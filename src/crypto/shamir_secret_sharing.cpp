@@ -273,7 +273,7 @@ Result<std::vector<uint8_t>, ProtocolFailure> ReconstructFromShares(
 
     return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(std::move(secret));
 }
-} 
+}
 
 Result<std::vector<std::vector<uint8_t>>, ProtocolFailure> ShamirSecretSharing::Split(
     std::span<const uint8_t> secret,
@@ -405,4 +405,4 @@ Result<std::vector<uint8_t>, ProtocolFailure> ShamirSecretSharing::ReconstructSe
 
     return ReconstructFromShares(share_spans, auth_key);
 }
-} 
+}

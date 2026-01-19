@@ -25,6 +25,7 @@ public:
     static constexpr std::string_view X_25519_CONTEXT = "Ecliptix-X25519";
     static constexpr std::string_view SIGNED_PRE_KEY_CONTEXT = "Ecliptix-SignedPreKey";
     static constexpr std::string_view KYBER_CONTEXT = "Ecliptix-Kyber768";
+    static constexpr std::string_view KYBER_CONTEXT_PART2_SUFFIX = "-part2";
 private:
     static constexpr int KEY_SIZE = 32;
     static std::vector<uint8_t> HashWithGenericHash(
@@ -36,4 +37,4 @@ private:
         std::string_view membership_id);
     MasterKeyDerivation() = delete;
 };
-} 
+}
