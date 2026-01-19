@@ -180,9 +180,10 @@ namespace ecliptix::protocol {
                     ProtocolFailure::InvalidInput("Invalid nonce prefix size"));
             }
             NonceGenerator::State nonce_generator;
-            std::copy(state.nonce_generator().prefix().begin(),
-                      state.nonce_generator().prefix().end(),
-                      nonce_generator.prefix.begin());
+            const auto& prefix_data = state.nonce_generator().prefix();
+            std::copy_n(reinterpret_cast<const uint8_t*>(prefix_data.data()),
+                        kNoncePrefixBytes,
+                        nonce_generator.prefix.begin());
             nonce_generator.counter = state.nonce_generator().counter();
             return NonceGenerator::FromState(nonce_generator);
         }
