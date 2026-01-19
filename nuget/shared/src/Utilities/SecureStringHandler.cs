@@ -69,7 +69,7 @@ internal sealed class SecureStringHandler : IDisposable
         if (_disposed)
         {
             return Result<T, SodiumFailure>.Err(
-                SodiumFailure.NullPointer(ProtocolSystemConstants.ErrorMessages.SECURE_STRING_HANDLER_DISPOSED));
+                SodiumFailure.NullPointer(ProtocolConstants.ErrorMessages.SECURE_STRING_HANDLER_DISPOSED));
         }
 
         byte[]? tempBytes = null;

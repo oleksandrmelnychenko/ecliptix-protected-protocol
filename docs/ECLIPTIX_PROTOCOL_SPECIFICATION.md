@@ -228,8 +228,8 @@ Mutable keys are updated during protocol operation to provide forward secrecy an
 Bob (responder) publishes to the server:
 
 ```
-PublicKeyBundle {
-    identity_public_key: IK_B           // Ed25519, 32 bytes
+PreKeyBundle {
+    identity_ed25519_public: IK_B           // Ed25519, 32 bytes
     identity_x25519_public: IK_DH_B // X25519, 32 bytes
     signed_pre_key_id: uint32
     signed_pre_key_public: SPK_B        // X25519, 32 bytes
@@ -656,48 +656,118 @@ Provides security under the OR assumption because:
 #### 12.1 Protobuf Message Definitions
 
 ```protobuf
-// Key Exchange Bundle
-message PublicKeyBundle {
-    bytes identity_public_key = 1;           // Ed25519, 32 bytes
-    bytes identity_x25519_public = 2;        // X25519, 32 bytes
-    uint32 signed_pre_key_id = 3;
-    bytes signed_pre_key_public_key = 4;     // X25519, 32 bytes
-    bytes signed_pre_key_signature = 5;      // Ed25519 sig, 64 bytes
-    repeated OneTimePreKey one_time_pre_keys = 6;
-    bytes ephemeral_x25519_public_key = 7;   // X25519, 32 bytes (initiator only)
-    bytes kyber_public = 8;                  // Kyber768, 1184 bytes
-    bytes kyber_ciphertext = 9;              // Kyber768 CT, 1088 bytes
-    optional uint32 one_time_pre_key_id = 10;
+message OneTimePreKey {
+    uint32 one_time_pre_key_id = 1;
+    bytes public_key = 2; // X25519, 32 bytes
 }
 
-// Encrypted Message Envelope
+message PreKeyBundle {
+    uint32 version = 1; // must be 1
+    bytes identity_ed25519_public = 2;       // 32 bytes
+    bytes identity_x25519_public = 3;        // 32 bytes
+    uint32 signed_pre_key_id = 4;
+    bytes signed_pre_key_public = 5;         // 32 bytes
+    bytes signed_pre_key_signature = 6;      // 64 bytes
+    repeated OneTimePreKey one_time_pre_keys = 7;
+    bytes kyber_public = 8;                  // 1184 bytes, required
+}
+
+message HandshakeInit {
+    uint32 version = 1; // must be 1
+    bytes initiator_identity_ed25519_public = 2;   // 32 bytes
+    bytes initiator_identity_x25519_public = 3;    // 32 bytes
+    bytes initiator_ephemeral_x25519_public = 4;   // 32 bytes
+    optional uint32 one_time_pre_key_id = 5;
+    bytes kyber_ciphertext = 6;                    // 1088 bytes
+    bytes key_confirmation_mac = 7;                // HMAC-SHA256, 32 bytes
+    bytes initiator_kyber_public = 8;              // 1184 bytes
+    uint32 max_messages_per_chain = 9;             // per-session chain length
+}
+
+message HandshakeAck {
+    uint32 version = 1; // must be 1
+    bytes key_confirmation_mac = 2; // HMAC-SHA256, 32 bytes
+}
+
 message SecureEnvelope {
-    bytes encrypted_metadata = 1;
-    bytes nonce = 2;                         // 12 bytes
+    uint32 version = 1; // must be 1
+    bytes encrypted_metadata = 2;
     bytes encrypted_payload = 3;
-    bytes sender_dh_public_key = 4;          // X25519, 32 bytes (if ratchet)
-    bytes kyber_ciphertext = 5;              // Kyber768 CT, 1088 bytes (if ratchet)
-    uint32 message_index = 6;
-    uint64 send_ratchet_epoch = 7;
-    uint64 recv_ratchet_epoch = 8;
+    bytes header_nonce = 4;       // 12 bytes
+    uint64 ratchet_epoch = 5;     // monotonic, must not decrease
+    optional bytes dh_public_key = 6;    // 32 bytes, present only on ratchet rotation
+    optional bytes kyber_ciphertext = 7; // 1088 bytes, required if dh_public_key is set
+    google.protobuf.Timestamp sent_at = 8;
 }
 
-// Session State (for persistence)
-message RatchetState {
-    bool is_initiator = 1;
-    bytes session_id = 7;
-    uint32 connection_id = 8;
-    bytes root_key = 10;
-    ChainStepState sending_step = 11;
-    ChainStepState receiving_step = 12;
-    bytes peer_dh_public_key = 5;            // MUTABLE: updated on ratchet
-    bytes initial_peer_dh_public = 24;       // IMMUTABLE: never changes
-    bytes kyber_public = 20;
-    bytes kyber_secret_key = 19;
-    bytes kyber_ciphertext = 17;
-    bytes kyber_shared_secret = 18;
-    uint64 recv_ratchet_epoch = 22;
-    uint64 send_ratchet_epoch = 23;
+message EnvelopeMetadata {
+    uint64 message_index = 1;
+    bytes payload_nonce = 2; // 12 bytes
+    EnvelopeType envelope_type = 3;
+    uint32 envelope_id = 4;
+    optional string correlation_id = 5;
+}
+
+enum EnvelopeType {
+    REQUEST = 0;
+    RESPONSE = 1;
+    NOTIFICATION = 2;
+    HEARTBEAT = 3;
+    ERROR_RESPONSE = 4;
+}
+
+message ProtocolState {
+    uint32 version = 1; // must be 1
+    bool is_initiator = 2;
+    google.protobuf.Timestamp created_at = 3;
+    bytes session_id = 4; // 16 bytes
+    uint64 state_counter = 5;
+    uint64 send_ratchet_epoch = 6;
+    uint64 recv_ratchet_epoch = 7;
+
+    bytes root_key = 10; // 32 bytes
+    ChainState send_chain = 11;
+    ChainState recv_chain = 12;
+
+    DhKeyPair dh_local = 13; // current sending DH key pair
+    bytes dh_remote_public = 14; // current peer DH public key (32 bytes)
+    bytes dh_local_initial_public = 15; // immutable (32 bytes)
+    bytes dh_remote_initial_public = 16; // immutable (32 bytes)
+
+    bytes metadata_key = 17; // 32 bytes, stable for the session
+
+    KyberKeyPair kyber_local = 18;
+    bytes kyber_remote_public = 19; // 1184 bytes
+
+    NonceState nonce_generator = 20;
+    bytes state_hmac = 21; // 32 bytes, HMAC-SHA256
+    uint32 max_messages_per_chain = 22; // per-session chain length
+}
+
+message ChainState {
+    uint64 message_index = 1; // next message index
+    bytes chain_key = 2; // 32 bytes
+    repeated CachedMessageKey skipped_message_keys = 3; // optional
+}
+
+message CachedMessageKey {
+    uint64 message_index = 1;
+    bytes message_key = 2; // 32 bytes
+}
+
+message DhKeyPair {
+    bytes private_key = 1; // 32 bytes
+    bytes public_key = 2;  // 32 bytes
+}
+
+message KyberKeyPair {
+    bytes secret_key = 1; // 2400 bytes
+    bytes public_key = 2; // 1184 bytes
+}
+
+message NonceState {
+    bytes prefix = 1; // 4 bytes
+    uint64 counter = 2;
 }
 ```
 

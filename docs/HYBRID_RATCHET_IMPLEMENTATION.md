@@ -52,12 +52,12 @@ new_chain_key ← hkdf_output[32:64]
 
 ## Implementation Changes
 
-### 1. PerformDhRatchet() Function Modifications
+### 1. Session DH Ratchet Function Modifications
 
 #### Current Signature
 ```cpp
-Result<Unit, EcliptixProtocolFailure>
-PerformDhRatchet(bool is_sender, std::span<const uint8_t> received_dh_public_key);
+Result<Unit, ProtocolFailure>
+Session::PerformDhRatchet(bool is_sender, std::span<const uint8_t> received_dh_public_key);
 ```
 
 #### Implementation Strategy
@@ -122,8 +122,8 @@ bool is_hybrid_mode = (peer_pq_dh_public_key_.has_value() &&
 ### 4. Code Structure
 
 ```cpp
-Result<Unit, EcliptixProtocolFailure>
-EcliptixProtocolConnection::PerformDhRatchet(
+Result<Unit, ProtocolFailure>
+Session::PerformDhRatchet(
     bool is_sender,
     std::span<const uint8_t> received_dh_public_key) {
 
@@ -196,41 +196,11 @@ EcliptixProtocolConnection::PerformDhRatchet(
 }
 ```
 
-### 5. Missing Piece: Kyber Ciphertext Transmission
+### 5. Kyber Ciphertext Transmission (Implemented)
 
-**Problem**: The receiver needs the Kyber ciphertext to decapsulate, but it's not currently included in the message envelope or protocol.
-
-**Solution Options**:
-
-**Option A: Store in class member (temporary)**
-```cpp
-// Add to EcliptixProtocolConnection:
-std::optional<std::vector<uint8_t>> pending_kyber_ciphertext_;
-
-// After encapsulation in sender ratchet:
-pending_kyber_ciphertext_ = kyber_ciphertext;
-
-// In PrepareNextSendMessage(), include it in RatchetChainKey or return it separately
-```
-
-**Option B: Extend RatchetChainKey model**
-```cpp
-// In include/ecliptix/models/keys/ratchet_chain_key.hpp
-struct RatchetChainKey {
-    // ... existing fields ...
-    std::optional<std::vector<uint8_t>> kyber_ciphertext;  // NEW: 1088 bytes
-};
-```
-
-**Option C: Extend message envelope protobuf** (proper solution, requires protobuf changes)
-```protobuf
-message MessageEnvelope {
-    // ... existing fields ...
-    optional bytes kyber_ciphertext = 10;  // 1088 bytes for Kyber-768
-}
-```
-
-**Recommendation**: Start with **Option A** (class member) as it requires minimal changes and allows testing the hybrid ratchet logic. Later migrate to **Option C** for production.
+`SecureEnvelope` includes `kyber_ciphertext` alongside `dh_public_key`. The sender includes
+both when rotating the DH ratchet, and the receiver decapsulates before deriving the
+hybrid secret. No extra ChainKey fields are required.
 
 ### 6. Required Constants
 
@@ -257,27 +227,17 @@ inline constexpr std::string_view HYBRID_DH_RATCHET_INFO = "ECLIPTIX_HYBRID_DH_R
 3. **Mixed mode**: One peer sends PQ, other doesn't (graceful degradation)
 4. **Performance**: Measure overhead of Kyber operations
 
-## Implementation Phases
+## Implementation Status
 
-### Phase 1: Core Hybrid Logic (This Sprint)
-- [ ] Add `HYBRID_DH_RATCHET_INFO` constant
-- [ ] Add `pending_kyber_ciphertext_` member to Connection
-- [ ] Implement hybrid secret combination in `PerformDhRatchet()`
-- [ ] Add Kyber encap/decap calls
-- [ ] Update chain step with PQ keys
-- [ ] Write unit tests for hybrid ratchet
+- Hybrid DH ratchet uses X25519 + Kyber secrets for root/chain derivation.
+- `SecureEnvelope` carries `kyber_ciphertext` alongside `dh_public_key`.
+- Session state persists Kyber material and validates sizes on import.
+- Kyber is required; no classical-only fallback.
 
-### Phase 2: Message Transmission (Next Sprint)
-- [ ] Extend RatchetChainKey to include Kyber ciphertext
-- [ ] Update PrepareNextSendMessage() to return ciphertext
-- [ ] Update ProcessReceivedMessage() to accept ciphertext
-- [ ] Extend protobuf MessageEnvelope with optional Kyber CT field
+## Next Tests
 
-### Phase 3: End-to-End Integration (Future)
-- [ ] Update C# interop layer
-- [ ] Update desktop client
-- [ ] Performance profiling and optimization
-- [ ] Security audit
+- Add focused hybrid-ratchet unit tests (encap/decap + ratchet rotation).
+- Add envelope validation tests for the DH + Kyber pairing rules.
 
 ## Security Considerations
 

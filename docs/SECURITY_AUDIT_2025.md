@@ -22,6 +22,15 @@ This document records a comprehensive security audit of Ecliptix.Protection.Prot
 
 ---
 
+## Scope Note (Session-based)
+
+This audit originally targeted the legacy ProtocolConnection implementation. The current
+Session-based architecture replaces that layer; the fixes described below are preserved
+in `src/protocol/session.cpp` and `include/ecliptix/protocol/session.hpp`. Line references
+are updated to file-level pointers rather than removed connection files.
+
+---
+
 ## Vulnerability #1: Wrong DH Key in Finalization
 
 ### Severity: 🔴 **CRITICAL**
@@ -30,7 +39,7 @@ This document records a comprehensive security audit of Ecliptix.Protection.Prot
 January 2025
 
 ### Location
-`src/protocol/connection/ecliptix_protocol_connection.cpp:239`
+`src/protocol/session.cpp` (session initialization, `InitializeFromHandshake`)
 
 ### Description
 The `FinalizeChainAndDhKeys()` function used the wrong DH private key when deriving the receiving chain. Specifically, it used `initial_sending_dh_private_handle_` for **both** sender and receiver chain derivation, when it should have used `persistent_dh_private_handle_` for the receiver chain.
@@ -96,7 +105,7 @@ dh_secret = crypto_scalarmult(persistent_private_bytes, peer_dh_public_copy);
 January 2025
 
 ### Location
-`src/protocol/connection/ecliptix_protocol_connection.cpp:971-993`
+`src/protocol/session.cpp` (receiver ratchet, `ApplyRecvRatchet`)
 
 ### Description
 The receiver-side DH ratchet (`PerformDhRatchet` with `is_sender=false`) incorrectly used `current_sending_dh_private_handle_` instead of the receiving chain's DH private key. This couples inbound security to outbound key material.
@@ -179,7 +188,7 @@ Missing abstraction for receiver-side DH key management. The receiving chain did
 January 2025
 
 ### Location
-`src/protocol/connection/ecliptix_protocol_connection.cpp:822-834`
+`src/protocol/session.cpp` (replay tracking in `Decrypt`)
 
 ### Description
 The `CheckReplayProtection()` function was stubbed out - it only checked nonce length and explicitly ignored the `message_index` parameter. No actual replay tracking was implemented, allowing adversaries to replay ciphertexts indefinitely.
@@ -253,18 +262,16 @@ Result<Unit> CheckReplayProtection(
 
 ### Implementation Details
 
-The `ReplayProtection` class was already fully implemented with:
-- Sliding window per chain (adaptive size 100-10000)
-- Nonce deduplication with timestamp tracking
-- Automatic cleanup of expired nonces
-- Out-of-order message handling within window
+Session replay tracking uses:
+- Per-epoch nonce deduplication (`seen_payload_nonces_`)
+- Skipped message key storage for out-of-order delivery
+- Replay epoch resets on ratchet rotation
 
 ### Test Coverage
-Comprehensive test suite already existed: `tests/attacks/test_replay_attacks.cpp`
+Coverage in Session tests: `tests/unit/test_session_replay_protection.cpp`
 - ✅ Exact replay detection (same nonce + index)
-- ✅ 100 sequential messages cannot be replayed
-- ✅ Random replay attempts all fail
-- ✅ Delayed replay detection
+- ✅ Sequential messages cannot be replayed
+- ✅ Random replay attempts fail
 - ✅ Out-of-order messages within window (accepted)
 
 ### Verification
@@ -286,7 +293,7 @@ Comprehensive test suite already existed: `tests/attacks/test_replay_attacks.cpp
 January 2025
 
 ### Location
-`src/protocol/connection/ecliptix_protocol_connection.cpp:1264-1289`
+`src/protocol/session.cpp` (state import validation in `FromState`)
 
 ### Description
 The `FromProtoState()` function accepted protobuf state with arbitrary root key sizes without validation. It allocated `SecureMemoryHandle` with whatever size was in the proto, allowing state injection attacks.
@@ -394,7 +401,7 @@ Deserialization code path did not mirror the validation from construction code p
 ```
 1. Attacker crafts protobuf with:
    - member_id = 1 GB string
-   - identity_public_key = 33 bytes (wrong size)
+   - identity_ed25519_public = 33 bytes (wrong size)
    - group_name = 100,000 characters
 2. Victim calls GroupMember::FromProto(malicious_proto)
 3. Object is created with invalid state
@@ -408,11 +415,11 @@ Deserialization code path did not mirror the validation from construction code p
 Result<GroupMember> FromProto(const proto::group::GroupMember& proto) {
     // Only checks emptiness, NOT size!
     if (proto.member_id().empty()) return Err("empty");
-    if (proto.identity_public_key().empty()) return Err("empty");
+    if (proto.identity_ed25519_public().empty()) return Err("empty");
 
     // Missing: Size bound checks!
     // member_id could be 1 GB
-    // identity_public_key could be 33 bytes (not 32)
+    // identity_ed25519_public could be 33 bytes (not 32)
 }
 ```
 
@@ -422,15 +429,15 @@ Result<GroupMember> FromProto(const proto::group::GroupMember& proto) {
 Result<GroupMember> FromProto(const proto::group::GroupMember& proto) {
     // Check emptiness
     if (proto.member_id().empty()) return Err("empty");
-    if (proto.identity_public_key().empty()) return Err("empty");
+    if (proto.identity_ed25519_public().empty()) return Err("empty");
 
     // NOW: Check size bounds (mirrors Create() validation)
     if (proto.member_id().size() < MIN_MEMBER_ID_SIZE) {
         return Err("Proto member_id too short (minimum 16 bytes)");
     }
 
-    if (proto.identity_public_key().size() != EXPECTED_PUBLIC_KEY_SIZE) {
-        return Err("Proto identity_public_key must be exactly 32 bytes");
+    if (proto.identity_ed25519_public().size() != EXPECTED_PUBLIC_KEY_SIZE) {
+        return Err("Proto identity_ed25519_public must be exactly 32 bytes");
     }
 
     // Similar checks for account_id, app_instance_id, device_id
@@ -467,7 +474,7 @@ Result<GroupMetadata> FromProto(const proto::group::GroupMetadata& proto) {
 
 **Key Changes**:
 1. Added minimum size checks for all ID fields (16 bytes)
-2. Added exact size check for identity_public_key (32 bytes)
+2. Added exact size check for identity_ed25519_public (32 bytes)
 3. Added min/max range checks for group_name (1-255 chars)
 4. Added range check for max_members (2-100000)
 5. **All validations from `Create()` now mirrored in `FromProto()`**
@@ -477,7 +484,7 @@ Result<GroupMetadata> FromProto(const proto::group::GroupMetadata& proto) {
 | Field | Create() Validation | FromProto() Before | FromProto() After |
 |-------|--------------------|--------------------|-------------------|
 | member_id | 16-64 bytes | ❌ Empty only | ✅ 16-64 bytes |
-| identity_public_key | 32 bytes exact | ❌ Empty only | ✅ 32 bytes exact |
+| identity_ed25519_public | 32 bytes exact | ❌ Empty only | ✅ 32 bytes exact |
 | group_name | 1-255 chars | ❌ Empty only | ✅ 1-255 chars |
 | max_members | 2-100000 | ❌ No check | ✅ 2-100000 |
 

@@ -2,13 +2,13 @@
 
 ## MockKeyProvider
 
-`MockKeyProvider` is a test helper that implements `IKeyProvider` interface for isolated testing of `RatchetChainKey` and encryption logic without requiring full `EcliptixProtocolChainStep` infrastructure.
+`MockKeyProvider` is a test helper that implements `IKeyProvider` interface for isolated testing of `ChainKey` and encryption logic without requiring full Session chain-state infrastructure.
 
 ### Usage Example
 
 ```cpp
 #include "helpers/mock_key_provider.hpp"
-#include "ecliptix/models/keys/ratchet_chain_key.hpp"
+#include "ecliptix/models/keys/chain_key.hpp"
 #include "ecliptix/crypto/aes_gcm.hpp"
 
 using namespace ecliptix::protocol::test_helpers;
@@ -21,7 +21,7 @@ TEST_CASE("Test encryption with mock key") {
     std::vector<uint8_t> test_key(32, 0xAB);
     mock.SetKey(0, test_key);
 
-    RatchetChainKey key(&mock, 0);
+    ChainKey key(&mock, 0);
 
     auto result = key.WithKeyMaterial<std::vector<uint8_t>>([&](auto key_span) {
         std::vector<uint8_t> nonce(12, 0x00);
@@ -57,16 +57,16 @@ Removes all keys with index < min_index. Prevents memory growth in long-running 
 
 ### ⚠️ CRITICAL: Lifetime Contract
 
-**`RatchetChainKey` DOES NOT OWN the `MockKeyProvider`**
+**`ChainKey` DOES NOT OWN the `MockKeyProvider`**
 
-The provider must outlive any `RatchetChainKey` instances that reference it:
+The provider must outlive any `ChainKey` instances that reference it:
 
 ```cpp
 // ❌ WRONG - Dangling pointer:
-RatchetChainKey DangerousFunction() {
+ChainKey DangerousFunction() {
     MockKeyProvider mock;  // Destroyed when function returns
     mock.SetKey(0, key);
-    return RatchetChainKey(&mock, 0);  // Returns dangling pointer!
+    return ChainKey(&mock, 0);  // Returns dangling pointer!
 }
 
 // ✅ CORRECT - Provider outlives key:
@@ -75,7 +75,7 @@ TEST_CASE("Safe usage") {
     mock.SetKey(0, key);
 
     {
-        RatchetChainKey key(&mock, 0);
+        ChainKey key(&mock, 0);
         key.WithKeyMaterial(...);
     }  // key destroyed, mock still valid
 }
@@ -83,7 +83,7 @@ TEST_CASE("Safe usage") {
 
 ### Security Properties
 
-`MockKeyProvider` maintains the same security properties as production `EcliptixProtocolChainStep`:
+`MockKeyProvider` maintains the same security properties as production Session chain key handling:
 
 1. **Keys stored in `SecureMemoryHandle`** - Memory is locked and wiped on destruction
 2. **Keys only accessible via callback** - `WithKeyMaterial()` is the ONLY way to access key bytes
@@ -104,11 +104,11 @@ key.WithKeyMaterial([](auto key_span) {
 
 `MockKeyProvider` is **NOT thread-safe**. Use separate instances per thread or add external synchronization if testing concurrent scenarios.
 
-Production `EcliptixProtocolChainStep` uses internal mutexes and IS thread-safe.
+Production Session key handling uses internal mutexes and is thread-safe.
 
 ### Memory Management
 
-Unlike production `ChainStep`, `MockKeyProvider` does NOT automatically prune old keys. For tests simulating many messages:
+Unlike production Session chain state, `MockKeyProvider` does NOT automatically prune old keys. For tests simulating many messages:
 
 ```cpp
 MockKeyProvider mock;
@@ -131,7 +131,7 @@ for (uint32_t i = 0; i < 10000; ++i) {
 - Testing skip-key scenarios (receiving message N without 0..N-1)
 - Writing unit tests for cryptographic correctness
 
-**Use production `EcliptixProtocolChainStep` when**:
+**Use production Session chain handling when**:
 - Integration testing full protocol flow
 - Testing DH ratchet stepping
 - Testing chain key advancement logic
@@ -150,7 +150,7 @@ TEST_CASE("Receive message 1000 without receiving 0-999") {
     }
 
     // Skip directly to message 1000:
-    RatchetChainKey key1000(&mock, 1000);
+    ChainKey key1000(&mock, 1000);
 
     auto result = key1000.WithKeyMaterial<std::vector<uint8_t>>([&](auto k) {
         return AesGcm::Decrypt(k, nonce, ciphertext, aad);

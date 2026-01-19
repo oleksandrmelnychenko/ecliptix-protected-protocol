@@ -46,44 +46,7 @@ set(TEST_SOURCES
 )
 
 # =============================================================================
-# Test Sources - Pending Implementation (Phase 3+)
-# =============================================================================
-# These tests exist but require headers not yet implemented:
-#
-# PHASE 3 - Key Management (requires: ratchet_recovery.hpp, replay_protection.hpp)
-#   unit/test_ratchet_recovery.cpp
-#   unit/test_replay_protection.cpp
-#   attacks/test_replay_attacks.cpp
-#
-# PHASE 4 - Protocol Core (requires: protocol_connection.hpp, chain_step.hpp, etc.)
-#   unit/test_chain_step.cpp
-#   unit/test_connection.cpp
-#   unit/test_envelope_builder.cpp
-#   unit/test_metadata_key_agreement.cpp
-#   unit/test_protocol_config.cpp
-#   attacks/test_envelope_attacks.cpp
-#   boundaries/test_state_transitions.cpp
-#   concurrency/test_concurrent_envelopes.cpp
-#   performance/test_envelope_performance.cpp
-#   security/test_metadata_key_rotation.cpp
-#   security/test_persistence_pq.cpp
-#   security/test_rate_limiting.cpp
-#   security/test_session_lifecycle.cpp
-#   integration/test_end_to_end_workflow.cpp
-#   integration/test_protocol_system_workflow.cpp
-#   fuzzing/test_envelope_fuzzing.cpp
-#
-# C API Tests (requires: server API functions)
-#   c_api/test_c_api_boundary.cpp
-#   c_api/test_c_api_break_in_recovery.cpp
-#   c_api/test_c_api_forward_secrecy.cpp
-#   c_api/test_c_api_handshake_e2e.cpp
-#   c_api/test_c_api_hybrid_pq.cpp
-#   c_api/test_c_api_integration.cpp
-#   c_api/test_c_api_pre_handshake.cpp
-#   c_api/test_c_api_role_validation.cpp
-#   c_api/test_c_api_state_persistence.cpp
-#   c_api/test_server_c_api_secret_sharing.cpp
+# Additional test suites are added alongside new features as they land.
 # =============================================================================
 
 # Server-specific C API tests (separate binary to avoid symbol collisions)

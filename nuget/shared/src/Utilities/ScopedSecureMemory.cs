@@ -19,7 +19,7 @@ internal sealed class ScopedSecureMemory : IDisposable
     }
 
     public static ScopedSecureMemory Allocate(int size) => size <= 0
-        ? throw new ArgumentException(ProtocolSystemConstants.ErrorMessages.SIZE_POSITIVE, nameof(size))
+        ? throw new ArgumentException(ProtocolConstants.ErrorMessages.SIZE_POSITIVE, nameof(size))
         : new ScopedSecureMemory(new byte[size]);
 
     public Span<byte> AsSpan()

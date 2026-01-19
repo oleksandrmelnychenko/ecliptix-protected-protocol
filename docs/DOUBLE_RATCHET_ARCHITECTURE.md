@@ -259,22 +259,23 @@ std::optional<SecureMemoryHandle> GetCachedMessageKey(uint32_t index) {
 
 ### 3.1 Design Rationale
 
-Instead of exposing raw key material, ChainStep implements IKeyProvider to control access:
+Instead of exposing raw key material, chain state is accessed via IKeyProvider (tests) or
+internal Session helpers:
 
 ```cpp
 class IKeyProvider {
 public:
-    virtual Result<Unit, EcliptixProtocolFailure> ExecuteWithKey(
+    virtual Result<Unit, ProtocolFailure> ExecuteWithKey(
         uint32_t index,
-        std::function<Result<Unit, EcliptixProtocolFailure>(std::span<const uint8_t>)> operation
+        std::function<Result<Unit, ProtocolFailure>(std::span<const uint8_t>)> operation
     ) = 0;
 };
 
-// ChainStep implements this interface
-class EcliptixProtocolChainStep : public IKeyProvider {
-    Result<Unit, EcliptixProtocolFailure> ExecuteWithKey(
+// Session chain state implements this interface internally
+class SessionChainState : public IKeyProvider {
+    Result<Unit, ProtocolFailure> ExecuteWithKey(
         uint32_t index,
-        std::function<Result<Unit, EcliptixProtocolFailure>(std::span<const uint8_t>)> operation
+        std::function<Result<Unit, ProtocolFailure>(std::span<const uint8_t>)> operation
     ) override {
         // Derive or retrieve key for index
         std::vector<uint8_t> key_material;
@@ -297,27 +298,27 @@ class EcliptixProtocolChainStep : public IKeyProvider {
 };
 ```
 
-### 3.2 RatchetChainKey and MessageKey
+### 3.2 ChainKey and MessageKey
 
 Lightweight wrappers that defer to the provider:
 
 ```cpp
-class RatchetChainKey {
+class ChainKey {
     IKeyProvider* provider_;  // Non-owning pointer
     uint32_t index_;
 
 public:
-    RatchetChainKey(IKeyProvider* provider, uint32_t index)
+    ChainKey(IKeyProvider* provider, uint32_t index)
         : provider_(provider), index_(index) {}
 
     // Encrypt data using the message key at this index
-    Result<std::vector<uint8_t>, EcliptixProtocolFailure> Encrypt(
+    Result<std::vector<uint8_t>, ProtocolFailure> Encrypt(
         std::span<const uint8_t> plaintext,
         std::span<const uint8_t> ad
     ) const {
         return provider_->ExecuteWithKeyTyped<std::vector<uint8_t>>(
             index_,
-            [&](std::span<const uint8_t> key) -> Result<std::vector<uint8_t>, EcliptixProtocolFailure> {
+            [&](std::span<const uint8_t> key) -> Result<std::vector<uint8_t>, ProtocolFailure> {
                 // Use AES-256-GCM with this key
                 return AesGcmEncrypt(key, plaintext, ad);
             }
@@ -403,18 +404,18 @@ Result<std::vector<uint8_t>, EcliptixProtocolFailure> GenerateNextNonce() {
 ### 5.1 Locking Strategy
 
 ```cpp
-class EcliptixProtocolConnection {
+class Session {
     mutable std::mutex lock_;  // Protects all mutable state
 
 public:
-    Result<RatchetChainKey, EcliptixProtocolFailure> PrepareNextSendMessage() {
+    Result<SecureEnvelope, ProtocolFailure> Encrypt(...) {
         std::lock_guard<std::mutex> guard(lock_);  // RAII lock
 
         // All ratchet operations are serialized
         // ...
     }
 
-    Result<RatchetChainKey, EcliptixProtocolFailure> ProcessReceivedMessage(uint32_t index) {
+    Result<DecryptResult, ProtocolFailure> Decrypt(...) {
         std::lock_guard<std::mutex> guard(lock_);
 
         // Receiving operations also serialized
@@ -426,20 +427,19 @@ public:
 ### 5.2 Nonce Counter (Atomic)
 
 ```cpp
-// Atomic counter for nonce generation
-std::atomic<uint64_t> nonce_counter_{0};
+NonceGenerator nonce_generator_{};
 
-// Nonce generation uses the connection lock to coordinate rate limiting
-Result<std::vector<uint8_t>, EcliptixProtocolFailure> GenerateNextNonce() {
+// Nonce generation uses the session lock to coordinate rate limiting
+Result<std::vector<uint8_t>, ProtocolFailure> GenerateNextNonce(uint64_t message_index) {
     std::lock_guard<std::mutex> guard(lock_);
-    // ...
+    return nonce_generator_.Next(message_index);
 }
 ```
 
 **Critical Insights**:
 1. **Coarse-grained locking** for ratchet state (simplicity over performance)
 2. **Atomic nonce counters** paired with serialized generation for rate limiting
-3. **No lock ordering issues** (only one lock per connection)
+3. **No lock ordering issues** (only one lock per session)
 
 ## 6. Memory Safety
 
@@ -472,12 +472,12 @@ public:
 };
 
 // Usage
-Result<Unit, EcliptixProtocolFailure> PerformDhRatchet(bool is_sender) {
+Result<Unit, ProtocolFailure> PerformDhRatchet(bool is_sender) {
     DhRatchetContext ctx;  // Automatic cleanup on scope exit (success or error)
 
     TRY_UNIT(ComputeDhSecret(is_sender, ctx));
     TRY_UNIT(DeriveRatchetKeys(ctx));
-    TRY_UNIT(UpdateChainSteps(ctx));
+    TRY_UNIT(UpdateChainState(ctx));
 
     return Ok(Unit{});
     // ctx destructor wipes all temporary buffers
@@ -579,94 +579,22 @@ EcliptixProtocolFailure::Generic("Nonce counter overflow");
 EcliptixProtocolFailure::CryptoFailure("AES-GCM decryption failed");
 ```
 
-## 9. Testing Strategy
+## 9. Testing and Status
 
-### 9.1 Unit Test Coverage
+Current implementation uses the Session-based API and ProtocolState persistence. Focused
+test coverage lives in:
+- `tests/unit/test_session_replay_protection.cpp`
+- `tests/unit/test_session_state_hmac.cpp`
+- `tests/unit/test_session_chain_length.cpp`
+- `tests/unit/test_state_import_invariants.cpp`
+- `tests/interop/test_x3dh_vectors.cpp`
+- `tests/interop/test_double_ratchet_vectors.cpp`
 
-**ChainStep Tests**:
-- [x] Key derivation produces correct HKDF outputs
-- [x] Message key caching and retrieval
-- [x] SkipKeysUntil with various gap sizes
-- [x] Cache pruning behavior
-- [x] UpdateKeysAfterDhRatchet resets state correctly
-
-**Connection Tests**:
-- [ ] Initial handshake completion
-- [ ] Sending messages (symmetric ratchet advancement)
-- [ ] Receiving messages (symmetric ratchet verification)
-- [ ] DH ratchet triggers (message count threshold)
-- [ ] DH ratchet triggers (received new DH key)
-- [ ] Out-of-order message handling
-- [ ] Nonce generation uniqueness
-
-**Integration Tests**:
-- [ ] Alice → Bob single message
-- [ ] Bob → Alice response
-- [ ] Bidirectional conversation
-- [ ] DH ratchet rotation during conversation
-- [ ] Out-of-order delivery simulation
-- [ ] State persistence and recovery
-- [ ] Session timeout handling
-
-### 9.2 Security Test Vectors
-
-Generate test vectors from C# implementation:
-1. Known X3DH inputs → Expected shared secret
-2. Known chain key → Expected message key and next chain key
-3. Known DH secret + root key → Expected new root key and chain key
-4. Known plaintext + message key → Expected ciphertext
-
-## 10. Implementation Checklist
-
-### Phase 4A: Foundational Types
-- [x] IKeyProvider interface
-- [ ] RatchetChainKey struct
-- [ ] MessageKey struct
-- [ ] ChainStepType enum
-- [ ] Protocol constants update
-- [ ] DhRatchetContext RAII struct
-
-### Phase 4B: Symmetric Ratchet
-- [ ] EcliptixProtocolChainStep class skeleton
-- [ ] DeriveNextChainKeys algorithm
-- [ ] Message key caching (std::map)
-- [ ] SkipKeysUntil implementation
-- [ ] PruneOldKeys implementation
-- [ ] GetOrDeriveKeyFor method
-- [ ] UpdateKeysAfterDhRatchet
-
-### Phase 4C: Connection Layer
-- [ ] RatchetConfig class
-- [ ] EcliptixProtocolConnection class skeleton
-- [ ] FinalizeChainAndDhKeys
-- [ ] PrepareNextSendMessage
-- [ ] ProcessReceivedMessage
-- [ ] PerformDhRatchet (sender side)
-- [ ] PerformDhRatchet (receiver side)
-- [ ] Nonce generation
-- [ ] Metadata encryption key derivation
-
-### Phase 4D: Security Components
-- [ ] ReplayProtection implementation
-- [ ] RatchetRecovery implementation
-- [ ] DhValidator for public key validation
-
-### Phase 4E: Main API
-- [ ] HandshakeInitiator/HandshakeResponder API
-- [ ] Session API (Encrypt/Decrypt)
-- [ ] Session serialization (ToProtoState)
-- [ ] Session deserialization (FromProtoState)
-- [ ] PreKey bundle creation/validation
-
-### Phase 4F: Testing
-- [ ] ChainStep unit tests
-- [ ] Connection unit tests
-- [ ] Integration tests
-- [ ] Performance benchmarks
-- [ ] Memory leak testing (Valgrind)
+Legacy ChainStep/Connection checklists were removed with the Session refactor. New work
+should extend Session/Handshake tests directly.
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2025-12-07
+**Document Version**: 1.1
+**Last Updated**: 2026-01-19
 **Author**: Claude (from C# reference implementation analysis)

@@ -49,11 +49,11 @@
     <Compile Include="..\shared\src\Utilities\**\*.cs" Link="Shared\Utilities\%(Filename)%(Extension)" />
     <Compile Include="..\shared\src\Constants.cs" Link="Shared\Constants.cs" />
     <Compile Include="..\shared\src\UtilityConstants.cs" Link="Shared\UtilityConstants.cs" />
-    <Compile Include="..\shared\src\ProtocolSystemConstants.cs" Link="Shared\ProtocolSystemConstants.cs" />
+    <Compile Include="..\shared\src\ProtocolConstants.cs" Link="Shared\ProtocolConstants.cs" />
     <Compile Include="..\shared\src\Result.cs" Link="Shared\Result.cs" />
     <Compile Include="..\shared\src\Unit.cs" Link="Shared\Unit.cs" />
     <Compile Include="..\shared\src\SodiumFailure.cs" Link="Shared\SodiumFailure.cs" />
-    <Compile Include="..\shared\src\EcliptixProtocolFailure.cs" Link="Shared\EcliptixProtocolFailure.cs" />
+    <Compile Include="..\shared\src\ProtocolFailure.cs" Link="Shared\ProtocolFailure.cs" />
     <Compile Include="..\shared\src\NativeTypes.cs" Link="Shared\NativeTypes.cs" />
   </ItemGroup>
 

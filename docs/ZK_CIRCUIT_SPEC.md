@@ -925,24 +925,24 @@ ZK Mode Message:  48 + 192 + 32 = 272 bytes (+5.7× overhead)
 
 **Send Message with ZK Proof**:
 ```cpp
-Result<ProtocolMessage, EcliptixProtocolFailure>
-EcliptixProtocolConnection::SendMessageZk(std::span<const uint8_t> plaintext) {
+Result<ProtocolMessage, ProtocolFailure>
+Session::EncryptZk(std::span<const uint8_t> plaintext) {
     // 1. Derive message key (traditional ratchet)
-    auto message_key = TRY(current_chain_step_->DeriveMessageKey());
+    auto message_key = TRY(send_chain_state_->DeriveMessageKey());
 
     // 2. Encrypt message
     auto [ciphertext, auth_tag] = TRY(EncryptMessage(plaintext, message_key));
 
     // 3. Generate ZK proof (proves correct key derivation)
     auto zk_proof = TRY(ZkRatchetProver::GenerateProof(
-        current_chain_step_->GetChainKey(),
-        current_chain_step_->GetDhPrivateKey(),
+        send_chain_state_->GetChainKey(),
+        send_chain_state_->GetDhPrivateKey(),
         remote_dh_public_,
         message_index_
     ));
 
     // 4. Compute commitment to new chain key
-    auto new_chain_key = current_chain_step_->GetChainKey();
+    auto new_chain_key = send_chain_state_->GetChainKey();
     auto commitment = TRY(ComputeCommitment(new_chain_key));
 
     // 5. Assemble message
@@ -963,8 +963,8 @@ EcliptixProtocolConnection::SendMessageZk(std::span<const uint8_t> plaintext) {
 
 **Receive Message with ZK Verification**:
 ```cpp
-Result<std::vector<uint8_t>, EcliptixProtocolFailure>
-EcliptixProtocolConnection::ReceiveMessageZk(const ProtocolMessage& msg) {
+Result<std::vector<uint8_t>, ProtocolFailure>
+Session::DecryptZk(const ProtocolMessage& msg) {
     // 1. Verify ZK proof (BEFORE decryption)
     if (msg.has_zk_ratchet_proof()) {
         bool is_valid = TRY(ZkRatchetProver::VerifyProof(
@@ -979,7 +979,7 @@ EcliptixProtocolConnection::ReceiveMessageZk(const ProtocolMessage& msg) {
     }
 
     // 2. Derive message key (traditional ratchet)
-    auto message_key = TRY(recv_chain_step_->DeriveMessageKey(msg.message_index()));
+    auto message_key = TRY(recv_chain_state_->DeriveMessageKey(msg.message_index()));
 
     // 3. Decrypt message
     auto plaintext = TRY(DecryptMessage(

@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
-    <EcliptixProtocolClientNativeDir>$(MSBuildThisFileDirectory)..\runtimes\</EcliptixProtocolClientNativeDir>
+    <EppProtocolClientNativeDir>$(MSBuildThisFileDirectory)..\runtimes\</EppProtocolClientNativeDir>
   </PropertyGroup>
 
   <!-- Auto-copy native libraries to output for development builds -->
-  <Target Name="EcliptixProtocolClientCopyNativeLibraries" AfterTargets="Build" Condition="'$(RuntimeIdentifier)' == ''">
+  <Target Name="EppProtocolClientCopyNativeLibraries" AfterTargets="Build" Condition="'$(RuntimeIdentifier)' == ''">
     <PropertyGroup>
       <!-- Detect platform and architecture -->
       <_ProtocolClientRID Condition="$([MSBuild]::IsOSPlatform('Windows')) And '$(PlatformTarget)' == 'x64'">win-x64</_ProtocolClientRID>
@@ -22,16 +22,16 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <_ProtocolClientNativeFiles Include="$(EcliptixProtocolClientNativeDir)$(_ProtocolClientRID)\native\*.*" />
+      <_ProtocolClientNativeFiles Include="$(EppProtocolClientNativeDir)$(_ProtocolClientRID)\native\*.*" />
     </ItemGroup>
 
-    <Copy SourceFiles="@(_ProtocolClientNativeFiles)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" Condition="Exists('$(EcliptixProtocolClientNativeDir)$(_ProtocolClientRID)\native\')" />
+    <Copy SourceFiles="@(_ProtocolClientNativeFiles)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" Condition="Exists('$(EppProtocolClientNativeDir)$(_ProtocolClientRID)\native\')" />
   </Target>
 
   <!-- Include native libraries in publish output -->
-  <Target Name="EcliptixProtocolClientIncludeNativeForPublish" AfterTargets="ComputeFilesToPublish" Condition="'$(RuntimeIdentifier)' != ''">
+  <Target Name="EppProtocolClientIncludeNativeForPublish" AfterTargets="ComputeFilesToPublish" Condition="'$(RuntimeIdentifier)' != ''">
     <ItemGroup>
-      <ResolvedFileToPublish Include="$(EcliptixProtocolClientNativeDir)$(RuntimeIdentifier)\native\*.*" Condition="Exists('$(EcliptixProtocolClientNativeDir)$(RuntimeIdentifier)\native\')">
+      <ResolvedFileToPublish Include="$(EppProtocolClientNativeDir)$(RuntimeIdentifier)\native\*.*" Condition="Exists('$(EppProtocolClientNativeDir)$(RuntimeIdentifier)\native\')">
         <RelativePath>%(Filename)%(Extension)</RelativePath>
         <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
       </ResolvedFileToPublish>

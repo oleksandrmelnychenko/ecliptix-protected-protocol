@@ -14,16 +14,16 @@ internal sealed class SecureMemoryPool : IDisposable
     private int _currentPoolSize;
     private bool _disposed;
 
-    public SecureMemoryPool(int defaultBufferSize = ProtocolSystemConstants.MemoryPool.DEFAULT_BUFFER_SIZE, int maxPoolSize = ProtocolSystemConstants.MemoryPool.MAX_POOL_SIZE)
+    public SecureMemoryPool(int defaultBufferSize = ProtocolConstants.MemoryPool.DEFAULT_BUFFER_SIZE, int maxPoolSize = ProtocolConstants.MemoryPool.MAX_POOL_SIZE)
     {
         if (defaultBufferSize <= 0)
         {
-            throw new ArgumentException(ProtocolSystemConstants.ErrorMessages.BUFFER_SIZE_POSITIVE, nameof(defaultBufferSize));
+            throw new ArgumentException(ProtocolConstants.ErrorMessages.BUFFER_SIZE_POSITIVE, nameof(defaultBufferSize));
         }
 
         if (maxPoolSize <= 0)
         {
-            throw new ArgumentException(ProtocolSystemConstants.ErrorMessages.MAX_POOL_SIZE_POSITIVE, nameof(maxPoolSize));
+            throw new ArgumentException(ProtocolConstants.ErrorMessages.MAX_POOL_SIZE_POSITIVE, nameof(maxPoolSize));
         }
 
         _defaultBufferSize = defaultBufferSize;

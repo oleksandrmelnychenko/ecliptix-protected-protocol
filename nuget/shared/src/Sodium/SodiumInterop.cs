@@ -10,7 +10,7 @@ namespace EPP.Sodium;
 
 internal static partial class SodiumInterop
 {
-    private const string LIB_SODIUM = ProtocolSystemConstants.Libraries.LIB_SODIUM;
+    private const string LIB_SODIUM = ProtocolConstants.Libraries.LIB_SODIUM;
 
     private const int MAX_BUFFER_SIZE = 1_000_000_000;
 
@@ -48,7 +48,7 @@ internal static partial class SodiumInterop
             () =>
             {
                 int result = sodium_init();
-                const int dllImportSuccess = ProtocolSystemConstants.Numeric.DLL_IMPORT_SUCCESS;
+                const int dllImportSuccess = ProtocolConstants.Numeric.DLL_IMPORT_SUCCESS;
                 if (result < dllImportSuccess)
                 {
                     throw new InvalidOperationException(SodiumFailureMessages.SODIUM_INIT_FAILED);
@@ -60,8 +60,8 @@ internal static partial class SodiumInterop
                     string.Format(SodiumFailureMessages.LIBRARY_LOAD_FAILED, LIB_SODIUM), dllEx),
                 InvalidOperationException opEx when opEx.Message.Contains(SodiumExceptionMessagePatterns
                         .SODIUM_INIT_PATTERN) =>
-                    SodiumFailure.INITIALIZATION_FAILED(SodiumFailureMessages.INITIALIZATION_FAILED, opEx),
-                _ => SodiumFailure.INITIALIZATION_FAILED(SodiumFailureMessages.UNEXPECTED_INIT_ERROR, ex)
+                    SodiumFailure.InitializationFailed(SodiumFailureMessages.INITIALIZATION_FAILED, opEx),
+                _ => SodiumFailure.InitializationFailed(SodiumFailureMessages.UNEXPECTED_INIT_ERROR, ex)
             }
         );
     }
@@ -71,19 +71,19 @@ internal static partial class SodiumInterop
         if (!IsInitialized)
         {
             Result<Unit, SodiumFailure>.Err(
-                SodiumFailure.INITIALIZATION_FAILED(SodiumFailureMessages.NOT_INITIALIZED));
+                SodiumFailure.InitializationFailed(SodiumFailureMessages.NOT_INITIALIZED));
             return;
         }
 
         Result<byte[], SodiumFailure>
-            .FromValue(buffer, SodiumFailure.BUFFER_TOO_SMALL(SodiumFailureMessages.BUFFER_NULL))
+            .FromValue(buffer, SodiumFailure.BufferTooSmall(SodiumFailureMessages.BUFFER_NULL))
             .Bind(nonNullBuffer => nonNullBuffer switch
             {
                 { Length: 0 } => Result<Unit, SodiumFailure>.Ok(Unit.Value),
                 _ => Result<byte[], SodiumFailure>.Validate(
                         nonNullBuffer,
                         buf => buf.Length <= MAX_BUFFER_SIZE,
-                        SodiumFailure.BUFFER_TOO_LARGE(
+                        SodiumFailure.BufferTooLarge(
                             string.Format(SodiumFailureMessages.BUFFER_TOO_LARGE, nonNullBuffer.Length, MAX_BUFFER_SIZE)))
                     .Bind(validBuffer => validBuffer.Length <= Constants.SmallBufferThreshold
                         ? WipeSmallBuffer(validBuffer)
@@ -91,7 +91,7 @@ internal static partial class SodiumInterop
             });
     }
 
-    public static Result<(SodiumSecureMemoryHandle skHandle, byte[] pk), EcliptixProtocolFailure> GenerateX25519KeyPair(
+    public static Result<(SodiumSecureMemoryHandle skHandle, byte[] pk), ProtocolFailure> GenerateX25519KeyPair(
         string keyPurpose)
     {
         try
@@ -100,8 +100,8 @@ internal static partial class SodiumInterop
                 SodiumSecureMemoryHandle.Allocate(Constants.X25519PrivateKeyBytes);
             if (allocResult.IsErr)
             {
-                return Result<(SodiumSecureMemoryHandle, byte[]), EcliptixProtocolFailure>.Err(allocResult.UnwrapErr()
-                    .ToEcliptixProtocolFailure());
+                return Result<(SodiumSecureMemoryHandle, byte[]), ProtocolFailure>.Err(allocResult.UnwrapErr()
+                    .ToProtocolFailure());
             }
 
             SodiumSecureMemoryHandle? skHandle = allocResult.Unwrap();
@@ -113,8 +113,8 @@ internal static partial class SodiumInterop
                 if (writeResult.IsErr)
                 {
                     skHandle.Dispose();
-                    return Result<(SodiumSecureMemoryHandle, byte[]), EcliptixProtocolFailure>.Err(writeResult.UnwrapErr()
-                        .ToEcliptixProtocolFailure());
+                    return Result<(SodiumSecureMemoryHandle, byte[]), ProtocolFailure>.Err(writeResult.UnwrapErr()
+                        .ToProtocolFailure());
                 }
             }
             finally
@@ -129,18 +129,18 @@ internal static partial class SodiumInterop
                 if (readResult.IsErr)
                 {
                     skHandle.Dispose();
-                    return Result<(SodiumSecureMemoryHandle, byte[]), EcliptixProtocolFailure>.Err(readResult.UnwrapErr()
-                        .ToEcliptixProtocolFailure());
+                    return Result<(SodiumSecureMemoryHandle, byte[]), ProtocolFailure>.Err(readResult.UnwrapErr()
+                        .ToProtocolFailure());
                 }
 
-                Result<byte[], EcliptixProtocolFailure> deriveResult = Result<byte[], EcliptixProtocolFailure>.Try(
+                Result<byte[], ProtocolFailure> deriveResult = Result<byte[], ProtocolFailure>.Try(
                     () => ScalarMult.Base(tempPrivCopy),
-                    ex => EcliptixProtocolFailure.DeriveKey($"Failed to derive {keyPurpose} public key.", ex));
+                    ex => ProtocolFailure.DeriveKey($"Failed to derive {keyPurpose} public key.", ex));
 
                 if (deriveResult.IsErr)
                 {
                     skHandle.Dispose();
-                    return Result<(SodiumSecureMemoryHandle, byte[]), EcliptixProtocolFailure>
+                    return Result<(SodiumSecureMemoryHandle, byte[]), ProtocolFailure>
                         .Err(deriveResult.UnwrapErr());
                 }
 
@@ -150,11 +150,11 @@ internal static partial class SodiumInterop
                 {
                     skHandle.Dispose();
                     SecureWipe(pkBytes);
-                    return Result<(SodiumSecureMemoryHandle, byte[]), EcliptixProtocolFailure>.Err(
-                        EcliptixProtocolFailure.DeriveKey($"Derived {keyPurpose} public key has incorrect size."));
+                    return Result<(SodiumSecureMemoryHandle, byte[]), ProtocolFailure>.Err(
+                        ProtocolFailure.DeriveKey($"Derived {keyPurpose} public key has incorrect size."));
                 }
 
-                return Result<(SodiumSecureMemoryHandle, byte[]), EcliptixProtocolFailure>.Ok((skHandle, pkBytes));
+                return Result<(SodiumSecureMemoryHandle, byte[]), ProtocolFailure>.Ok((skHandle, pkBytes));
             }
             finally
             {
@@ -163,8 +163,8 @@ internal static partial class SodiumInterop
         }
         catch (Exception ex)
         {
-            return Result<(SodiumSecureMemoryHandle, byte[]), EcliptixProtocolFailure>.Err(
-                EcliptixProtocolFailure.KeyGeneration($"Unexpected error generating {keyPurpose} key pair.", ex));
+            return Result<(SodiumSecureMemoryHandle, byte[]), ProtocolFailure>.Err(
+                ProtocolFailure.KeyGeneration($"Unexpected error generating {keyPurpose} key pair.", ex));
         }
     }
 
@@ -188,23 +188,23 @@ internal static partial class SodiumInterop
                 fixed (byte* ptrB = b)
                 {
                     int result = sodium_memcmp(ptrA, ptrB, (nuint)a.Length);
-                    return Result<bool, SodiumFailure>.Ok(result == ProtocolSystemConstants.Numeric.ZERO_VALUE);
+                    return Result<bool, SodiumFailure>.Ok(result == ProtocolConstants.Numeric.ZERO_VALUE);
                 }
             }
         }
         catch (Exception ex)
         {
             return Result<bool, SodiumFailure>.Err(
-                SodiumFailure.ComparisonFailed(ProtocolSystemConstants.ErrorMessages.LIB_SODIUM_CONSTANT_TIME_COMPARISON_FAILED, ex));
+                SodiumFailure.ComparisonFailed(ProtocolConstants.ErrorMessages.LIB_SODIUM_CONSTANT_TIME_COMPARISON_FAILED, ex));
         }
     }
 
     private static Result<Unit, SodiumFailure> WipeSmallBuffer(byte[] buffer)
     {
         return Result<Unit, SodiumFailure>.Try(
-            () => { Array.Clear(buffer, ProtocolSystemConstants.Numeric.ZERO_VALUE, buffer.Length); },
+            () => { Array.Clear(buffer, ProtocolConstants.Numeric.ZERO_VALUE, buffer.Length); },
             ex =>
-                SodiumFailure.SECURE_WIPE_FAILED(
+                SodiumFailure.SecureWipeFailed(
                     string.Format(SodiumFailureMessages.SMALL_BUFFER_CLEAR_FAILED, buffer.Length), ex));
     }
 
@@ -216,7 +216,7 @@ internal static partial class SodiumInterop
             {
                 handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
                 IntPtr ptr = handle.AddrOfPinnedObject();
-                if (ptr == IntPtr.Zero && buffer.Length > ProtocolSystemConstants.Numeric.ZERO_VALUE)
+                if (ptr == IntPtr.Zero && buffer.Length > ProtocolConstants.Numeric.ZERO_VALUE)
                 {
                     throw new InvalidOperationException(SodiumFailureMessages.ADDRESS_OF_PINNED_OBJECT_FAILED);
                 }

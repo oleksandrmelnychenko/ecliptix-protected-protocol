@@ -1,6 +1,6 @@
 # EPP.Agent
 
-High-performance native Ecliptix Protection Protocol agent bindings for .NET applications.
+High-performance native EPP agent bindings for .NET applications.
 
 ## Features
 

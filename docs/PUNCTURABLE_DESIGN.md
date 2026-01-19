@@ -811,7 +811,7 @@ GgmTree::FromProto(const proto::ggm::GgmTreeState& proto) {
 
 **Modified Chain Step**:
 ```cpp
-class EcliptixProtocolChainStep {
+class SessionChainState {
 private:
     SecureMemoryHandle chain_key_;        // Traditional chain key (32 bytes)
     std::unique_ptr<GgmTree> ggm_tree_;   // GGM tree for puncturable FS
@@ -878,7 +878,7 @@ private:
 **Ratchet Step Implementation**:
 ```cpp
 Result<void, EcliptixProtocolFailure>
-EcliptixProtocolConnection::PerformRatchetStep() {
+Session::PerformRatchetStep() {
     // Traditional DH ratchet
     auto new_root_key = TRY(PerformDhRatchet());
 
@@ -1295,7 +1295,7 @@ Puncture:   < 50 μs (p50), < 80 μs (p99)
 ### 13.2 Month 6: Integration and Optimization (Week 21-24)
 
 **Week 21-22: Ratchet Integration**
-- [ ] Extend `EcliptixProtocolChainStep` with GGM tree
+- [ ] Extend Session chain state with GGM tree
 - [ ] Modify `DeriveMessageKey()` to use GGM
 - [ ] Implement ratchet-step tree reset
 - [ ] Write 25 integration tests

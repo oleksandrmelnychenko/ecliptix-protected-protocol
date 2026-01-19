@@ -1,8 +1,8 @@
-# Ecliptix.Protocol.Native - C# Bindings
+# EPP.Native - C# Bindings
 
 ## Overview
 
-This directory contains C# P/Invoke bindings for the Ecliptix Protocol C++ library. The bindings expose a clean, unversioned handshake + session API that matches the new protocol build (no v1/v2 split).
+This directory contains C# P/Invoke bindings for the EPP native library. The bindings expose a clean, unversioned handshake + session API that matches the protocol build (no v1/v2 split).
 
 ## Architecture
 
@@ -15,7 +15,7 @@ This directory contains C# P/Invoke bindings for the Ecliptix Protocol C++ libra
                  ▼
 ┌──────────────────────────────────────┐
 │   Managed Wrapper Layer              │
-│   (EcliptixProtocolSession.cs)       │
+│   (SessionBindings.cs)               │
 │   - RAII / IDisposable               │
 │   - Error translation                │
 │   - Buffer marshaling                │
@@ -24,7 +24,7 @@ This directory contains C# P/Invoke bindings for the Ecliptix Protocol C++ libra
                  ▼
 ┌──────────────────────────────────────┐
 │   P/Invoke Layer                     │
-│   (EcliptixNativeInterop.cs)         │
+│   (NativeInterop.cs)                 │
 │   - DllImport declarations           │
 │   - Struct marshaling                │
 └──────────────────────────────────────┘
@@ -40,7 +40,7 @@ This directory contains C# P/Invoke bindings for the Ecliptix Protocol C++ libra
                  ▼
 ┌──────────────────────────────────────┐
 │   C++ Protocol Implementation        │
-│   (Ecliptix.Protocol)                │
+│   (EPP Protocol Core)                │
 │   - libsodium cryptography           │
 │   - Hybrid PQ handshake + ratchet    │
 └──────────────────────────────────────┘
@@ -50,15 +50,15 @@ This directory contains C# P/Invoke bindings for the Ecliptix Protocol C++ libra
 
 ```csharp
 using System.Text;
-using Ecliptix.Protocol.Native;
-using Ecliptix.Utilities;
+using EPP;
+using EPP.Native;
 
 // Initialize the native library (once per process)
-EcliptixNativeInterop.epp_init();
+NativeInterop.epp_init();
 
 // Create identity keys
-var aliceKeys = EcliptixIdentityKeys.Create().Unwrap();
-var bobKeys = EcliptixIdentityKeys.Create().Unwrap();
+var aliceKeys = IdentityKeys.Create().Unwrap();
+var bobKeys = IdentityKeys.Create().Unwrap();
 
 // Publish prekey bundles (serialized protobufs)
 byte[] aliceBundle = aliceKeys.CreatePreKeyBundle().Unwrap();
@@ -67,10 +67,10 @@ byte[] bobBundle = bobKeys.CreatePreKeyBundle().Unwrap();
 uint maxMessagesPerChain = 200;
 
 // Alice starts handshake using Bob's bundle
-var aliceStart = EcliptixHandshakeInitiator.Start(aliceKeys, bobBundle, maxMessagesPerChain).Unwrap();
+var aliceStart = HandshakeInitiator.Start(aliceKeys, bobBundle, maxMessagesPerChain).Unwrap();
 
 // Bob processes handshake init using his local bundle
-var bobStart = EcliptixHandshakeResponder.Start(
+var bobStart = HandshakeResponder.Start(
     bobKeys,
     bobBundle,
     aliceStart.HandshakeInit,
@@ -84,7 +84,7 @@ var aliceSession = aliceStart.Initiator.Finish(bobStart.HandshakeAck).Unwrap();
 
 // Encrypt and decrypt
 byte[] plaintext = Encoding.UTF8.GetBytes("Hello, secure world!");
-byte[] encrypted = aliceSession.Encrypt(plaintext, EcliptixEnvelopeType.Request, 1).Unwrap();
+byte[] encrypted = aliceSession.Encrypt(plaintext, EppEnvelopeType.Request, 1).Unwrap();
 var decrypted = bobSession.Decrypt(encrypted).Unwrap();
 
 Console.WriteLine(Encoding.UTF8.GetString(decrypted.Plaintext));
@@ -96,7 +96,7 @@ aliceKeys.Dispose();
 bobKeys.Dispose();
 
 // Shutdown the library (once per process)
-EcliptixNativeInterop.epp_shutdown();
+NativeInterop.epp_shutdown();
 ```
 
 ## Building
@@ -105,7 +105,7 @@ EcliptixNativeInterop.epp_shutdown();
 
 1. Build the C++ library:
 ```bash
-cd /path/to/Ecliptix.Protection.Protocol
+cd /path/to/protocol-repo
 cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
@@ -122,8 +122,13 @@ cmake --build build
 2. Add the C# binding files to your project:
    ```xml
    <ItemGroup>
-     <Compile Include="bindings/csharp/Ecliptix.Protocol.Native/EcliptixNativeInterop.cs" />
-     <Compile Include="bindings/csharp/Ecliptix.Protocol.Native/EcliptixProtocolSession.cs" />
+     <Compile Include="bindings/csharp/EPP.Native/NativeInterop.cs" />
+     <Compile Include="bindings/csharp/EPP.Native/SessionBindings.cs" />
+     <Compile Include="nuget/shared/src/Result.cs" />
+     <Compile Include="nuget/shared/src/Unit.cs" />
+     <Compile Include="nuget/shared/src/UtilityConstants.cs" />
+     <Compile Include="nuget/shared/src/ProtocolFailure.cs" />
+     <Compile Include="nuget/shared/src/NativeTypes.cs" />
    </ItemGroup>
    ```
 
@@ -136,29 +141,19 @@ cmake --build build
    </ItemGroup>
    ```
 
-## Migration Guide
-
-**Before (ProtocolSystem API):**
+## Usage (Handshake + Session API)
 ```csharp
-var identityKeys = EcliptixSystemIdentityKeys.Create().Unwrap();
-var system = new EcliptixProtocolSystem(identityKeys);
-var envelope = system.ProduceOutboundEnvelope(plaintext).Unwrap();
-var decrypted = system.ProcessInboundEnvelope(envelope).Unwrap();
-```
+NativeInterop.epp_init();
 
-**After (Handshake + Session API):**
-```csharp
-EcliptixNativeInterop.epp_init();
-
-var identityKeys = EcliptixIdentityKeys.Create().Unwrap();
+var identityKeys = IdentityKeys.Create().Unwrap();
 byte[] bundle = identityKeys.CreatePreKeyBundle().Unwrap();
 
 uint maxMessagesPerChain = 200;
-var initiatorStart = EcliptixHandshakeInitiator.Start(
+var initiatorStart = HandshakeInitiator.Start(
     identityKeys,
     peerBundle,
     maxMessagesPerChain).Unwrap();
-var responderStart = EcliptixHandshakeResponder.Start(
+var responderStart = HandshakeResponder.Start(
     peerKeys,
     peerBundle,
     initiatorStart.HandshakeInit,
@@ -167,10 +162,10 @@ var responderStart = EcliptixHandshakeResponder.Start(
 var responderSession = responderStart.Responder.Finish().Unwrap();
 var initiatorSession = initiatorStart.Initiator.Finish(responderStart.HandshakeAck).Unwrap();
 
-var encrypted = initiatorSession.Encrypt(plaintext, EcliptixEnvelopeType.Request, 1).Unwrap();
+var encrypted = initiatorSession.Encrypt(plaintext, EppEnvelopeType.Request, 1).Unwrap();
 var decrypted = responderSession.Decrypt(encrypted).Unwrap();
 
-EcliptixNativeInterop.epp_shutdown();
+NativeInterop.epp_shutdown();
 ```
 
 ## Platform Support

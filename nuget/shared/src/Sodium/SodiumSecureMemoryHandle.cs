@@ -46,12 +46,12 @@ public sealed class SodiumSecureMemoryHandle : SafeHandle
         if (!SodiumInterop.IsInitialized)
         {
             return Result<SodiumSecureMemoryHandle, SodiumFailure>.Err(
-                SodiumFailure.INITIALIZATION_FAILED(SodiumFailureMessages.SODIUM_NOT_INITIALIZED));
+                SodiumFailure.InitializationFailed(SodiumFailureMessages.SODIUM_NOT_INITIALIZED));
         }
 
         Result<IntPtr, SodiumFailure> allocationResult = ExecuteWithErrorHandling(
             () => SodiumInterop.sodium_malloc((UIntPtr)length),
-            ex => SodiumFailure.ALLOCATION_FAILED(
+            ex => SodiumFailure.AllocationFailed(
                 string.Format(SodiumFailureMessages.UNEXPECTED_ALLOCATION_ERROR, length), ex)
         );
 
@@ -64,7 +64,7 @@ public sealed class SodiumSecureMemoryHandle : SafeHandle
         if (ptr == IntPtr.Zero)
         {
             return Result<SodiumSecureMemoryHandle, SodiumFailure>.Err(
-                SodiumFailure.ALLOCATION_FAILED(string.Format(SodiumFailureMessages.ALLOCATION_FAILED,
+                SodiumFailure.AllocationFailed(string.Format(SodiumFailureMessages.ALLOCATION_FAILED,
                     length)));
         }
 
@@ -83,13 +83,13 @@ public sealed class SodiumSecureMemoryHandle : SafeHandle
             if (IsInvalid || IsClosed)
             {
                 return Result<Unit, SodiumFailure>.Err(
-                    SodiumFailure.NullPointer(ProtocolSystemConstants.ErrorMessages.HANDLE_DISPOSED));
+                    SodiumFailure.NullPointer(ProtocolConstants.ErrorMessages.HANDLE_DISPOSED));
             }
 
             if (data.Length > Length)
             {
                 return Result<Unit, SodiumFailure>.Err(
-                    SodiumFailure.BUFFER_TOO_LARGE(string.Format(ProtocolSystemConstants.ErrorMessages.DATA_EXCEEDS_BUFFER, data.Length, Length)));
+                    SodiumFailure.BufferTooLarge(string.Format(ProtocolConstants.ErrorMessages.DATA_EXCEEDS_BUFFER, data.Length, Length)));
             }
 
             if (data.IsEmpty)
@@ -101,7 +101,7 @@ public sealed class SodiumSecureMemoryHandle : SafeHandle
             if (!success)
             {
                 return Result<Unit, SodiumFailure>.Err(
-                    SodiumFailure.MemoryPinningFailed(ProtocolSystemConstants.ErrorMessages.REF_COUNT_FAILED));
+                    SodiumFailure.MemoryPinningFailed(ProtocolConstants.ErrorMessages.REF_COUNT_FAILED));
             }
 
             unsafe
@@ -118,7 +118,7 @@ public sealed class SodiumSecureMemoryHandle : SafeHandle
         catch (Exception ex)
         {
             return Result<Unit, SodiumFailure>.Err(
-                SodiumFailure.MemoryProtectionFailed(ProtocolSystemConstants.ErrorMessages.UNEXPECTED_WRITE_ERROR, ex));
+                SodiumFailure.MemoryProtectionFailed(ProtocolConstants.ErrorMessages.UNEXPECTED_WRITE_ERROR, ex));
         }
         finally
         {
@@ -143,7 +143,7 @@ public sealed class SodiumSecureMemoryHandle : SafeHandle
         if (destination.Length < Length)
         {
             return Result<Unit, SodiumFailure>.Err(
-                SodiumFailure.BUFFER_TOO_SMALL(
+                SodiumFailure.BufferTooSmall(
                     string.Format(SodiumFailureMessages.BUFFER_TOO_SMALL, destination.Length, Length)));
         }
 
@@ -216,7 +216,7 @@ public sealed class SodiumSecureMemoryHandle : SafeHandle
         if (length > Length)
         {
             return Result<byte[], SodiumFailure>.Err(
-                SodiumFailure.BUFFER_TOO_SMALL(string.Format(SodiumFailureMessages.READ_LENGTH_EXCEEDS_SIZE,
+                SodiumFailure.BufferTooSmall(string.Format(SodiumFailureMessages.READ_LENGTH_EXCEEDS_SIZE,
                     length,
                     Length)));
         }
@@ -460,7 +460,7 @@ public sealed class SodiumSecureMemoryHandle : SafeHandle
             if (IsInvalid || IsClosed)
             {
                 return Result<TResult, SodiumFailure>.Err(
-                    SodiumFailure.OBJECT_DISPOSED(string.Format(SodiumFailureMessages.DISPOSED_AFTER_ADD_REF,
+                    SodiumFailure.ObjectDisposed(string.Format(SodiumFailureMessages.DISPOSED_AFTER_ADD_REF,
                         nameof(SodiumSecureMemoryHandle))));
             }
 
@@ -487,28 +487,28 @@ public sealed class SodiumSecureMemoryHandle : SafeHandle
     }
 
     [SupportedOSPlatform("windows")]
-    [DllImport(ProtocolSystemConstants.Libraries.KERNEL_32, SetLastError = true)]
+    [DllImport(ProtocolConstants.Libraries.KERNEL_32, SetLastError = true)]
     private static extern bool VirtualLock(IntPtr lpAddress, UIntPtr dwSize);
 
     [SupportedOSPlatform("windows")]
-    [DllImport(ProtocolSystemConstants.Libraries.KERNEL_32, SetLastError = true)]
+    [DllImport(ProtocolConstants.Libraries.KERNEL_32, SetLastError = true)]
     private static extern bool VirtualUnlock(IntPtr lpAddress, UIntPtr dwSize);
 
     [SupportedOSPlatform("windows")]
-    [DllImport(ProtocolSystemConstants.Libraries.KERNEL_32, SetLastError = true)]
+    [DllImport(ProtocolConstants.Libraries.KERNEL_32, SetLastError = true)]
     private static extern bool SetProcessWorkingSetSize(IntPtr hProcess, UIntPtr dwMinimumWorkingSetSize, UIntPtr dwMaximumWorkingSetSize);
 
     [SupportedOSPlatform("windows")]
-    [DllImport(ProtocolSystemConstants.Libraries.KERNEL_32, SetLastError = true)]
+    [DllImport(ProtocolConstants.Libraries.KERNEL_32, SetLastError = true)]
     private static extern bool GetProcessWorkingSetSize(IntPtr hProcess, out UIntPtr lpMinimumWorkingSetSize, out UIntPtr lpMaximumWorkingSetSize);
 
     [SupportedOSPlatform("windows")]
-    [DllImport(ProtocolSystemConstants.Libraries.KERNEL_32, SetLastError = true)]
+    [DllImport(ProtocolConstants.Libraries.KERNEL_32, SetLastError = true)]
     private static extern IntPtr GetCurrentProcess();
 
-    [DllImport(ProtocolSystemConstants.Libraries.LIB_C, SetLastError = true)]
+    [DllImport(ProtocolConstants.Libraries.LIB_C, SetLastError = true)]
     private static extern int mlock(IntPtr addr, UIntPtr len);
 
-    [DllImport(ProtocolSystemConstants.Libraries.LIB_C, SetLastError = true)]
+    [DllImport(ProtocolConstants.Libraries.LIB_C, SetLastError = true)]
     private static extern int munlock(IntPtr addr, UIntPtr len);
 }

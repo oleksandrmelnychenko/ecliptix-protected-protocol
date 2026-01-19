@@ -497,13 +497,13 @@ struct KyberCiphertext {
 ```cpp
 struct LocalPublicKeyBundle {
     // Existing X25519 keys
-    std::vector<uint8_t> identity_public_key;           // 32 bytes
-    std::vector<uint8_t> signed_pre_key_public_key;     // 32 bytes
+    std::vector<uint8_t> identity_ed25519_public;           // 32 bytes
+    std::vector<uint8_t> signed_pre_key_public;     // 32 bytes
     std::vector<uint8_t> signed_pre_key_signature;      // 64 bytes
 
     // NEW: Kyber-768 keys
-    std::optional<KyberPublicKey> pq_identity_public_key;      // 1184 bytes
-    std::optional<KyberPublicKey> pq_signed_pre_key_public_key; // 1184 bytes
+    std::optional<KyberPublicKey> pq_identity_public;      // 1184 bytes
+    std::optional<KyberPublicKey> pq_signed_pre_key_public; // 1184 bytes
 
     // Serialization
     proto::LocalPublicKeyBundle ToProto() const;
@@ -518,9 +518,9 @@ struct LocalPublicKeyBundle {
 
 ### 6.3 Ratchet State Extension
 
-**EcliptixProtocolChainStep Extension**:
+**Session chain state extension**:
 ```cpp
-class EcliptixProtocolChainStep {
+class SessionChainState {
 private:
     // Existing DH ratchet
     SecureMemoryHandle dh_private_key_handle_;       // 32 bytes X25519
@@ -708,7 +708,7 @@ Use Case            | Mobile          | Desktop
 **Modified DH Ratchet**:
 ```cpp
 Result<void, EcliptixProtocolFailure>
-EcliptixProtocolChainStep::PerformPqRatchetStep(
+SessionChainState::PerformPqRatchetStep(
     std::optional<KyberPublicKey> remote_pq_public_key
 ) {
     // ===== Classical DH Ratchet (unchanged) =====
@@ -806,14 +806,14 @@ message KyberCiphertext {
 // Extended LocalPublicKeyBundle with PQ keys
 message LocalPublicKeyBundle {
     // Classical keys (existing)
-    bytes identity_public_key = 1;           // 32 bytes
-    bytes signed_pre_key_public_key = 2;     // 32 bytes
+    bytes identity_ed25519_public = 1;           // 32 bytes
+    bytes signed_pre_key_public = 2;     // 32 bytes
     bytes signed_pre_key_signature = 3;      // 64 bytes
     uint64 signed_pre_key_id = 4;
 
     // NEW: PQ keys
-    optional KyberPublicKey pq_identity_public_key = 5;      // 1184 bytes
-    optional KyberPublicKey pq_signed_pre_key_public_key = 6; // 1184 bytes
+    optional KyberPublicKey pq_identity_public = 5;      // 1184 bytes
+    optional KyberPublicKey pq_signed_pre_key_public = 6; // 1184 bytes
 }
 ```
 
@@ -1051,17 +1051,17 @@ TEST_CASE("PQ-X3DH - Full Handshake", "[integration][pqx3dh]") {
 
     // Bob publishes key bundle (with PQ keys)
     auto bob_bundle = bob_keys.GetLocalPublicKeyBundle();
-    REQUIRE(bob_bundle.pq_identity_public_key.has_value());
+    REQUIRE(bob_bundle.pq_identity_public.has_value());
 
     // Alice performs PQ-X3DH
     auto shared_secret_alice = alice_keys.PerformX3dhSharedSecretDerivation(
-        bob_bundle.identity_public_key,
-        bob_bundle.signed_pre_key_public_key,
+        bob_bundle.identity_ed25519_public,
+        bob_bundle.signed_pre_key_public,
         std::nullopt,
         alice_ephemeral_sk,
         alice_ephemeral_pk,
-        bob_bundle.pq_identity_public_key,
-        bob_bundle.pq_signed_pre_key_public_key
+        bob_bundle.pq_identity_public,
+        bob_bundle.pq_signed_pre_key_public
     ).Unwrap();
 
     // Bob derives same shared secret
@@ -1128,7 +1128,7 @@ BENCHMARK(BenchmarkPqX3dh)->Unit(benchmark::kMicrosecond);
 ### 13.3 Phase 3: Data Structures (Week 4-5)
 
 **Tasks**:
-- [ ] Create `models/kyber_public_key.cpp`
+- [ ] Create `models/kyber_public.cpp`
 - [ ] Create `models/kyber_secret_key.cpp`
 - [ ] Create `models/kyber_ciphertext.cpp`
 - [ ] Extend `LocalPublicKeyBundle` with PQ fields
@@ -1147,7 +1147,7 @@ BENCHMARK(BenchmarkPqX3dh)->Unit(benchmark::kMicrosecond);
 ### 13.5 Phase 5: Dense PQ Ratchet (Week 8)
 
 **Tasks**:
-- [ ] Extend `EcliptixProtocolChainStep` with PQ fields
+- [ ] Extend Session chain state with PQ fields
 - [ ] Modify `PerformDhRatchetStep()` to include Kyber KEM
 - [ ] Update message serialization (`ProtocolMessage`)
 - [ ] Write 20 integration tests for dense ratchet

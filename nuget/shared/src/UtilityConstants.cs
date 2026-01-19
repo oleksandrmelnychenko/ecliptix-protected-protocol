@@ -33,7 +33,7 @@ internal static class UtilityConstants
 
     internal static class ProtocolNames
     {
-        public const string X_3DH_INFO = "Ecliptix_X3DH";
+        public const string X_3DH_INFO = "Ecliptix-X3DH";
     }
 
     internal static class ProtocolBytes

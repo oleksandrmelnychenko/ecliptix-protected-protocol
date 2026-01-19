@@ -138,7 +138,7 @@ This document outlines a 9-month plan to transform Ecliptix.Protection.Protocol 
 - [ ] Document security proof sketch
 
 **Week 7-8: Sparse PQ Ratchet**
-- [ ] Add `PqRatchetState` to `EcliptixProtocolConnection`
+- [ ] Add `PqRatchetState` to `Session`
 - [ ] Implement sparse mode (Kyber every 50 messages)
 - [ ] Integration with DH ratchet
 - [ ] Performance profiling
@@ -200,8 +200,8 @@ This document outlines a 9-month plan to transform Ecliptix.Protection.Protocol 
 - [ ] Benchmark at scale (100,000 operations)
 - [ ] Identify and fix bottlenecks
 
-**Week 21-22: Integration with Chain Step**
-- [ ] Create `PuncturableChainStep` class (extends `EcliptixProtocolChainStep`)
+**Week 21-22: Integration with Session Chain State**
+- [ ] Create `PuncturableChainState` model (extends `ChainState`)
 - [ ] Implement auto-puncture after successful decryption
 - [ ] Serialization to protobuf (compressed punctured tree state)
 - [ ] Integration with existing ratchet logic

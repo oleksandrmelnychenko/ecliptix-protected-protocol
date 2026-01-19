@@ -1,22 +1,22 @@
+using System;
 
 namespace EPP;
 
-
-
-
 public enum SodiumFailureType
 {
-    INITIALIZATION_FAILED,
-    LIBRARY_NOT_FOUND,
-    ALLOCATION_FAILED,
-    MEMORY_PINNING_FAILED,
-    SECURE_WIPE_FAILED,
-    INVALID_BUFFER_SIZE,
-    BUFFER_TOO_SMALL,
-    BUFFER_TOO_LARGE,
-    NULL_POINTER,
-    MEMORY_PROTECTION_FAILED,
-    COMPARISON_FAILED,
+    InitializationFailed,
+    LibraryNotFound,
+    AllocationFailed,
+    MemoryPinningFailed,
+    SecureWipeFailed,
+    InvalidBufferSize,
+    BufferTooSmall,
+    BufferTooLarge,
+    NullPointer,
+    MemoryProtectionFailed,
+    ComparisonFailed,
+    ObjectDisposed,
+    InvalidOperation,
 }
 
 public sealed class SodiumFailure
@@ -32,33 +32,49 @@ public sealed class SodiumFailure
     public string Message { get; }
     public Exception? InnerException { get; }
 
-    public static SodiumFailure INITIALIZATION_FAILED(string details, Exception? inner = null) => new(SodiumFailureType.INITIALIZATION_FAILED, details, inner);
+    public static SodiumFailure InitializationFailed(string details, Exception? inner = null) =>
+        new(SodiumFailureType.InitializationFailed, details, inner);
 
-    public static SodiumFailure ComparisonFailed(string details, Exception? inner = null) => new(SodiumFailureType.COMPARISON_FAILED, details, inner);
+    public static SodiumFailure ComparisonFailed(string details, Exception? inner = null) =>
+        new(SodiumFailureType.ComparisonFailed, details, inner);
 
-    public static SodiumFailure LibraryNotFound(string details, Exception? inner = null) => new(SodiumFailureType.LIBRARY_NOT_FOUND, details, inner);
+    public static SodiumFailure LibraryNotFound(string details, Exception? inner = null) =>
+        new(SodiumFailureType.LibraryNotFound, details, inner);
 
-    public static SodiumFailure ALLOCATION_FAILED(string details, Exception? inner = null) => new(SodiumFailureType.ALLOCATION_FAILED, details, inner);
+    public static SodiumFailure AllocationFailed(string details, Exception? inner = null) =>
+        new(SodiumFailureType.AllocationFailed, details, inner);
 
-    public static SodiumFailure MemoryPinningFailed(string details, Exception? inner = null) => new(SodiumFailureType.MEMORY_PINNING_FAILED, details, inner);
+    public static SodiumFailure MemoryPinningFailed(string details, Exception? inner = null) =>
+        new(SodiumFailureType.MemoryPinningFailed, details, inner);
 
-    public static SodiumFailure SECURE_WIPE_FAILED(string details, Exception? inner = null) => new(SodiumFailureType.SECURE_WIPE_FAILED, details, inner);
+    public static SodiumFailure SecureWipeFailed(string details, Exception? inner = null) =>
+        new(SodiumFailureType.SecureWipeFailed, details, inner);
 
-    public static SodiumFailure MemoryProtectionFailed(string details, Exception? inner = null) => new(SodiumFailureType.MEMORY_PROTECTION_FAILED, details, inner);
+    public static SodiumFailure MemoryProtectionFailed(string details, Exception? inner = null) =>
+        new(SodiumFailureType.MemoryProtectionFailed, details, inner);
 
-    public static SodiumFailure NullPointer(string details) => new(SodiumFailureType.NULL_POINTER, details);
+    public static SodiumFailure NullPointer(string details, Exception? inner = null) =>
+        new(SodiumFailureType.NullPointer, details, inner);
 
-    public static SodiumFailure InvalidBufferSize(string details) => new(SodiumFailureType.INVALID_BUFFER_SIZE, details);
+    public static SodiumFailure InvalidBufferSize(string details) =>
+        new(SodiumFailureType.InvalidBufferSize, details);
 
-    public static SodiumFailure BUFFER_TOO_SMALL(string details) => new(SodiumFailureType.BUFFER_TOO_SMALL, details);
+    public static SodiumFailure BufferTooSmall(string details) =>
+        new(SodiumFailureType.BufferTooSmall, details);
 
-    public static SodiumFailure BUFFER_TOO_LARGE(string details) => new(SodiumFailureType.BUFFER_TOO_LARGE, details);
+    public static SodiumFailure BufferTooLarge(string details) =>
+        new(SodiumFailureType.BufferTooLarge, details);
 
-    public static SodiumFailure InvalidOperation(string details) => new(SodiumFailureType.INVALID_BUFFER_SIZE, details);
+    public static SodiumFailure InvalidOperation(string details, Exception? inner = null) =>
+        new(SodiumFailureType.InvalidOperation, details, inner);
 
-    public static SodiumFailure OBJECT_DISPOSED(string details) => new(SodiumFailureType.NULL_POINTER, details);
+    public static SodiumFailure ObjectDisposed(string details, Exception? inner = null) =>
+        new(SodiumFailureType.ObjectDisposed, details, inner);
 
-    public override string ToString() => $"SodiumFailure(Type={Type}, Message='{Message}'{(InnerException != null ? $", InnerException='{InnerException.GetType().Name}: {InnerException.Message}'" : "")})";
+    public override string ToString() =>
+        $"SodiumFailure(Type={Type}, Message='{Message}'" +
+        (InnerException != null ? $", InnerException='{InnerException.GetType().Name}: {InnerException.Message}'" : "") +
+        ")";
 
     public override bool Equals(object? obj)
     {
@@ -70,32 +86,35 @@ public sealed class SodiumFailure
 
     public override int GetHashCode() => HashCode.Combine(Type, Message, InnerException);
 
-    public EcliptixProtocolFailure ToEcliptixProtocolFailure()
+    public ProtocolFailure ToProtocolFailure()
     {
         return Type switch
         {
-            SodiumFailureType.INITIALIZATION_FAILED => EcliptixProtocolFailure.Generic(Message, InnerException),
-            SodiumFailureType.LIBRARY_NOT_FOUND => EcliptixProtocolFailure.Generic(Message, InnerException),
-            SodiumFailureType.ALLOCATION_FAILED => EcliptixProtocolFailure.ALLOCATION_FAILED(Message, InnerException),
-            SodiumFailureType.MEMORY_PINNING_FAILED => EcliptixProtocolFailure.PinningFailure(Message, InnerException),
-            SodiumFailureType.SECURE_WIPE_FAILED => EcliptixProtocolFailure.MemoryBufferError(Message, InnerException),
-            SodiumFailureType.MEMORY_PROTECTION_FAILED => EcliptixProtocolFailure.MemoryBufferError(Message, InnerException),
-            SodiumFailureType.NULL_POINTER => EcliptixProtocolFailure.OBJECT_DISPOSED(Message),
-            SodiumFailureType.INVALID_BUFFER_SIZE => EcliptixProtocolFailure.InvalidInput(Message),
-            SodiumFailureType.BUFFER_TOO_SMALL => EcliptixProtocolFailure.BUFFER_TOO_SMALL(Message),
-            SodiumFailureType.BUFFER_TOO_LARGE => EcliptixProtocolFailure.DATA_TOO_LARGE(Message),
-            _ => EcliptixProtocolFailure.Generic(Message, InnerException)
+            SodiumFailureType.InitializationFailed => ProtocolFailure.SodiumFailure(Message, InnerException),
+            SodiumFailureType.LibraryNotFound => ProtocolFailure.SodiumFailure(Message, InnerException),
+            SodiumFailureType.AllocationFailed => ProtocolFailure.AllocationFailed(Message, InnerException),
+            SodiumFailureType.MemoryPinningFailed => ProtocolFailure.PinningFailure(Message, InnerException),
+            SodiumFailureType.SecureWipeFailed => ProtocolFailure.MemoryBufferError(Message, InnerException),
+            SodiumFailureType.MemoryProtectionFailed => ProtocolFailure.MemoryBufferError(Message, InnerException),
+            SodiumFailureType.NullPointer => ProtocolFailure.NullPointer(Message, InnerException),
+            SodiumFailureType.ObjectDisposed => ProtocolFailure.ObjectDisposed(Message),
+            SodiumFailureType.InvalidBufferSize => ProtocolFailure.InvalidInput(Message),
+            SodiumFailureType.BufferTooSmall => ProtocolFailure.BufferTooSmall(Message),
+            SodiumFailureType.BufferTooLarge => ProtocolFailure.DataTooLarge(Message),
+            SodiumFailureType.ComparisonFailed => ProtocolFailure.SodiumFailure(Message, InnerException),
+            SodiumFailureType.InvalidOperation => ProtocolFailure.InvalidState(Message, InnerException),
+            _ => ProtocolFailure.Generic(Message, InnerException)
         };
     }
 }
 
 public static class ResultSodiumExtensions
 {
-    public static Result<T, EcliptixProtocolFailure> MapSodiumFailure<T>(this Result<T, SodiumFailure> result)
+    public static Result<T, ProtocolFailure> MapSodiumFailure<T>(this Result<T, SodiumFailure> result)
     {
         return result.IsOk
-            ? Result<T, EcliptixProtocolFailure>.Ok(result.Unwrap())
-            : Result<T, EcliptixProtocolFailure>.Err(result.UnwrapErr().ToEcliptixProtocolFailure());
+            ? Result<T, ProtocolFailure>.Ok(result.Unwrap())
+            : Result<T, ProtocolFailure>.Err(result.UnwrapErr().ToProtocolFailure());
     }
 }
 
