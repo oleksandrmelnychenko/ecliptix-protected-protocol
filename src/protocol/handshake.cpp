@@ -775,12 +775,12 @@ namespace ecliptix::protocol {
         auto _wipe_kc_r = SodiumInterop::SecureWipe(std::span(kc_r));
         (void) _wipe_kc_r;
         if (expected_ack_result.IsErr()) {
-            auto _wipe_root = SodiumInterop::SecureWipe(std::span(root_key));
-            (void) _wipe_root;
-            auto _wipe_meta = SodiumInterop::SecureWipe(std::span(metadata_key));
-            (void) _wipe_meta;
-            auto _wipe_pq = SodiumInterop::SecureWipe(std::span(kyber_shared_secret));
-            (void) _wipe_pq;
+            auto _wipe_root_err = SodiumInterop::SecureWipe(std::span(root_key));
+            (void) _wipe_root_err;
+            auto _wipe_meta_err = SodiumInterop::SecureWipe(std::span(metadata_key));
+            (void) _wipe_meta_err;
+            auto _wipe_pq_err = SodiumInterop::SecureWipe(std::span(kyber_shared_secret));
+            (void) _wipe_pq_err;
             return Result<std::unique_ptr<HandshakeInitiator>, ProtocolFailure>::Err(
                 expected_ack_result.UnwrapErr());
         }
@@ -1356,12 +1356,12 @@ namespace ecliptix::protocol {
         if (used_one_time_pre_key_id.has_value()) {
             auto consume_result = identity_keys.ConsumeOneTimePreKeyById(*used_one_time_pre_key_id);
             if (consume_result.IsErr()) {
-                auto _wipe_root = SodiumInterop::SecureWipe(std::span(root_key));
-                (void) _wipe_root;
-                auto _wipe_meta = SodiumInterop::SecureWipe(std::span(metadata_key));
-                (void) _wipe_meta;
-                auto _wipe_pq = SodiumInterop::SecureWipe(std::span(kyber_shared_secret));
-                (void) _wipe_pq;
+                auto _wipe_root_err = SodiumInterop::SecureWipe(std::span(root_key));
+                (void) _wipe_root_err;
+                auto _wipe_meta_err = SodiumInterop::SecureWipe(std::span(metadata_key));
+                (void) _wipe_meta_err;
+                auto _wipe_pq_err = SodiumInterop::SecureWipe(std::span(kyber_shared_secret));
+                (void) _wipe_pq_err;
                 return Result<std::unique_ptr<HandshakeResponder>, ProtocolFailure>::Err(
                     consume_result.UnwrapErr());
             }
