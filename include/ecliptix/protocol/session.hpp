@@ -15,16 +15,45 @@
 
 namespace ecliptix::protocol {
 
+/// Secure messaging session implementing Double Ratchet with X3DH key agreement.
+///
+/// The Session class manages encrypted bidirectional communication between two parties.
+/// It provides forward secrecy through the Double Ratchet Algorithm and post-compromise
+/// security through periodic key rotation.
+///
+/// Thread Safety: All public methods are thread-safe; internal state is protected by mutex.
 class Session {
 public:
+    /// Result of decrypting a SecureEnvelope.
     struct DecryptResult {
         std::vector<uint8_t> plaintext;
         ecliptix::proto::protocol::EnvelopeMetadata metadata;
     };
 
+    /// State produced by handshake, used to initialize a new Session.
     struct HandshakeState {
         ecliptix::proto::protocol::ProtocolState state;
         std::vector<uint8_t> kyber_shared_secret;
+    };
+
+    /// The peer's identity key pair (public keys only).
+    ///
+    /// Contains the cryptographic identity of the remote party. The Ed25519 key
+    /// is used for signature verification, while the X25519 key is used in the
+    /// key agreement protocol. Both keys are bound into the session's identity
+    /// binding hash to cryptographically tie messages to specific identities.
+    struct PeerIdentity {
+        std::vector<uint8_t> ed25519_public;  ///< Ed25519 signing public key (32 bytes)
+        std::vector<uint8_t> x25519_public;   ///< X25519 key exchange public key (32 bytes)
+    };
+
+    /// The local party's identity key pair (public keys only).
+    ///
+    /// Contains the cryptographic identity of the local party. Like PeerIdentity,
+    /// both keys are bound into the session's identity binding hash.
+    struct LocalIdentity {
+        std::vector<uint8_t> ed25519_public;  ///< Ed25519 signing public key (32 bytes)
+        std::vector<uint8_t> x25519_public;   ///< X25519 key exchange public key (32 bytes)
     };
 
     [[nodiscard]] static Result<std::unique_ptr<Session>, ProtocolFailure> FromHandshakeState(
@@ -46,6 +75,33 @@ public:
 
     [[nodiscard]] uint32_t Version() const noexcept;
     [[nodiscard]] bool IsInitiator() const noexcept;
+
+    /// Returns the peer's identity keys (Ed25519 and X25519 public keys).
+    ///
+    /// The returned keys are copies; the caller owns the memory.
+    /// Thread-safe: acquires internal lock.
+    [[nodiscard]] PeerIdentity GetPeerIdentity() const;
+
+    /// Returns the local party's identity keys (Ed25519 and X25519 public keys).
+    ///
+    /// The returned keys are copies; the caller owns the memory.
+    /// Thread-safe: acquires internal lock.
+    [[nodiscard]] LocalIdentity GetLocalIdentity() const;
+
+    /// Returns the identity binding hash (32 bytes).
+    ///
+    /// The binding hash is computed as:
+    ///   SHA-256(label || sorted(local_ed25519, peer_ed25519) || sorted(local_x25519, peer_x25519))
+    ///
+    /// This hash:
+    /// - Is deterministic: both parties compute the same value regardless of who is "local"
+    /// - Includes both Ed25519 (signature) and X25519 (key exchange) identity keys
+    /// - Is included in AAD for all encrypted messages to bind messages to identities
+    /// - Prevents identity misbinding attacks where an attacker substitutes identities
+    ///
+    /// The returned hash is a copy; the caller owns the memory.
+    /// Thread-safe: acquires internal lock.
+    [[nodiscard]] std::vector<uint8_t> GetIdentityBindingHash() const;
 
     Session(const Session&) = delete;
     Session& operator=(const Session&) = delete;

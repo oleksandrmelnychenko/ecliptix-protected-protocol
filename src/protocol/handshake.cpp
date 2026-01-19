@@ -270,6 +270,50 @@ namespace ecliptix::protocol {
             timestamp->set_nanos(static_cast<int32_t>(nanos.count()));
         }
 
+        Result<std::vector<uint8_t>, ProtocolFailure> ComputeIdentityBindingHash(
+            std::span<const uint8_t> local_identity_ed25519,
+            std::span<const uint8_t> local_identity_x25519,
+            std::span<const uint8_t> peer_identity_ed25519,
+            std::span<const uint8_t> peer_identity_x25519) {
+            if (local_identity_ed25519.size() != kEd25519PublicKeyBytes ||
+                peer_identity_ed25519.size() != kEd25519PublicKeyBytes) {
+                return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                    ProtocolFailure::InvalidInput("Invalid Ed25519 identity key sizes for binding"));
+            }
+            if (local_identity_x25519.size() != kX25519PublicKeyBytes ||
+                peer_identity_x25519.size() != kX25519PublicKeyBytes) {
+                return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                    ProtocolFailure::InvalidInput("Invalid X25519 identity key sizes for binding"));
+            }
+            // Sort Ed25519 keys deterministically so both parties compute the same hash
+            std::array<std::vector<uint8_t>, 2> ed_keys = {
+                std::vector<uint8_t>(local_identity_ed25519.begin(), local_identity_ed25519.end()),
+                std::vector<uint8_t>(peer_identity_ed25519.begin(), peer_identity_ed25519.end())
+            };
+            if (ed_keys[0] > ed_keys[1]) {
+                std::swap(ed_keys[0], ed_keys[1]);
+            }
+            // Sort X25519 keys deterministically
+            std::array<std::vector<uint8_t>, 2> x_keys = {
+                std::vector<uint8_t>(local_identity_x25519.begin(), local_identity_x25519.end()),
+                std::vector<uint8_t>(peer_identity_x25519.begin(), peer_identity_x25519.end())
+            };
+            if (x_keys[0] > x_keys[1]) {
+                std::swap(x_keys[0], x_keys[1]);
+            }
+            // Build input: label || sorted(ed25519_1 || ed25519_2) || sorted(x25519_1 || x25519_2)
+            std::vector<uint8_t> input;
+            input.reserve(kIdentityBindingInfo.size() +
+                          ed_keys[0].size() + ed_keys[1].size() +
+                          x_keys[0].size() + x_keys[1].size());
+            input.insert(input.end(), kIdentityBindingInfo.begin(), kIdentityBindingInfo.end());
+            input.insert(input.end(), ed_keys[0].begin(), ed_keys[0].end());
+            input.insert(input.end(), ed_keys[1].begin(), ed_keys[1].end());
+            input.insert(input.end(), x_keys[0].begin(), x_keys[0].end());
+            input.insert(input.end(), x_keys[1].begin(), x_keys[1].end());
+            return ComputeSha256(std::span<const uint8_t>(input.data(), input.size()));
+        }
+
         Result<ecliptix::proto::protocol::ProtocolState, ProtocolFailure> BuildProtocolState(
             bool is_initiator,
             std::span<const uint8_t> root_key,
@@ -284,7 +328,11 @@ namespace ecliptix::protocol {
             std::span<const uint8_t> kyber_public,
             std::span<const uint8_t> peer_kyber_public,
             uint32_t max_messages_per_chain,
-            const NonceGenerator::State& nonce_generator) {
+            const NonceGenerator::State& nonce_generator,
+            std::span<const uint8_t> local_identity_ed25519,
+            std::span<const uint8_t> local_identity_x25519,
+            std::span<const uint8_t> peer_identity_ed25519,
+            std::span<const uint8_t> peer_identity_x25519) {
             if (root_key.size() != kRootKeyBytes ||
                 session_id.size() != kSessionIdBytes ||
                 metadata_key.size() != kMetadataKeyBytes) {
@@ -305,11 +353,55 @@ namespace ecliptix::protocol {
                 return Result<ecliptix::proto::protocol::ProtocolState, ProtocolFailure>::Err(
                     ProtocolFailure::InvalidInput("Invalid Kyber key sizes"));
             }
+            if (local_identity_ed25519.size() != kEd25519PublicKeyBytes ||
+                local_identity_x25519.size() != kX25519PublicKeyBytes ||
+                peer_identity_ed25519.size() != kEd25519PublicKeyBytes ||
+                peer_identity_x25519.size() != kX25519PublicKeyBytes) {
+                return Result<ecliptix::proto::protocol::ProtocolState, ProtocolFailure>::Err(
+                    ProtocolFailure::InvalidInput("Invalid identity key sizes"));
+            }
+
+            // Validate X25519 identity keys are not small-order or all-zeros
+            if (auto dh_check = DhValidator::ValidateX25519PublicKey(local_identity_x25519);
+                dh_check.IsErr()) {
+                return Result<ecliptix::proto::protocol::ProtocolState, ProtocolFailure>::Err(
+                    ProtocolFailure::InvalidInput("Local X25519 identity key validation failed"));
+            }
+            if (auto dh_check = DhValidator::ValidateX25519PublicKey(peer_identity_x25519);
+                dh_check.IsErr()) {
+                return Result<ecliptix::proto::protocol::ProtocolState, ProtocolFailure>::Err(
+                    ProtocolFailure::InvalidInput("Peer X25519 identity key validation failed"));
+            }
+
+            // Validate Ed25519 identity keys are not all-zeros
+            auto is_all_zero = [](std::span<const uint8_t> bytes) {
+                return std::all_of(bytes.begin(), bytes.end(),
+                                   [](const uint8_t value) { return value == 0; });
+            };
+            if (is_all_zero(local_identity_ed25519)) {
+                return Result<ecliptix::proto::protocol::ProtocolState, ProtocolFailure>::Err(
+                    ProtocolFailure::InvalidInput("Local Ed25519 identity key is all zeros"));
+            }
+            if (is_all_zero(peer_identity_ed25519)) {
+                return Result<ecliptix::proto::protocol::ProtocolState, ProtocolFailure>::Err(
+                    ProtocolFailure::InvalidInput("Peer Ed25519 identity key is all zeros"));
+            }
+
             if (auto chain_limit = ValidateMaxMessagesPerChain(max_messages_per_chain);
                 chain_limit.IsErr()) {
                 return Result<ecliptix::proto::protocol::ProtocolState, ProtocolFailure>::Err(
                     chain_limit.UnwrapErr());
             }
+
+            // Compute identity binding hash using both Ed25519 and X25519 keys
+            auto binding_result = ComputeIdentityBindingHash(
+                local_identity_ed25519, local_identity_x25519,
+                peer_identity_ed25519, peer_identity_x25519);
+            if (binding_result.IsErr()) {
+                return Result<ecliptix::proto::protocol::ProtocolState, ProtocolFailure>::Err(
+                    binding_result.UnwrapErr());
+            }
+            auto identity_binding = binding_result.Unwrap();
 
             ecliptix::proto::protocol::ProtocolState state;
             state.set_version(kProtocolVersion);
@@ -342,6 +434,13 @@ namespace ecliptix::protocol {
 
             state.mutable_send_chain()->set_message_index(0);
             state.mutable_recv_chain()->set_message_index(0);
+
+            // Set identity binding fields
+            state.set_local_identity_ed25519_public(local_identity_ed25519.data(), local_identity_ed25519.size());
+            state.set_local_identity_x25519_public(local_identity_x25519.data(), local_identity_x25519.size());
+            state.set_peer_identity_ed25519_public(peer_identity_ed25519.data(), peer_identity_ed25519.size());
+            state.set_peer_identity_x25519_public(peer_identity_x25519.data(), peer_identity_x25519.size());
+            state.set_identity_binding_hash(identity_binding.data(), identity_binding.size());
 
             return Result<ecliptix::proto::protocol::ProtocolState, ProtocolFailure>::Ok(std::move(state));
         }
@@ -745,7 +844,14 @@ namespace ecliptix::protocol {
             std::span(reinterpret_cast<const uint8_t*>(peer_bundle.kyber_public().data()),
                       peer_bundle.kyber_public().size()),
             max_messages_per_chain,
-            nonce_generator);
+            nonce_generator,
+            // Identity binding
+            std::span<const uint8_t>(ed_public.data(), ed_public.size()),
+            std::span<const uint8_t>(id_public.data(), id_public.size()),
+            std::span(reinterpret_cast<const uint8_t*>(peer_bundle.identity_ed25519_public().data()),
+                      peer_bundle.identity_ed25519_public().size()),
+            std::span(reinterpret_cast<const uint8_t*>(peer_bundle.identity_x25519_public().data()),
+                      peer_bundle.identity_x25519_public().size()));
         auto _wipe_identity = SodiumInterop::SecureWipe(std::span(identity_private));
         (void) _wipe_identity;
         auto _wipe_eph = SodiumInterop::SecureWipe(std::span(eph_private));
@@ -1325,7 +1431,16 @@ namespace ecliptix::protocol {
             std::span(reinterpret_cast<const uint8_t*>(init_message.initiator_kyber_public().data()),
                       init_message.initiator_kyber_public().size()),
             max_messages_per_chain,
-            nonce_generator);
+            nonce_generator,
+            // Identity binding (responder)
+            std::span(reinterpret_cast<const uint8_t*>(local_bundle.identity_ed25519_public().data()),
+                      local_bundle.identity_ed25519_public().size()),
+            std::span(reinterpret_cast<const uint8_t*>(local_bundle.identity_x25519_public().data()),
+                      local_bundle.identity_x25519_public().size()),
+            std::span(reinterpret_cast<const uint8_t*>(init_message.initiator_identity_ed25519_public().data()),
+                      init_message.initiator_identity_ed25519_public().size()),
+            std::span(reinterpret_cast<const uint8_t*>(init_message.initiator_identity_x25519_public().data()),
+                      init_message.initiator_identity_x25519_public().size()));
         auto _wipe_spk = SodiumInterop::SecureWipe(std::span(spk_private));
         (void) _wipe_spk;
         auto _wipe_identity = SodiumInterop::SecureWipe(std::span(identity_private));

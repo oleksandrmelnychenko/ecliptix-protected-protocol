@@ -59,6 +59,8 @@ inline constexpr std::string_view kStateHmacInfo = "Ecliptix-State-HMAC";
 inline constexpr std::string_view kKeyConfirmInitInfo = "Ecliptix-KeyConfirm-I";
 inline constexpr std::string_view kKeyConfirmRespInfo = "Ecliptix-KeyConfirm-R";
 inline constexpr std::string_view kTranscriptLabel = "Ecliptix-Handshake-Transcript";
+inline constexpr std::string_view kIdentityBindingInfo = "Ecliptix-Identity-Binding";
+inline constexpr size_t kIdentityBindingHashBytes = 32;
 
 inline constexpr uint8_t kX25519ClampByte0 = 0xF8;
 inline constexpr uint8_t kX25519ClampByte31Low = 0x7F;

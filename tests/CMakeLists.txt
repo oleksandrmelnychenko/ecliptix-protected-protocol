@@ -32,6 +32,7 @@ set(TEST_SOURCES
     unit/test_session_chain_length.cpp
     unit/test_secret_sharing.cpp
     unit/test_state_import_invariants.cpp
+    unit/test_identity_binding.cpp
 
     # Security tests
     security/test_aes_gcm_attacks.cpp

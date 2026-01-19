@@ -82,6 +82,57 @@ namespace ecliptix::protocol {
                                [](const uint8_t value) { return value == 0; });
         }
 
+        Result<std::vector<uint8_t>, ProtocolFailure> ComputeSha256(
+            std::span<const uint8_t> data) {
+            std::vector<uint8_t> digest(crypto_hash_sha256_BYTES);
+            crypto_hash_sha256(digest.data(), data.data(), data.size());
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(std::move(digest));
+        }
+
+        Result<std::vector<uint8_t>, ProtocolFailure> ComputeIdentityBindingHash(
+            std::span<const uint8_t> local_identity_ed25519,
+            std::span<const uint8_t> local_identity_x25519,
+            std::span<const uint8_t> peer_identity_ed25519,
+            std::span<const uint8_t> peer_identity_x25519) {
+            if (local_identity_ed25519.size() != kEd25519PublicKeyBytes ||
+                peer_identity_ed25519.size() != kEd25519PublicKeyBytes) {
+                return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                    ProtocolFailure::InvalidInput("Invalid Ed25519 identity key sizes for binding"));
+            }
+            if (local_identity_x25519.size() != kX25519PublicKeyBytes ||
+                peer_identity_x25519.size() != kX25519PublicKeyBytes) {
+                return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                    ProtocolFailure::InvalidInput("Invalid X25519 identity key sizes for binding"));
+            }
+            // Sort Ed25519 keys deterministically so both parties compute the same hash
+            std::array<std::vector<uint8_t>, 2> ed_keys = {
+                std::vector<uint8_t>(local_identity_ed25519.begin(), local_identity_ed25519.end()),
+                std::vector<uint8_t>(peer_identity_ed25519.begin(), peer_identity_ed25519.end())
+            };
+            if (ed_keys[0] > ed_keys[1]) {
+                std::swap(ed_keys[0], ed_keys[1]);
+            }
+            // Sort X25519 keys deterministically
+            std::array<std::vector<uint8_t>, 2> x_keys = {
+                std::vector<uint8_t>(local_identity_x25519.begin(), local_identity_x25519.end()),
+                std::vector<uint8_t>(peer_identity_x25519.begin(), peer_identity_x25519.end())
+            };
+            if (x_keys[0] > x_keys[1]) {
+                std::swap(x_keys[0], x_keys[1]);
+            }
+            // Build input: label || sorted(ed25519_1 || ed25519_2) || sorted(x25519_1 || x25519_2)
+            std::vector<uint8_t> input;
+            input.reserve(kIdentityBindingInfo.size() +
+                          ed_keys[0].size() + ed_keys[1].size() +
+                          x_keys[0].size() + x_keys[1].size());
+            input.insert(input.end(), kIdentityBindingInfo.begin(), kIdentityBindingInfo.end());
+            input.insert(input.end(), ed_keys[0].begin(), ed_keys[0].end());
+            input.insert(input.end(), ed_keys[1].begin(), ed_keys[1].end());
+            input.insert(input.end(), x_keys[0].begin(), x_keys[0].end());
+            input.insert(input.end(), x_keys[1].begin(), x_keys[1].end());
+            return ComputeSha256(std::span<const uint8_t>(input.data(), input.size()));
+        }
+
         Result<std::pair<std::vector<uint8_t>, std::vector<uint8_t>>, ProtocolFailure>
         DeriveMessageAndChainKey(std::span<const uint8_t> chain_key) {
             auto message_key_result = DeriveKeyBytes(
@@ -135,9 +186,15 @@ namespace ecliptix::protocol {
                 return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                     ProtocolFailure::InvalidInput("Invalid session id size"));
             }
+            if (state.identity_binding_hash().size() != kIdentityBindingHashBytes) {
+                return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                    ProtocolFailure::InvalidInput("Invalid identity binding hash size"));
+            }
             std::vector<uint8_t> ad;
-            ad.reserve(kSessionIdBytes + 8 + 4);
+            ad.reserve(kSessionIdBytes + kIdentityBindingHashBytes + 8 + 4);
             ad.insert(ad.end(), state.session_id().begin(), state.session_id().end());
+            ad.insert(ad.end(), state.identity_binding_hash().begin(),
+                      state.identity_binding_hash().end());
             AppendUint64LE(ad, ratchet_epoch);
             AppendUint32LE(ad, kProtocolVersion);
             return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(std::move(ad));
@@ -151,9 +208,15 @@ namespace ecliptix::protocol {
                 return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                     ProtocolFailure::InvalidInput("Invalid session id size"));
             }
+            if (state.identity_binding_hash().size() != kIdentityBindingHashBytes) {
+                return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                    ProtocolFailure::InvalidInput("Invalid identity binding hash size"));
+            }
             std::vector<uint8_t> ad;
-            ad.reserve(kSessionIdBytes + 8 + 8 + 4);
+            ad.reserve(kSessionIdBytes + kIdentityBindingHashBytes + 8 + 8 + 4);
             ad.insert(ad.end(), state.session_id().begin(), state.session_id().end());
+            ad.insert(ad.end(), state.identity_binding_hash().begin(),
+                      state.identity_binding_hash().end());
             AppendUint64LE(ad, ratchet_epoch);
             AppendUint64LE(ad, message_index);
             AppendUint32LE(ad, kProtocolVersion);
@@ -341,6 +404,46 @@ namespace ecliptix::protocol {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
                 ProtocolFailure::FromSodiumFailure(pq_check.UnwrapErr()));
         }
+
+        // Verify identity binding
+        if (state.local_identity_ed25519_public().size() != kEd25519PublicKeyBytes ||
+            state.local_identity_x25519_public().size() != kX25519PublicKeyBytes ||
+            state.peer_identity_ed25519_public().size() != kEd25519PublicKeyBytes ||
+            state.peer_identity_x25519_public().size() != kX25519PublicKeyBytes) {
+            return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("Invalid identity key sizes in state"));
+        }
+        if (state.identity_binding_hash().size() != kIdentityBindingHashBytes) {
+            return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("Missing or invalid identity binding hash"));
+        }
+        auto binding_result = ComputeIdentityBindingHash(
+            std::span(reinterpret_cast<const uint8_t*>(state.local_identity_ed25519_public().data()),
+                      state.local_identity_ed25519_public().size()),
+            std::span(reinterpret_cast<const uint8_t*>(state.local_identity_x25519_public().data()),
+                      state.local_identity_x25519_public().size()),
+            std::span(reinterpret_cast<const uint8_t*>(state.peer_identity_ed25519_public().data()),
+                      state.peer_identity_ed25519_public().size()),
+            std::span(reinterpret_cast<const uint8_t*>(state.peer_identity_x25519_public().data()),
+                      state.peer_identity_x25519_public().size()));
+        if (binding_result.IsErr()) {
+            return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
+                binding_result.UnwrapErr());
+        }
+        auto computed_binding = binding_result.Unwrap();
+        auto compare_result = SodiumInterop::ConstantTimeEquals(
+            std::span(computed_binding.data(), computed_binding.size()),
+            std::span(reinterpret_cast<const uint8_t*>(state.identity_binding_hash().data()),
+                      state.identity_binding_hash().size()));
+        if (compare_result.IsErr()) {
+            return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(compare_result.UnwrapErr()));
+        }
+        if (!compare_result.Unwrap()) {
+            return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("Identity binding hash verification failed"));
+        }
+
         if (state.state_hmac().size() != kHmacBytes) {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidInput("Missing or invalid state HMAC"));
@@ -1236,6 +1339,37 @@ namespace ecliptix::protocol {
 
     bool Session::IsInitiator() const noexcept {
         return is_initiator_;
+    }
+
+    Session::PeerIdentity Session::GetPeerIdentity() const {
+        std::lock_guard<std::mutex> guard(lock_);
+        return PeerIdentity{
+            std::vector<uint8_t>(
+                state_.peer_identity_ed25519_public().begin(),
+                state_.peer_identity_ed25519_public().end()),
+            std::vector<uint8_t>(
+                state_.peer_identity_x25519_public().begin(),
+                state_.peer_identity_x25519_public().end())
+        };
+    }
+
+    Session::LocalIdentity Session::GetLocalIdentity() const {
+        std::lock_guard<std::mutex> guard(lock_);
+        return LocalIdentity{
+            std::vector<uint8_t>(
+                state_.local_identity_ed25519_public().begin(),
+                state_.local_identity_ed25519_public().end()),
+            std::vector<uint8_t>(
+                state_.local_identity_x25519_public().begin(),
+                state_.local_identity_x25519_public().end())
+        };
+    }
+
+    std::vector<uint8_t> Session::GetIdentityBindingHash() const {
+        std::lock_guard<std::mutex> guard(lock_);
+        return std::vector<uint8_t>(
+            state_.identity_binding_hash().begin(),
+            state_.identity_binding_hash().end());
     }
 
 }

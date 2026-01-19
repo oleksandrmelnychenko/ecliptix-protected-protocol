@@ -31,6 +31,13 @@ message ProtocolState {
   NonceState nonce_generator = 20;
   bytes state_hmac = 21;
   uint32 max_messages_per_chain = 22;
+
+  // Identity binding - cryptographically ties session to peer identities
+  bytes local_identity_ed25519_public = 30;   // 32 bytes
+  bytes local_identity_x25519_public = 31;    // 32 bytes
+  bytes peer_identity_ed25519_public = 32;    // 32 bytes
+  bytes peer_identity_x25519_public = 33;     // 32 bytes
+  bytes identity_binding_hash = 34;           // 32 bytes, SHA256(sorted(local_x25519 || peer_x25519))
 }
 
 message ChainState {

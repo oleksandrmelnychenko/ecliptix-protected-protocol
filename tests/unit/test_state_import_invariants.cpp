@@ -4,13 +4,42 @@
 #include "ecliptix/crypto/kyber_interop.hpp"
 #include "ecliptix/protocol/constants.hpp"
 #include "protocol/state.pb.h"
+#include <sodium.h>
 #include <vector>
 #include <algorithm>
+#include <array>
 
 using namespace ecliptix::protocol;
 using namespace ecliptix::protocol::crypto;
 
 namespace {
+
+std::vector<uint8_t> ComputeIdentityBindingHash(
+    const std::vector<uint8_t>& local_identity_ed25519,
+    const std::vector<uint8_t>& local_identity_x25519,
+    const std::vector<uint8_t>& peer_identity_ed25519,
+    const std::vector<uint8_t>& peer_identity_x25519) {
+    // Sort Ed25519 keys deterministically
+    std::array<std::vector<uint8_t>, 2> ed_keys = {local_identity_ed25519, peer_identity_ed25519};
+    if (ed_keys[0] > ed_keys[1]) {
+        std::swap(ed_keys[0], ed_keys[1]);
+    }
+    // Sort X25519 keys deterministically
+    std::array<std::vector<uint8_t>, 2> x_keys = {local_identity_x25519, peer_identity_x25519};
+    if (x_keys[0] > x_keys[1]) {
+        std::swap(x_keys[0], x_keys[1]);
+    }
+    // Build input: label || sorted(ed25519_1 || ed25519_2) || sorted(x25519_1 || x25519_2)
+    std::vector<uint8_t> input;
+    input.insert(input.end(), kIdentityBindingInfo.begin(), kIdentityBindingInfo.end());
+    input.insert(input.end(), ed_keys[0].begin(), ed_keys[0].end());
+    input.insert(input.end(), ed_keys[1].begin(), ed_keys[1].end());
+    input.insert(input.end(), x_keys[0].begin(), x_keys[0].end());
+    input.insert(input.end(), x_keys[1].begin(), x_keys[1].end());
+    std::vector<uint8_t> hash(crypto_hash_sha256_BYTES);
+    crypto_hash_sha256(hash.data(), input.data(), input.size());
+    return hash;
+}
 
 ecliptix::proto::protocol::ProtocolState CreateValidProtocolState() {
     ecliptix::proto::protocol::ProtocolState state;
@@ -77,6 +106,32 @@ ecliptix::proto::protocol::ProtocolState CreateValidProtocolState() {
     state.set_send_ratchet_epoch(0);
     state.set_recv_ratchet_epoch(0);
     state.set_max_messages_per_chain(static_cast<uint32_t>(kDefaultMessagesPerChain));
+
+    // Generate identity keys for local and peer
+    auto local_ed_result = SodiumInterop::GenerateEd25519KeyPair();
+    REQUIRE(local_ed_result.IsOk());
+    auto [local_ed_sk_handle, local_ed_pk] = std::move(local_ed_result).Unwrap();
+
+    auto local_x_result = SodiumInterop::GenerateX25519KeyPair("local-x");
+    REQUIRE(local_x_result.IsOk());
+    auto [local_x_sk_handle, local_x_pk] = std::move(local_x_result).Unwrap();
+
+    auto peer_ed_result = SodiumInterop::GenerateEd25519KeyPair();
+    REQUIRE(peer_ed_result.IsOk());
+    auto [peer_ed_sk_handle, peer_ed_pk] = std::move(peer_ed_result).Unwrap();
+
+    auto peer_x_result = SodiumInterop::GenerateX25519KeyPair("peer-x");
+    REQUIRE(peer_x_result.IsOk());
+    auto [peer_x_sk_handle, peer_x_pk] = std::move(peer_x_result).Unwrap();
+
+    state.set_local_identity_ed25519_public(local_ed_pk.data(), local_ed_pk.size());
+    state.set_local_identity_x25519_public(local_x_pk.data(), local_x_pk.size());
+    state.set_peer_identity_ed25519_public(peer_ed_pk.data(), peer_ed_pk.size());
+    state.set_peer_identity_x25519_public(peer_x_pk.data(), peer_x_pk.size());
+
+    // Compute identity binding hash using both Ed25519 and X25519 keys
+    auto binding_hash = ComputeIdentityBindingHash(local_ed_pk, local_x_pk, peer_ed_pk, peer_x_pk);
+    state.set_identity_binding_hash(binding_hash.data(), binding_hash.size());
 
     std::vector<uint8_t> dummy_mac(kHmacBytes, 0x00);
     state.set_state_hmac(dummy_mac.data(), dummy_mac.size());
