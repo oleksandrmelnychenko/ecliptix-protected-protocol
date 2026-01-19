@@ -100,20 +100,20 @@ namespace ecliptix::protocol {
                 return Result<Unit, ProtocolFailure>::Err(
                     ProtocolFailure::InvalidInput("Invalid PreKeyBundle version"));
             }
-            if (bundle.identity_ed25519().size() != kEd25519PublicKeyBytes ||
-                bundle.identity_x25519().size() != kX25519PublicKeyBytes ||
+            if (bundle.identity_ed25519_public().size() != kEd25519PublicKeyBytes ||
+                bundle.identity_x25519_public().size() != kX25519PublicKeyBytes ||
                 bundle.signed_pre_key_public().size() != kX25519PublicKeyBytes ||
                 bundle.signed_pre_key_signature().size() != kEd25519SignatureBytes) {
                 return Result<Unit, ProtocolFailure>::Err(
                     ProtocolFailure::InvalidInput("Invalid PreKeyBundle key sizes"));
             }
-            if (bundle.kyber_public_key().size() != kKyberPublicKeyBytes) {
+            if (bundle.kyber_public().size() != kKyberPublicKeyBytes) {
                 return Result<Unit, ProtocolFailure>::Err(
                     ProtocolFailure::InvalidInput("Kyber public key required for handshake"));
             }
             auto verify_result = identity::IdentityKeys::VerifyRemoteSpkSignature(
-                std::span(reinterpret_cast<const uint8_t*>(bundle.identity_ed25519().data()),
-                          bundle.identity_ed25519().size()),
+                std::span(reinterpret_cast<const uint8_t*>(bundle.identity_ed25519_public().data()),
+                          bundle.identity_ed25519_public().size()),
                 std::span(reinterpret_cast<const uint8_t*>(bundle.signed_pre_key_public().data()),
                           bundle.signed_pre_key_public().size()),
                 std::span(reinterpret_cast<const uint8_t*>(bundle.signed_pre_key_signature().data()),
@@ -122,8 +122,8 @@ namespace ecliptix::protocol {
                 return Result<Unit, ProtocolFailure>::Err(verify_result.UnwrapErr());
             }
             if (auto dh_check = DhValidator::ValidateX25519PublicKey(
-                std::span(reinterpret_cast<const uint8_t*>(bundle.identity_x25519().data()),
-                          bundle.identity_x25519().size())); dh_check.IsErr()) {
+                std::span(reinterpret_cast<const uint8_t*>(bundle.identity_x25519_public().data()),
+                          bundle.identity_x25519_public().size())); dh_check.IsErr()) {
                 return Result<Unit, ProtocolFailure>::Err(dh_check.UnwrapErr());
             }
             if (auto dh_check = DhValidator::ValidateX25519PublicKey(
@@ -143,22 +143,22 @@ namespace ecliptix::protocol {
                 }
             }
             if (auto pq_check = KyberInterop::ValidatePublicKey(
-                std::span(reinterpret_cast<const uint8_t*>(bundle.kyber_public_key().data()),
-                          bundle.kyber_public_key().size())); pq_check.IsErr()) {
+                std::span(reinterpret_cast<const uint8_t*>(bundle.kyber_public().data()),
+                          bundle.kyber_public().size())); pq_check.IsErr()) {
                 return Result<Unit, ProtocolFailure>::Err(
                     ProtocolFailure::FromSodiumFailure(pq_check.UnwrapErr()));
             }
             return Result<Unit, ProtocolFailure>::Ok(Unit{});
         }
 
-        Result<Unit, ProtocolFailure> ValidateMaxMessagesPerRatchet(uint32_t max_messages_per_ratchet) {
-            if (max_messages_per_ratchet == 0) {
+        Result<Unit, ProtocolFailure> ValidateMaxMessagesPerChain(uint32_t max_messages_per_chain) {
+            if (max_messages_per_chain == 0) {
                 return Result<Unit, ProtocolFailure>::Err(
-                    ProtocolFailure::InvalidInput("Max messages per ratchet must be greater than zero"));
+                    ProtocolFailure::InvalidInput("Max messages per chain must be greater than zero"));
             }
-            if (max_messages_per_ratchet > kMaxChainLength) {
+            if (max_messages_per_chain > kMaxMessagesPerChain) {
                 return Result<Unit, ProtocolFailure>::Err(
-                    ProtocolFailure::InvalidInput("Max messages per ratchet exceeds protocol limit"));
+                    ProtocolFailure::InvalidInput("Max messages per chain exceeds protocol limit"));
             }
             return Result<Unit, ProtocolFailure>::Ok(Unit{});
         }
@@ -169,9 +169,9 @@ namespace ecliptix::protocol {
                 return Result<Unit, ProtocolFailure>::Err(
                     ProtocolFailure::InvalidInput("Invalid HandshakeInit version"));
             }
-            if (init.initiator_identity_ed25519().size() != kEd25519PublicKeyBytes ||
-                init.initiator_identity_x25519().size() != kX25519PublicKeyBytes ||
-                init.initiator_ephemeral_x25519().size() != kX25519PublicKeyBytes) {
+            if (init.initiator_identity_ed25519_public().size() != kEd25519PublicKeyBytes ||
+                init.initiator_identity_x25519_public().size() != kX25519PublicKeyBytes ||
+                init.initiator_ephemeral_x25519_public().size() != kX25519PublicKeyBytes) {
                 return Result<Unit, ProtocolFailure>::Err(
                     ProtocolFailure::InvalidInput("Invalid initiator key sizes"));
             }
@@ -179,22 +179,22 @@ namespace ecliptix::protocol {
                 return Result<Unit, ProtocolFailure>::Err(
                     ProtocolFailure::InvalidInput("Kyber ciphertext required for handshake"));
             }
-            if (init.confirmation_mac().size() != kHmacBytes) {
+            if (init.key_confirmation_mac().size() != kHmacBytes) {
                 return Result<Unit, ProtocolFailure>::Err(
                     ProtocolFailure::InvalidInput("Invalid key confirmation MAC size"));
             }
-            if (init.initiator_kyber_public_key().size() != kKyberPublicKeyBytes) {
+            if (init.initiator_kyber_public().size() != kKyberPublicKeyBytes) {
                 return Result<Unit, ProtocolFailure>::Err(
                     ProtocolFailure::InvalidInput("Initiator Kyber public key required for handshake"));
             }
             if (auto dh_check = DhValidator::ValidateX25519PublicKey(
-                std::span(reinterpret_cast<const uint8_t*>(init.initiator_identity_x25519().data()),
-                          init.initiator_identity_x25519().size())); dh_check.IsErr()) {
+                std::span(reinterpret_cast<const uint8_t*>(init.initiator_identity_x25519_public().data()),
+                          init.initiator_identity_x25519_public().size())); dh_check.IsErr()) {
                 return Result<Unit, ProtocolFailure>::Err(dh_check.UnwrapErr());
             }
             if (auto dh_check = DhValidator::ValidateX25519PublicKey(
-                std::span(reinterpret_cast<const uint8_t*>(init.initiator_ephemeral_x25519().data()),
-                          init.initiator_ephemeral_x25519().size())); dh_check.IsErr()) {
+                std::span(reinterpret_cast<const uint8_t*>(init.initiator_ephemeral_x25519_public().data()),
+                          init.initiator_ephemeral_x25519_public().size())); dh_check.IsErr()) {
                 return Result<Unit, ProtocolFailure>::Err(dh_check.UnwrapErr());
             }
             if (auto pq_check = KyberInterop::ValidateCiphertext(
@@ -204,12 +204,12 @@ namespace ecliptix::protocol {
                     ProtocolFailure::FromSodiumFailure(pq_check.UnwrapErr()));
             }
             if (auto pq_check = KyberInterop::ValidatePublicKey(
-                std::span(reinterpret_cast<const uint8_t*>(init.initiator_kyber_public_key().data()),
-                          init.initiator_kyber_public_key().size())); pq_check.IsErr()) {
+                std::span(reinterpret_cast<const uint8_t*>(init.initiator_kyber_public().data()),
+                          init.initiator_kyber_public().size())); pq_check.IsErr()) {
                 return Result<Unit, ProtocolFailure>::Err(
                     ProtocolFailure::FromSodiumFailure(pq_check.UnwrapErr()));
             }
-            if (auto chain_limit = ValidateMaxMessagesPerRatchet(init.max_messages_per_ratchet());
+            if (auto chain_limit = ValidateMaxMessagesPerChain(init.max_messages_per_chain());
                 chain_limit.IsErr()) {
                 return Result<Unit, ProtocolFailure>::Err(chain_limit.UnwrapErr());
             }
@@ -244,7 +244,7 @@ namespace ecliptix::protocol {
                     bundle_bytes_result.UnwrapErr());
             }
             ecliptix::proto::protocol::HandshakeInit init_copy = init;
-            init_copy.clear_confirmation_mac();
+            init_copy.clear_key_confirmation_mac();
             auto init_bytes_result = SerializeDeterministic(init_copy);
             if (init_bytes_result.IsErr()) {
                 return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
@@ -275,25 +275,25 @@ namespace ecliptix::protocol {
             std::span<const uint8_t> root_key,
             std::span<const uint8_t> session_id,
             std::span<const uint8_t> metadata_key,
-            std::span<const uint8_t> dh_self_private,
-            std::span<const uint8_t> dh_self_public,
-            std::span<const uint8_t> dh_peer_public,
+            std::span<const uint8_t> dh_local_private,
+            std::span<const uint8_t> dh_local_public,
+            std::span<const uint8_t> dh_remote_public,
             std::span<const uint8_t> initial_self_public,
             std::span<const uint8_t> initial_peer_public,
             std::span<const uint8_t> kyber_secret,
             std::span<const uint8_t> kyber_public,
             std::span<const uint8_t> peer_kyber_public,
-            uint32_t max_messages_per_ratchet,
-            const NonceGenerator::State& nonce_state) {
+            uint32_t max_messages_per_chain,
+            const NonceGenerator::State& nonce_generator) {
             if (root_key.size() != kRootKeyBytes ||
                 session_id.size() != kSessionIdBytes ||
                 metadata_key.size() != kMetadataKeyBytes) {
                 return Result<ecliptix::proto::protocol::ProtocolState, ProtocolFailure>::Err(
                     ProtocolFailure::InvalidInput("Invalid root/session/metadata key sizes"));
             }
-            if (dh_self_private.size() != kX25519PrivateKeyBytes ||
-                dh_self_public.size() != kX25519PublicKeyBytes ||
-                dh_peer_public.size() != kX25519PublicKeyBytes ||
+            if (dh_local_private.size() != kX25519PrivateKeyBytes ||
+                dh_local_public.size() != kX25519PublicKeyBytes ||
+                dh_remote_public.size() != kX25519PublicKeyBytes ||
                 initial_self_public.size() != kX25519PublicKeyBytes ||
                 initial_peer_public.size() != kX25519PublicKeyBytes) {
                 return Result<ecliptix::proto::protocol::ProtocolState, ProtocolFailure>::Err(
@@ -305,7 +305,7 @@ namespace ecliptix::protocol {
                 return Result<ecliptix::proto::protocol::ProtocolState, ProtocolFailure>::Err(
                     ProtocolFailure::InvalidInput("Invalid Kyber key sizes"));
             }
-            if (auto chain_limit = ValidateMaxMessagesPerRatchet(max_messages_per_ratchet);
+            if (auto chain_limit = ValidateMaxMessagesPerChain(max_messages_per_chain);
                 chain_limit.IsErr()) {
                 return Result<ecliptix::proto::protocol::ProtocolState, ProtocolFailure>::Err(
                     chain_limit.UnwrapErr());
@@ -317,31 +317,31 @@ namespace ecliptix::protocol {
             state.set_session_id(session_id.data(), session_id.size());
             state.set_root_key(root_key.data(), root_key.size());
             state.set_metadata_key(metadata_key.data(), metadata_key.size());
-            state.set_state_generation(0);
-            state.set_sending_ratchet_epoch(0);
-            state.set_receiving_ratchet_epoch(0);
-            state.set_max_messages_per_ratchet(max_messages_per_ratchet);
+            state.set_state_counter(0);
+            state.set_send_ratchet_epoch(0);
+            state.set_recv_ratchet_epoch(0);
+            state.set_max_messages_per_chain(max_messages_per_chain);
 
             SetTimestampNow(state.mutable_created_at());
 
-            auto* dh_self = state.mutable_dh_self();
-            dh_self->set_private_key(dh_self_private.data(), dh_self_private.size());
-            dh_self->set_public_key(dh_self_public.data(), dh_self_public.size());
-            state.set_dh_peer_public(dh_peer_public.data(), dh_peer_public.size());
-            state.set_dh_initial_self_public(initial_self_public.data(), initial_self_public.size());
-            state.set_dh_initial_peer_public(initial_peer_public.data(), initial_peer_public.size());
+            auto* dh_local = state.mutable_dh_local();
+            dh_local->set_private_key(dh_local_private.data(), dh_local_private.size());
+            dh_local->set_public_key(dh_local_public.data(), dh_local_public.size());
+            state.set_dh_remote_public(dh_remote_public.data(), dh_remote_public.size());
+            state.set_dh_local_initial_public(initial_self_public.data(), initial_self_public.size());
+            state.set_dh_remote_initial_public(initial_peer_public.data(), initial_peer_public.size());
 
-            auto* kyber_self = state.mutable_kyber_self();
-            kyber_self->set_secret_key(kyber_secret.data(), kyber_secret.size());
-            kyber_self->set_public_key(kyber_public.data(), kyber_public.size());
-            state.set_peer_kyber_public_key(peer_kyber_public.data(), peer_kyber_public.size());
+            auto* kyber_local = state.mutable_kyber_local();
+            kyber_local->set_secret_key(kyber_secret.data(), kyber_secret.size());
+            kyber_local->set_public_key(kyber_public.data(), kyber_public.size());
+            state.set_kyber_remote_public(peer_kyber_public.data(), peer_kyber_public.size());
 
-            auto* nonce_proto = state.mutable_nonce_state();
-            nonce_proto->set_prefix(nonce_state.prefix.data(), nonce_state.prefix.size());
-            nonce_proto->set_counter(nonce_state.counter);
+            auto* nonce_proto = state.mutable_nonce_generator();
+            nonce_proto->set_prefix(nonce_generator.prefix.data(), nonce_generator.prefix.size());
+            nonce_proto->set_counter(nonce_generator.counter);
 
-            state.mutable_sending_chain()->set_index(0);
-            state.mutable_receiving_chain()->set_index(0);
+            state.mutable_send_chain()->set_message_index(0);
+            state.mutable_recv_chain()->set_message_index(0);
 
             return Result<ecliptix::proto::protocol::ProtocolState, ProtocolFailure>::Ok(std::move(state));
         }
@@ -350,19 +350,19 @@ namespace ecliptix::protocol {
     Result<std::unique_ptr<HandshakeInitiator>, ProtocolFailure> HandshakeInitiator::Start(
         identity::IdentityKeys& identity_keys,
         const ecliptix::proto::protocol::PreKeyBundle& peer_bundle,
-        uint32_t max_messages_per_ratchet) {
+        uint32_t max_messages_per_chain) {
         if (auto validate_result = ValidateBundle(peer_bundle); validate_result.IsErr()) {
             return Result<std::unique_ptr<HandshakeInitiator>, ProtocolFailure>::Err(
                 validate_result.UnwrapErr());
         }
-        if (auto chain_limit = ValidateMaxMessagesPerRatchet(max_messages_per_ratchet);
+        if (auto chain_limit = ValidateMaxMessagesPerChain(max_messages_per_chain);
             chain_limit.IsErr()) {
             return Result<std::unique_ptr<HandshakeInitiator>, ProtocolFailure>::Err(
                 chain_limit.UnwrapErr());
         }
 
         identity_keys.GenerateEphemeralKeyPair();
-        auto eph_public_opt = identity_keys.GetEphemeralX25519PublicKeyCopy();
+        auto eph_public_opt = identity_keys.GetEphemeralX25519PublicCopy();
         if (!eph_public_opt.has_value() || eph_public_opt->size() != kX25519PublicKeyBytes) {
             return Result<std::unique_ptr<HandshakeInitiator>, ProtocolFailure>::Err(
                 ProtocolFailure::PrepareLocal("Initiator ephemeral key not available"));
@@ -382,7 +382,7 @@ namespace ecliptix::protocol {
         auto eph_private = eph_private_result.Unwrap();
         auto identity_private = identity_private_result.Unwrap();
 
-        std::optional<uint32_t> used_opk_id;
+        std::optional<uint32_t> used_one_time_pre_key_id;
         std::vector<uint8_t> opk_public;
         if (peer_bundle.one_time_pre_keys_size() > 0) {
             const uint32_t opk_count = static_cast<uint32_t>(peer_bundle.one_time_pre_keys_size());
@@ -392,7 +392,7 @@ namespace ecliptix::protocol {
                 return Result<std::unique_ptr<HandshakeInitiator>, ProtocolFailure>::Err(
                     ProtocolFailure::InvalidInput("Invalid OPK public key size"));
             }
-            used_opk_id = opk.pre_key_id();
+            used_one_time_pre_key_id = opk.one_time_pre_key_id();
             opk_public.assign(opk.public_key().begin(), opk.public_key().end());
             if (auto dh_check = DhValidator::ValidateX25519PublicKey(
                 std::span<const uint8_t>(opk_public.data(), opk_public.size())); dh_check.IsErr()) {
@@ -408,8 +408,8 @@ namespace ecliptix::protocol {
             "DH1");
         auto dh2_result = ComputeDh(
             std::span<const uint8_t>(eph_private.data(), eph_private.size()),
-            std::span(reinterpret_cast<const uint8_t*>(peer_bundle.identity_x25519().data()),
-                      peer_bundle.identity_x25519().size()),
+            std::span(reinterpret_cast<const uint8_t*>(peer_bundle.identity_x25519_public().data()),
+                      peer_bundle.identity_x25519_public().size()),
             "DH2");
         auto dh3_result = ComputeDh(
             std::span<const uint8_t>(eph_private.data(), eph_private.size()),
@@ -427,7 +427,7 @@ namespace ecliptix::protocol {
         }
 
         std::vector<uint8_t> dh4;
-        if (used_opk_id.has_value()) {
+        if (used_one_time_pre_key_id.has_value()) {
             auto dh4_result = ComputeDh(
                 std::span<const uint8_t>(eph_private.data(), eph_private.size()),
                 std::span<const uint8_t>(opk_public.data(), opk_public.size()),
@@ -490,8 +490,8 @@ namespace ecliptix::protocol {
         auto classical_shared = classical_shared_result.Unwrap();
 
         auto encap_result = KyberInterop::Encapsulate(
-            std::span(reinterpret_cast<const uint8_t*>(peer_bundle.kyber_public_key().data()),
-                      peer_bundle.kyber_public_key().size()));
+            std::span(reinterpret_cast<const uint8_t*>(peer_bundle.kyber_public().data()),
+                      peer_bundle.kyber_public().size()));
         if (encap_result.IsErr()) {
             auto _wipe = SodiumInterop::SecureWipe(std::span(identity_private));
             (void) _wipe;
@@ -609,7 +609,7 @@ namespace ecliptix::protocol {
         auto kc_i = kc_i_result.Unwrap();
         auto kc_r = kc_r_result.Unwrap();
 
-        auto kyber_public = identity_keys.GetKyberPublicKeyCopy();
+        auto kyber_public = identity_keys.GetKyberPublicCopy();
         if (kyber_public.size() != kKyberPublicKeyBytes) {
             auto _wipe = SodiumInterop::SecureWipe(std::span(identity_private));
             (void) _wipe;
@@ -624,17 +624,17 @@ namespace ecliptix::protocol {
         }
         ecliptix::proto::protocol::HandshakeInit init_message;
         init_message.set_version(kProtocolVersion);
-        auto ed_public = identity_keys.GetIdentityEd25519PublicKeyCopy();
-        auto id_public = identity_keys.GetIdentityX25519PublicKeyCopy();
-        init_message.set_initiator_identity_ed25519(ed_public.data(), ed_public.size());
-        init_message.set_initiator_identity_x25519(id_public.data(), id_public.size());
-        init_message.set_initiator_ephemeral_x25519(eph_public.data(), eph_public.size());
-        if (used_opk_id.has_value()) {
-            init_message.set_used_one_time_pre_key_id(*used_opk_id);
+        auto ed_public = identity_keys.GetIdentityEd25519PublicCopy();
+        auto id_public = identity_keys.GetIdentityX25519PublicCopy();
+        init_message.set_initiator_identity_ed25519_public(ed_public.data(), ed_public.size());
+        init_message.set_initiator_identity_x25519_public(id_public.data(), id_public.size());
+        init_message.set_initiator_ephemeral_x25519_public(eph_public.data(), eph_public.size());
+        if (used_one_time_pre_key_id.has_value()) {
+            init_message.set_one_time_pre_key_id(*used_one_time_pre_key_id);
         }
         init_message.set_kyber_ciphertext(kyber_ciphertext.data(), kyber_ciphertext.size());
-        init_message.set_initiator_kyber_public_key(kyber_public.data(), kyber_public.size());
-        init_message.set_max_messages_per_ratchet(max_messages_per_ratchet);
+        init_message.set_initiator_kyber_public(kyber_public.data(), kyber_public.size());
+        init_message.set_max_messages_per_chain(max_messages_per_chain);
 
         auto transcript_hash_result = BuildTranscriptHash(peer_bundle, init_message);
         if (transcript_hash_result.IsErr()) {
@@ -667,8 +667,8 @@ namespace ecliptix::protocol {
             return Result<std::unique_ptr<HandshakeInitiator>, ProtocolFailure>::Err(
                 confirmation_result.UnwrapErr());
         }
-        auto confirmation_mac = confirmation_result.Unwrap();
-        init_message.set_confirmation_mac(confirmation_mac.data(), confirmation_mac.size());
+        auto key_confirmation_mac = confirmation_result.Unwrap();
+        init_message.set_key_confirmation_mac(key_confirmation_mac.data(), key_confirmation_mac.size());
 
         std::string serialized;
         if (!init_message.SerializeToString(&serialized)) {
@@ -697,7 +697,7 @@ namespace ecliptix::protocol {
             return Result<std::unique_ptr<HandshakeInitiator>, ProtocolFailure>::Err(
                 nonce_result.UnwrapErr());
         }
-        auto nonce_state = nonce_result.Unwrap().ExportState();
+        auto nonce_generator = nonce_result.Unwrap().ExportState();
 
         auto kyber_secret_handle_result = identity_keys.CloneKyberSecretKey();
         if (kyber_secret_handle_result.IsErr()) {
@@ -742,10 +742,10 @@ namespace ecliptix::protocol {
                       peer_bundle.signed_pre_key_public().size()),
             std::span<const uint8_t>(kyber_secret.data(), kyber_secret.size()),
             std::span<const uint8_t>(kyber_public.data(), kyber_public.size()),
-            std::span(reinterpret_cast<const uint8_t*>(peer_bundle.kyber_public_key().data()),
-                      peer_bundle.kyber_public_key().size()),
-            max_messages_per_ratchet,
-            nonce_state);
+            std::span(reinterpret_cast<const uint8_t*>(peer_bundle.kyber_public().data()),
+                      peer_bundle.kyber_public().size()),
+            max_messages_per_chain,
+            nonce_generator);
         auto _wipe_identity = SodiumInterop::SecureWipe(std::span(identity_private));
         (void) _wipe_identity;
         auto _wipe_eph = SodiumInterop::SecureWipe(std::span(eph_private));
@@ -816,14 +816,14 @@ namespace ecliptix::protocol {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidInput("Invalid HandshakeAck version"));
         }
-        if (ack.confirmation_mac().size() != kHmacBytes) {
+        if (ack.key_confirmation_mac().size() != kHmacBytes) {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidInput("Invalid acknowledgement MAC size"));
         }
         auto compare_result = SodiumInterop::ConstantTimeEquals(
             std::span(state_->expected_ack_mac.data(), state_->expected_ack_mac.size()),
-            std::span(reinterpret_cast<const uint8_t*>(ack.confirmation_mac().data()),
-                      ack.confirmation_mac().size()));
+            std::span(reinterpret_cast<const uint8_t*>(ack.key_confirmation_mac().data()),
+                      ack.key_confirmation_mac().size()));
         if (compare_result.IsErr()) {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
                 ProtocolFailure::FromSodiumFailure(compare_result.UnwrapErr()));
@@ -844,12 +844,12 @@ namespace ecliptix::protocol {
         identity::IdentityKeys& identity_keys,
         const ecliptix::proto::protocol::PreKeyBundle& local_bundle,
         std::span<const uint8_t> init_message_bytes,
-        uint32_t max_messages_per_ratchet) {
+        uint32_t max_messages_per_chain) {
         if (auto validate_result = ValidateBundle(local_bundle); validate_result.IsErr()) {
             return Result<std::unique_ptr<HandshakeResponder>, ProtocolFailure>::Err(
                 validate_result.UnwrapErr());
         }
-        if (auto chain_limit = ValidateMaxMessagesPerRatchet(max_messages_per_ratchet);
+        if (auto chain_limit = ValidateMaxMessagesPerChain(max_messages_per_chain);
             chain_limit.IsErr()) {
             return Result<std::unique_ptr<HandshakeResponder>, ProtocolFailure>::Err(
                 chain_limit.UnwrapErr());
@@ -865,16 +865,16 @@ namespace ecliptix::protocol {
             return Result<std::unique_ptr<HandshakeResponder>, ProtocolFailure>::Err(
                 validate_init.UnwrapErr());
         }
-        if (init_message.max_messages_per_ratchet() != max_messages_per_ratchet) {
+        if (init_message.max_messages_per_chain() != max_messages_per_chain) {
             return Result<std::unique_ptr<HandshakeResponder>, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidInput("Handshake ratchet config mismatch"));
         }
 
-        std::optional<uint32_t> used_opk_id;
+        std::optional<uint32_t> used_one_time_pre_key_id;
         std::vector<uint8_t> opk_private;
-        if (init_message.has_used_one_time_pre_key_id()) {
-            used_opk_id = init_message.used_one_time_pre_key_id();
-            const auto* opk = identity_keys.FindOneTimePreKeyById(*used_opk_id);
+        if (init_message.has_one_time_pre_key_id()) {
+            used_one_time_pre_key_id = init_message.one_time_pre_key_id();
+            const auto* opk = identity_keys.FindOneTimePreKeyById(*used_one_time_pre_key_id);
             if (!opk) {
                 return Result<std::unique_ptr<HandshakeResponder>, ProtocolFailure>::Err(
                     ProtocolFailure::Handshake("Requested OPK not found"));
@@ -903,18 +903,18 @@ namespace ecliptix::protocol {
 
         auto dh1_result = ComputeDh(
             std::span<const uint8_t>(spk_private.data(), spk_private.size()),
-            std::span(reinterpret_cast<const uint8_t*>(init_message.initiator_identity_x25519().data()),
-                      init_message.initiator_identity_x25519().size()),
+            std::span(reinterpret_cast<const uint8_t*>(init_message.initiator_identity_x25519_public().data()),
+                      init_message.initiator_identity_x25519_public().size()),
             "DH1");
         auto dh2_result = ComputeDh(
             std::span<const uint8_t>(identity_private.data(), identity_private.size()),
-            std::span(reinterpret_cast<const uint8_t*>(init_message.initiator_ephemeral_x25519().data()),
-                      init_message.initiator_ephemeral_x25519().size()),
+            std::span(reinterpret_cast<const uint8_t*>(init_message.initiator_ephemeral_x25519_public().data()),
+                      init_message.initiator_ephemeral_x25519_public().size()),
             "DH2");
         auto dh3_result = ComputeDh(
             std::span<const uint8_t>(spk_private.data(), spk_private.size()),
-            std::span(reinterpret_cast<const uint8_t*>(init_message.initiator_ephemeral_x25519().data()),
-                      init_message.initiator_ephemeral_x25519().size()),
+            std::span(reinterpret_cast<const uint8_t*>(init_message.initiator_ephemeral_x25519_public().data()),
+                      init_message.initiator_ephemeral_x25519_public().size()),
             "DH3");
         if (dh1_result.IsErr() || dh2_result.IsErr() || dh3_result.IsErr()) {
             auto _wipe = SodiumInterop::SecureWipe(std::span(spk_private));
@@ -931,11 +931,11 @@ namespace ecliptix::protocol {
         }
 
         std::vector<uint8_t> dh4;
-        if (used_opk_id.has_value()) {
+        if (used_one_time_pre_key_id.has_value()) {
             auto dh4_result = ComputeDh(
                 std::span<const uint8_t>(opk_private.data(), opk_private.size()),
-                std::span(reinterpret_cast<const uint8_t*>(init_message.initiator_ephemeral_x25519().data()),
-                          init_message.initiator_ephemeral_x25519().size()),
+                std::span(reinterpret_cast<const uint8_t*>(init_message.initiator_ephemeral_x25519_public().data()),
+                          init_message.initiator_ephemeral_x25519_public().size()),
                 "DH4");
             if (dh4_result.IsErr()) {
                 auto _wipe = SodiumInterop::SecureWipe(std::span(spk_private));
@@ -1077,8 +1077,8 @@ namespace ecliptix::protocol {
         auto metadata_context = BuildMetadataContext(
             std::span(reinterpret_cast<const uint8_t*>(local_bundle.signed_pre_key_public().data()),
                       local_bundle.signed_pre_key_public().size()),
-            std::span(reinterpret_cast<const uint8_t*>(init_message.initiator_ephemeral_x25519().data()),
-                      init_message.initiator_ephemeral_x25519().size()),
+            std::span(reinterpret_cast<const uint8_t*>(init_message.initiator_ephemeral_x25519_public().data()),
+                      init_message.initiator_ephemeral_x25519_public().size()),
             std::span<const uint8_t>(session_id.data(), session_id.size()));
         auto metadata_key_result = DeriveKeyBytes(
             std::span<const uint8_t>(root_key.data(), root_key.size()),
@@ -1174,8 +1174,8 @@ namespace ecliptix::protocol {
         auto expected_init_mac = expected_init_result.Unwrap();
         auto compare_result = SodiumInterop::ConstantTimeEquals(
             std::span(expected_init_mac.data(), expected_init_mac.size()),
-            std::span(reinterpret_cast<const uint8_t*>(init_message.confirmation_mac().data()),
-                      init_message.confirmation_mac().size()));
+            std::span(reinterpret_cast<const uint8_t*>(init_message.key_confirmation_mac().data()),
+                      init_message.key_confirmation_mac().size()));
         if (compare_result.IsErr()) {
             return Result<std::unique_ptr<HandshakeResponder>, ProtocolFailure>::Err(
                 ProtocolFailure::FromSodiumFailure(compare_result.UnwrapErr()));
@@ -1210,7 +1210,7 @@ namespace ecliptix::protocol {
 
         ecliptix::proto::protocol::HandshakeAck ack_message;
         ack_message.set_version(kProtocolVersion);
-        ack_message.set_confirmation_mac(ack_mac.data(), ack_mac.size());
+        ack_message.set_key_confirmation_mac(ack_mac.data(), ack_mac.size());
         std::string ack_serialized;
         if (!ack_message.SerializeToString(&ack_serialized)) {
             auto _wipe = SodiumInterop::SecureWipe(std::span(spk_private));
@@ -1246,7 +1246,7 @@ namespace ecliptix::protocol {
             return Result<std::unique_ptr<HandshakeResponder>, ProtocolFailure>::Err(
                 nonce_result.UnwrapErr());
         }
-        auto nonce_state = nonce_result.Unwrap().ExportState();
+        auto nonce_generator = nonce_result.Unwrap().ExportState();
 
         auto kyber_secret_handle_result = identity_keys.CloneKyberSecretKey();
         if (kyber_secret_handle_result.IsErr()) {
@@ -1284,7 +1284,7 @@ namespace ecliptix::protocol {
                 ProtocolFailure::FromSodiumFailure(kyber_secret_result.UnwrapErr()));
         }
         auto kyber_secret = kyber_secret_result.Unwrap();
-        auto kyber_public = identity_keys.GetKyberPublicKeyCopy();
+        auto kyber_public = identity_keys.GetKyberPublicCopy();
         if (kyber_public.size() != kKyberPublicKeyBytes) {
             auto _wipe = SodiumInterop::SecureWipe(std::span(spk_private));
             (void) _wipe;
@@ -1310,18 +1310,18 @@ namespace ecliptix::protocol {
             std::span<const uint8_t>(spk_private.data(), spk_private.size()),
             std::span(reinterpret_cast<const uint8_t*>(local_bundle.signed_pre_key_public().data()),
                       local_bundle.signed_pre_key_public().size()),
-            std::span(reinterpret_cast<const uint8_t*>(init_message.initiator_ephemeral_x25519().data()),
-                      init_message.initiator_ephemeral_x25519().size()),
+            std::span(reinterpret_cast<const uint8_t*>(init_message.initiator_ephemeral_x25519_public().data()),
+                      init_message.initiator_ephemeral_x25519_public().size()),
             std::span(reinterpret_cast<const uint8_t*>(local_bundle.signed_pre_key_public().data()),
                       local_bundle.signed_pre_key_public().size()),
-            std::span(reinterpret_cast<const uint8_t*>(init_message.initiator_ephemeral_x25519().data()),
-                      init_message.initiator_ephemeral_x25519().size()),
+            std::span(reinterpret_cast<const uint8_t*>(init_message.initiator_ephemeral_x25519_public().data()),
+                      init_message.initiator_ephemeral_x25519_public().size()),
             std::span<const uint8_t>(kyber_secret.data(), kyber_secret.size()),
             std::span<const uint8_t>(kyber_public.data(), kyber_public.size()),
-            std::span(reinterpret_cast<const uint8_t*>(init_message.initiator_kyber_public_key().data()),
-                      init_message.initiator_kyber_public_key().size()),
-            max_messages_per_ratchet,
-            nonce_state);
+            std::span(reinterpret_cast<const uint8_t*>(init_message.initiator_kyber_public().data()),
+                      init_message.initiator_kyber_public().size()),
+            max_messages_per_chain,
+            nonce_generator);
         auto _wipe_spk = SodiumInterop::SecureWipe(std::span(spk_private));
         (void) _wipe_spk;
         auto _wipe_identity = SodiumInterop::SecureWipe(std::span(identity_private));
@@ -1349,8 +1349,8 @@ namespace ecliptix::protocol {
         auto _wipe_session = SodiumInterop::SecureWipe(std::span(session_id));
         (void) _wipe_session;
 
-        if (used_opk_id.has_value()) {
-            auto consume_result = identity_keys.ConsumeOneTimePreKeyById(*used_opk_id);
+        if (used_one_time_pre_key_id.has_value()) {
+            auto consume_result = identity_keys.ConsumeOneTimePreKeyById(*used_one_time_pre_key_id);
             if (consume_result.IsErr()) {
                 auto _wipe_root = SodiumInterop::SecureWipe(std::span(root_key));
                 (void) _wipe_root;

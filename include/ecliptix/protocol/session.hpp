@@ -59,18 +59,18 @@ private:
         std::vector<uint8_t> pending_kyber_shared_secret);
 
     [[nodiscard]] Result<Unit, ProtocolFailure> InitializeFromHandshake();
-    [[nodiscard]] Result<std::vector<uint8_t>, ProtocolFailure> NextSendingMessageKey(uint64_t& message_index);
-    [[nodiscard]] Result<std::vector<uint8_t>, ProtocolFailure> GetReceivingMessageKey(uint64_t message_index);
-    [[nodiscard]] Result<Unit, ProtocolFailure> MaybeRotateSendingRatchet(
+    [[nodiscard]] Result<std::vector<uint8_t>, ProtocolFailure> NextSendMessageKey(uint64_t& message_index);
+    [[nodiscard]] Result<std::vector<uint8_t>, ProtocolFailure> GetRecvMessageKey(uint64_t message_index);
+    [[nodiscard]] Result<Unit, ProtocolFailure> MaybeRotateSendRatchet(
         ecliptix::proto::protocol::SecureEnvelope& envelope);
-    [[nodiscard]] Result<Unit, ProtocolFailure> ApplyReceivingRatchet(
+    [[nodiscard]] Result<Unit, ProtocolFailure> ApplyRecvRatchet(
         const ecliptix::proto::protocol::SecureEnvelope& envelope);
     void ResetReplayTracking(uint64_t epoch);
 
     bool is_initiator_ = false;
     ecliptix::proto::protocol::ProtocolState state_{};
     std::vector<uint8_t> pending_kyber_shared_secret_{};
-    std::map<uint64_t, std::vector<uint8_t>> receive_cache_{};
+    std::map<uint64_t, std::vector<uint8_t>> skipped_message_keys_{};
     uint64_t replay_epoch_ = 0;
     std::unordered_set<std::string> seen_payload_nonces_{};
     mutable std::mutex lock_;

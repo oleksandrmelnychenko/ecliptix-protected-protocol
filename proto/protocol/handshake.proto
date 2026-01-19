@@ -4,34 +4,34 @@ package ecliptix.proto.protocol;
 option csharp_namespace = "Ecliptix.Protobuf.Protocol";
 
 message OneTimePreKey {
-  uint32 pre_key_id = 1;
+  uint32 one_time_pre_key_id = 1;
   bytes public_key = 2; // X25519, 32 bytes
 }
 
 message PreKeyBundle {
   uint32 version = 1; // must be 1
-  bytes identity_ed25519 = 2;       // 32 bytes
-  bytes identity_x25519 = 3;        // 32 bytes
+  bytes identity_ed25519_public = 2;       // 32 bytes
+  bytes identity_x25519_public = 3;        // 32 bytes
   uint32 signed_pre_key_id = 4;
   bytes signed_pre_key_public = 5;  // 32 bytes
   bytes signed_pre_key_signature = 6; // 64 bytes (Ed25519 over signed_pre_key_public)
   repeated OneTimePreKey one_time_pre_keys = 7;
-  bytes kyber_public_key = 8;       // 1184 bytes, required
+  bytes kyber_public = 8;       // 1184 bytes, required
 }
 
 message HandshakeInit {
   uint32 version = 1; // must be 1
-  bytes initiator_identity_ed25519 = 2;   // 32 bytes
-  bytes initiator_identity_x25519 = 3;    // 32 bytes
-  bytes initiator_ephemeral_x25519 = 4;   // 32 bytes
-  optional uint32 used_one_time_pre_key_id = 5;
+  bytes initiator_identity_ed25519_public = 2;   // 32 bytes
+  bytes initiator_identity_x25519_public = 3;    // 32 bytes
+  bytes initiator_ephemeral_x25519_public = 4;   // 32 bytes
+  optional uint32 one_time_pre_key_id = 5;
   bytes kyber_ciphertext = 6;             // 1088 bytes
-  bytes confirmation_mac = 7;             // HMAC-SHA256, 32 bytes
-  bytes initiator_kyber_public_key = 8;   // 1184 bytes
-  uint32 max_messages_per_ratchet = 9;    // per-session chain length
+  bytes key_confirmation_mac = 7;         // HMAC-SHA256, 32 bytes
+  bytes initiator_kyber_public = 8;       // 1184 bytes
+  uint32 max_messages_per_chain = 9;      // per-session chain length
 }
 
 message HandshakeAck {
   uint32 version = 1; // must be 1
-  bytes confirmation_mac = 2; // HMAC-SHA256, 32 bytes
+  bytes key_confirmation_mac = 2; // HMAC-SHA256, 32 bytes
 }

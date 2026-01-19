@@ -34,7 +34,7 @@ RelayNativeInterop.epp_identity_create(out var identity, out var error);
 RelayNativeInterop.epp_prekey_bundle_create(identity, out var bundle, out error);
 RelayNativeInterop.epp_buffer_release(ref bundle);
 
-var config = new EppSessionConfig { MaxMessagesPerRatchet = 200 };
+var config = new EppSessionConfig { MaxMessagesPerChain = 200 };
 RelayNativeInterop.epp_handshake_responder_start(
     identity, localBundleBytes, (nuint)localBundleBytes.Length,
     handshakeInitBytes, (nuint)handshakeInitBytes.Length, ref config,

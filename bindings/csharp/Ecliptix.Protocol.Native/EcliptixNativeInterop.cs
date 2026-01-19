@@ -58,7 +58,7 @@ public struct EcliptixError
 [StructLayout(LayoutKind.Sequential)]
 public struct EcliptixSessionConfig
 {
-    public uint MaxMessagesPerRatchet;
+    public uint MaxMessagesPerChain;
 }
 
 public static class EcliptixNativeInterop

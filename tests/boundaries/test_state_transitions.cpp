@@ -25,7 +25,7 @@ struct TestKeyMaterial {
     std::vector<uint8_t> identity_x25519_pub;
     std::vector<uint8_t> signed_pre_key_pub;
     std::vector<uint8_t> signed_pre_key_sig;
-    std::vector<uint8_t> kyber_public_key;
+    std::vector<uint8_t> kyber_public;
 
     LocalPublicKeyBundle GetBundle() const {
         return LocalPublicKeyBundle(
@@ -36,7 +36,7 @@ struct TestKeyMaterial {
             signed_pre_key_sig,
             {},
             std::nullopt,
-            kyber_public_key
+            kyber_public
         );
     }
 
@@ -58,7 +58,7 @@ struct TestKeyMaterial {
         material.signed_pre_key_sig = SodiumInterop::GetRandomBytes(kEd25519SignatureBytes);
         auto kyber_pair = KyberInterop::GenerateKyber768KeyPair("test-bundle");
         REQUIRE(kyber_pair.IsOk());
-        material.kyber_public_key = std::move(kyber_pair.Unwrap().second);
+        material.kyber_public = std::move(kyber_pair.Unwrap().second);
 
         return material;
     }
@@ -521,7 +521,7 @@ TEST_CASE("State Transitions - GetPeerBundle Behavior", "[boundaries][state][get
         REQUIRE(get_result.IsOk());
 
         auto bundle = std::move(get_result).Unwrap();
-        REQUIRE(bundle.GetEd25519Public() == material.ed25519_pub);
+        REQUIRE(bundle.GetIdentityEd25519Public() == material.ed25519_pub);
         REQUIRE(bundle.GetSignedPreKeyPublic() == material.signed_pre_key_pub);
     }
 
@@ -532,6 +532,6 @@ TEST_CASE("State Transitions - GetPeerBundle Behavior", "[boundaries][state][get
         REQUIRE(result.IsOk());
 
         auto bundle = std::move(result).Unwrap();
-        REQUIRE(bundle.GetEd25519Public() == material.ed25519_pub);
+        REQUIRE(bundle.GetIdentityEd25519Public() == material.ed25519_pub);
     }
 }

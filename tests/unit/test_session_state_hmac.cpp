@@ -21,7 +21,7 @@ namespace {
                 bundle_result.UnwrapErr());
         }
         const auto& bundle = bundle_result.Unwrap();
-        const auto& kyber_public = bundle.GetKyberPublicKey();
+        const auto& kyber_public = bundle.GetKyberPublic();
         if (!kyber_public.has_value()) {
             return Result<ecliptix::proto::protocol::PreKeyBundle, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidState("Missing Kyber public key for bundle"));
@@ -29,12 +29,12 @@ namespace {
 
         ecliptix::proto::protocol::PreKeyBundle proto_bundle;
         proto_bundle.set_version(ecliptix::protocol::kProtocolVersion);
-        proto_bundle.set_identity_ed25519(
-            bundle.GetEd25519Public().data(),
-            bundle.GetEd25519Public().size());
-        proto_bundle.set_identity_x25519(
-            bundle.GetIdentityX25519().data(),
-            bundle.GetIdentityX25519().size());
+        proto_bundle.set_identity_ed25519_public(
+            bundle.GetIdentityEd25519Public().data(),
+            bundle.GetIdentityEd25519Public().size());
+        proto_bundle.set_identity_x25519_public(
+            bundle.GetIdentityX25519Public().data(),
+            bundle.GetIdentityX25519Public().size());
         proto_bundle.set_signed_pre_key_id(bundle.GetSignedPreKeyId());
         proto_bundle.set_signed_pre_key_public(
             bundle.GetSignedPreKeyPublic().data(),
@@ -44,17 +44,17 @@ namespace {
             bundle.GetSignedPreKeySignature().size());
         for (const auto& opk : bundle.GetOneTimePreKeys()) {
             auto* opk_proto = proto_bundle.add_one_time_pre_keys();
-            opk_proto->set_pre_key_id(opk.GetPreKeyId());
+            opk_proto->set_one_time_pre_key_id(opk.GetOneTimePreKeyId());
             const auto& opk_pub = opk.GetPublicKey();
             opk_proto->set_public_key(opk_pub.data(), opk_pub.size());
         }
-        proto_bundle.set_kyber_public_key(kyber_public->data(), kyber_public->size());
+        proto_bundle.set_kyber_public(kyber_public->data(), kyber_public->size());
         return Result<ecliptix::proto::protocol::PreKeyBundle, ProtocolFailure>::Ok(
             std::move(proto_bundle));
     }
 }
 
-TEST_CASE("Session state MAC protects export/import", "[session][state][mac]") {
+TEST_CASE("Session state HMAC protects export/import", "[session][state][hmac]") {
     using ecliptix::protocol::HandshakeInitiator;
     using ecliptix::protocol::HandshakeResponder;
     using ecliptix::protocol::Session;
@@ -76,7 +76,7 @@ TEST_CASE("Session state MAC protects export/import", "[session][state][mac]") {
     auto bob_bundle = bob_bundle_result.Unwrap();
 
     const uint32_t max_messages =
-        static_cast<uint32_t>(ecliptix::protocol::kMessagesPerRatchet);
+        static_cast<uint32_t>(ecliptix::protocol::kDefaultMessagesPerChain);
     auto initiator_result = HandshakeInitiator::Start(
         alice_keys,
         bob_bundle,
@@ -107,22 +107,22 @@ TEST_CASE("Session state MAC protects export/import", "[session][state][mac]") {
     auto state_result = initiator_session->ExportState();
     REQUIRE(state_result.IsOk());
     auto state = state_result.Unwrap();
-    REQUIRE(state.state_mac().size() == ecliptix::protocol::kHmacBytes);
-    const uint64_t gen1 = state.state_generation();
+    REQUIRE(state.state_hmac().size() == ecliptix::protocol::kHmacBytes);
+    const uint64_t gen1 = state.state_counter();
 
     auto state_result2 = initiator_session->ExportState();
     REQUIRE(state_result2.IsOk());
     auto state2 = state_result2.Unwrap();
-    const uint64_t gen2 = state2.state_generation();
+    const uint64_t gen2 = state2.state_counter();
     REQUIRE(gen2 == gen1 + 1);
 
     auto roundtrip_result = Session::FromState(state);
     REQUIRE(roundtrip_result.IsOk());
 
     auto tampered = state;
-    auto mac = tampered.state_mac();
+    auto mac = tampered.state_hmac();
     mac[0] = static_cast<char>(mac[0] ^ 0xFF);
-    tampered.set_state_mac(mac);
+    tampered.set_state_hmac(mac);
     auto tamper_result = Session::FromState(tampered);
     REQUIRE(tamper_result.IsErr());
 }

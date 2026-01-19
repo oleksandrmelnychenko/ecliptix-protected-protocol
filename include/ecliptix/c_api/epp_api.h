@@ -60,7 +60,7 @@ typedef struct EppError {
 } EppError;
 
 typedef struct EppSessionConfig {
-    uint32_t max_messages_per_ratchet;
+    uint32_t max_messages_per_chain;
 } EppSessionConfig;
 
 EPP_API const char* epp_version(void);

@@ -54,5 +54,5 @@ public struct EppError
 [StructLayout(LayoutKind.Sequential)]
 public struct EppSessionConfig
 {
-    public uint MaxMessagesPerRatchet;
+    public uint MaxMessagesPerChain;
 }

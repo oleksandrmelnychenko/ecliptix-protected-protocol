@@ -202,7 +202,7 @@ for (uint32_t i = current_index + 1; i < received_index; i++) {
     ChainKey[i] = HKDF(ChainKey[i-1], "Ecliptix-Chain")
 
     // Cache in secure memory
-    cached_message_keys[i] = SecureMemoryHandle::Create(MessageKey[i])
+    skipped_message_keys[i] = SecureMemoryHandle::Create(MessageKey[i])
 
     // Securely wipe temporary buffers
     SecureWipe(MessageKey[i])
@@ -216,7 +216,7 @@ MessageKey[received_index] = HKDF(ChainKey[received_index-1], "Ecliptix-Msg")
 
 ```cpp
 // Data structure
-std::map<uint32_t, SecureMemoryHandle> cached_message_keys_;
+std::map<uint32_t, SecureMemoryHandle> skipped_message_keys_;
 
 // Cache window parameters
 constexpr uint32_t MAX_SKIP_MESSAGE_KEYS = 1000;
@@ -224,26 +224,26 @@ constexpr uint32_t MESSAGE_KEY_CACHE_WINDOW = 2000;
 
 // Pruning old keys
 void PruneOldKeys() {
-    if (cached_message_keys_.size() > MESSAGE_KEY_CACHE_WINDOW) {
+    if (skipped_message_keys_.size() > MESSAGE_KEY_CACHE_WINDOW) {
         // Remove keys older than (current_index - CACHE_WINDOW)
         auto cutoff_index = current_index_ > MESSAGE_KEY_CACHE_WINDOW
             ? current_index_ - MESSAGE_KEY_CACHE_WINDOW
             : 0;
 
-        auto it = cached_message_keys_.begin();
-        while (it != cached_message_keys_.end() && it->first < cutoff_index) {
-            it = cached_message_keys_.erase(it);  // Destructor wipes secure memory
+        auto it = skipped_message_keys_.begin();
+        while (it != skipped_message_keys_.end() && it->first < cutoff_index) {
+            it = skipped_message_keys_.erase(it);  // Destructor wipes secure memory
         }
     }
 }
 
 // Retrieving cached key
 std::optional<SecureMemoryHandle> GetCachedMessageKey(uint32_t index) {
-    auto it = cached_message_keys_.find(index);
-    if (it != cached_message_keys_.end()) {
+    auto it = skipped_message_keys_.find(index);
+    if (it != skipped_message_keys_.end()) {
         // Move out of cache (single-use)
         SecureMemoryHandle handle = std::move(it->second);
-        cached_message_keys_.erase(it);
+        skipped_message_keys_.erase(it);
         return handle;
     }
     return std::nullopt;
@@ -517,9 +517,9 @@ inline constexpr std::string_view kInitialSenderChainInfo = "Ecliptix-Initial-Se
 inline constexpr std::string_view kInitialReceiverChainInfo = "Ecliptix-Initial-Receiver";
 inline constexpr std::string_view kMetadataKeyInfo = "Ecliptix-MetadataKey";
 
-inline constexpr uint64_t kMessagesPerRatchet = 1000; // default per-session limit
+inline constexpr uint64_t kDefaultMessagesPerChain = 1000; // default per-session limit
 inline constexpr size_t kMaxSkippedMessageKeys = 1000;
-inline constexpr size_t kMaxChainLength = 10000;
+inline constexpr size_t kMaxMessagesPerChain = 10000;
 
 inline constexpr size_t kNoncePrefixBytes = 4;
 inline constexpr size_t kNonceCounterBytes = 4;
@@ -529,8 +529,8 @@ inline constexpr uint64_t kMaxNonceCounter = 0xFFFFFFFFull;
 } // namespace ecliptix::protocol
 ```
 
-Note: The active per-session ratchet limit is carried in `ProtocolState.max_messages_per_ratchet`
-and negotiated during handshake. `kMessagesPerRatchet` is the default value used by APIs.
+Note: The active per-session ratchet limit is carried in `ProtocolState.max_messages_per_chain`
+and negotiated during handshake. `kDefaultMessagesPerChain` is the default value used by APIs.
 
 ## 8. Error Handling Strategy
 

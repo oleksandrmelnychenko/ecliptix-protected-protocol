@@ -269,7 +269,7 @@ TEST_CASE("X3DH Test Vectors - Signed PreKey Verification", "[x3dh][interop][vec
         auto bob_bundle = std::move(bob_bundle_result).Unwrap();
 
         auto verify_result = IdentityKeys::VerifyRemoteSpkSignature(
-            bob_bundle.GetEd25519Public(),
+            bob_bundle.GetIdentityEd25519Public(),
             bob_bundle.GetSignedPreKeyPublic(),
             bob_bundle.GetSignedPreKeySignature()
         );
@@ -290,7 +290,7 @@ TEST_CASE("X3DH Test Vectors - Signed PreKey Verification", "[x3dh][interop][vec
         corrupted_signature[0] ^= 0x01;
 
         auto verify_result = IdentityKeys::VerifyRemoteSpkSignature(
-            bob_bundle.GetEd25519Public(),
+            bob_bundle.GetIdentityEd25519Public(),
             bob_bundle.GetSignedPreKeyPublic(),
             corrupted_signature
         );
@@ -310,7 +310,7 @@ TEST_CASE("X3DH Test Vectors - Signed PreKey Verification", "[x3dh][interop][vec
         REQUIRE(bob_bundle_result.IsOk());
         auto bob_bundle = std::move(bob_bundle_result).Unwrap();
 
-        auto attacker_identity = attacker_keys.GetIdentityEd25519PublicKeyCopy();
+        auto attacker_identity = attacker_keys.GetIdentityEd25519PublicCopy();
 
         auto verify_result = IdentityKeys::VerifyRemoteSpkSignature(
             attacker_identity,
@@ -341,16 +341,16 @@ TEST_CASE("X3DH rejects tampered SPK signature during handshake", "[x3dh][securi
     tampered_signature[0] ^= 0xFF;
 
     LocalPublicKeyBundle tampered_bundle(
-        bob_bundle.GetEd25519Public(),
-        bob_bundle.GetIdentityX25519(),
+        bob_bundle.GetIdentityEd25519Public(),
+        bob_bundle.GetIdentityX25519Public(),
         bob_bundle.GetSignedPreKeyId(),
         bob_bundle.GetSignedPreKeyPublic(),
         tampered_signature,
         bob_bundle.GetOneTimePreKeys(),
         bob_bundle.GetEphemeralX25519Public(),
-        bob_bundle.GetKyberPublicKey(),
+        bob_bundle.GetKyberPublic(),
         bob_bundle.GetKyberCiphertext(),
-        bob_bundle.GetUsedOpkId());
+        bob_bundle.GetUsedOneTimePreKeyId());
 
     std::vector<uint8_t> info(kX3dhInfo.begin(), kX3dhInfo.end());
     auto shared_secret_result = alice_keys.X3dhDeriveSharedSecret(tampered_bundle, info, true);
@@ -422,16 +422,16 @@ TEST_CASE("X3DH Explicit OPK Selection Consumes Key", "[x3dh][opk][consume]") {
     REQUIRE(bob_bundle_result.IsOk());
     auto bob_bundle = bob_bundle_result.Unwrap();
     REQUIRE(bob_bundle.HasOneTimePreKeys());
-    const uint32_t opk_id = bob_bundle.GetOneTimePreKeys().front().GetPreKeyId();
+    const uint32_t opk_id = bob_bundle.GetOneTimePreKeys().front().GetOneTimePreKeyId();
     const size_t initial_opk_count = bob_bundle.GetOneTimePreKeyCount();
 
-    alice.SetSelectedOpkId(opk_id);
+    alice.SetSelectedOneTimePreKeyId(opk_id);
     auto alice_bundle_result = alice.CreatePublicBundle();
     REQUIRE(alice_bundle_result.IsOk());
     auto alice_bundle = alice_bundle_result.Unwrap();
     auto alice_ephemeral = alice_bundle.GetEphemeralX25519Public();
     REQUIRE(alice_ephemeral.has_value());
-    auto alice_kyber = alice_bundle.GetKyberPublicKey();
+    auto alice_kyber = alice_bundle.GetKyberPublic();
     REQUIRE(alice_kyber.has_value());
 
     std::vector<uint8_t> info(kX3dhInfo.begin(), kX3dhInfo.end());
@@ -448,8 +448,8 @@ TEST_CASE("X3DH Explicit OPK Selection Consumes Key", "[x3dh][opk][consume]") {
     auto kyber_artifacts = kyber_artifacts_result.Unwrap();
 
     LocalPublicKeyBundle alice_bundle_with_ct(
-        alice_bundle.GetEd25519Public(),
-        alice_bundle.GetIdentityX25519(),
+        alice_bundle.GetIdentityEd25519Public(),
+        alice_bundle.GetIdentityX25519Public(),
         alice_bundle.GetSignedPreKeyId(),
         alice_bundle.GetSignedPreKeyPublicCopy(),
         alice_bundle.GetSignedPreKeySignature(),
@@ -477,10 +477,10 @@ TEST_CASE("X3DH Explicit OPK Selection Consumes Key", "[x3dh][opk][consume]") {
         bob_bundle_after.GetOneTimePreKeys().begin(),
         bob_bundle_after.GetOneTimePreKeys().end(),
         [opk_id](const OneTimePreKeyPublic &opk) {
-            return opk.GetPreKeyId() == opk_id;
+            return opk.GetOneTimePreKeyId() == opk_id;
         });
     REQUIRE_FALSE(opk_still_present);
-    REQUIRE_FALSE(bob.GetSelectedOpkId().has_value());
+    REQUIRE_FALSE(bob.GetSelectedOneTimePreKeyId().has_value());
 }
 
 TEST_CASE("X3DH Test Vectors - Ephemeral Key Management", "[x3dh][interop][vectors]") {
@@ -562,10 +562,10 @@ TEST_CASE("X3DH Test Vectors - Key Length Validation", "[x3dh][interop][vectors]
         REQUIRE(keys_result.IsOk());
         auto keys = std::move(keys_result).Unwrap();
 
-        auto identity_x25519 = keys.GetIdentityX25519PublicKeyCopy();
+        auto identity_x25519 = keys.GetIdentityX25519PublicCopy();
         REQUIRE(identity_x25519.size() == kX25519PublicKeyBytes);
 
-        auto identity_ed25519 = keys.GetIdentityEd25519PublicKeyCopy();
+        auto identity_ed25519 = keys.GetIdentityEd25519PublicCopy();
         REQUIRE(identity_ed25519.size() == kEd25519PublicKeyBytes);
 
         auto bundle_result = keys.CreatePublicBundle();

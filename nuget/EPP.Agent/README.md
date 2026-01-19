@@ -37,7 +37,7 @@ AgentNativeInterop.epp_prekey_bundle_create(identity, out var bundle, out error)
 AgentNativeInterop.epp_buffer_release(ref bundle);
 
 // Handshake + session
-var config = new EppSessionConfig { MaxMessagesPerRatchet = 200 };
+var config = new EppSessionConfig { MaxMessagesPerChain = 200 };
 AgentNativeInterop.epp_handshake_initiator_start(
     identity, peerBundleBytes, (nuint)peerBundleBytes.Length, ref config,
     out var initiatorHandle, out var handshakeInit, out error);

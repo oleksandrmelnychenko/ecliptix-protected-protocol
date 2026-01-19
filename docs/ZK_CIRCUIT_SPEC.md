@@ -979,7 +979,7 @@ EcliptixProtocolConnection::ReceiveMessageZk(const ProtocolMessage& msg) {
     }
 
     // 2. Derive message key (traditional ratchet)
-    auto message_key = TRY(receiving_chain_step_->DeriveMessageKey(msg.message_index()));
+    auto message_key = TRY(recv_chain_step_->DeriveMessageKey(msg.message_index()));
 
     // 3. Decrypt message
     auto plaintext = TRY(DecryptMessage(

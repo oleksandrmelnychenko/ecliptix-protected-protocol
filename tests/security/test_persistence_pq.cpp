@@ -42,9 +42,9 @@ TEST_CASE("Persisted state rejects tampered Kyber artifacts", "[persistence][pq]
 
     SECTION("truncated peer Kyber public key is rejected on restore") {
         auto tampered = state;
-        auto peer_pk_str = tampered.peer_kyber_public_key();
+        auto peer_pk_str = tampered.kyber_remote_public();
         peer_pk_str.resize(peer_pk_str.size() - 1);
-        tampered.set_peer_kyber_public_key(peer_pk_str);
+        tampered.set_kyber_remote_public(peer_pk_str);
         auto restore = ProtocolConnection::FromProtoState(
             1001,
             tampered,

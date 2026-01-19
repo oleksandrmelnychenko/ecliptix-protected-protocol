@@ -10,9 +10,9 @@
 namespace ecliptix::protocol::models {
 class OneTimePreKey {
 public:
-    static Result<OneTimePreKey, ProtocolFailure> Generate(uint32_t pre_key_id);
+    static Result<OneTimePreKey, ProtocolFailure> Generate(uint32_t one_time_pre_key_id);
     static OneTimePreKey CreateFromParts(
-        uint32_t pre_key_id,
+        uint32_t one_time_pre_key_id,
         crypto::SecureMemoryHandle private_key_handle,
         std::vector<uint8_t> public_key);
     OneTimePreKey(OneTimePreKey&&) noexcept = default;
@@ -20,8 +20,8 @@ public:
     OneTimePreKey(const OneTimePreKey&) = delete;
     OneTimePreKey& operator=(const OneTimePreKey&) = delete;
     ~OneTimePreKey() = default;
-    [[nodiscard]] uint32_t GetPreKeyId() const noexcept {
-        return pre_key_id_;
+    [[nodiscard]] uint32_t GetOneTimePreKeyId() const noexcept {
+        return one_time_pre_key_id_;
     }
     [[nodiscard]] const crypto::SecureMemoryHandle& GetPrivateKeyHandle() const noexcept {
         return private_key_handle_;
@@ -40,10 +40,10 @@ public:
     }
 private:
     OneTimePreKey(
-        uint32_t pre_key_id,
+        uint32_t one_time_pre_key_id,
         crypto::SecureMemoryHandle private_key_handle,
         std::vector<uint8_t> public_key);
-    uint32_t pre_key_id_;
+    uint32_t one_time_pre_key_id_;
     crypto::SecureMemoryHandle private_key_handle_;
     std::vector<uint8_t> public_key_;
 };

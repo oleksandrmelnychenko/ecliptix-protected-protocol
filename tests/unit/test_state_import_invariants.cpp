@@ -36,84 +36,84 @@ ecliptix::proto::protocol::ProtocolState CreateValidProtocolState() {
         return Unit{};
     });
 
-    state.mutable_dh_self()->set_private_key(dh_sk.data(), dh_sk.size());
-    state.mutable_dh_self()->set_public_key(dh_pk.data(), dh_pk.size());
+    state.mutable_dh_local()->set_private_key(dh_sk.data(), dh_sk.size());
+    state.mutable_dh_local()->set_public_key(dh_pk.data(), dh_pk.size());
 
     auto peer_dh_result = SodiumInterop::GenerateX25519KeyPair("peer");
     REQUIRE(peer_dh_result.IsOk());
     auto [peer_sk_handle, peer_pk] = std::move(peer_dh_result).Unwrap();
-    state.set_dh_peer_public(peer_pk.data(), peer_pk.size());
+    state.set_dh_remote_public(peer_pk.data(), peer_pk.size());
 
-    state.set_dh_initial_self_public(dh_pk.data(), dh_pk.size());
-    state.set_dh_initial_peer_public(peer_pk.data(), peer_pk.size());
+    state.set_dh_local_initial_public(dh_pk.data(), dh_pk.size());
+    state.set_dh_remote_initial_public(peer_pk.data(), peer_pk.size());
 
     auto kyber_result = KyberInterop::GenerateKyber768KeyPair("test-kyber");
     REQUIRE(kyber_result.IsOk());
     auto [kyber_sk_handle, kyber_pk] = std::move(kyber_result).Unwrap();
-    state.mutable_kyber_self()->set_public_key(kyber_pk.data(), kyber_pk.size());
+    state.mutable_kyber_local()->set_public_key(kyber_pk.data(), kyber_pk.size());
     std::vector<uint8_t> kyber_sk_vec(kKyberSecretKeyBytes);
     kyber_sk_handle.WithReadAccess([&](std::span<const uint8_t> data) {
         std::copy(data.begin(), data.end(), kyber_sk_vec.begin());
         return Unit{};
     });
-    state.mutable_kyber_self()->set_secret_key(kyber_sk_vec.data(), kyber_sk_vec.size());
+    state.mutable_kyber_local()->set_secret_key(kyber_sk_vec.data(), kyber_sk_vec.size());
 
     auto peer_kyber_result = KyberInterop::GenerateKyber768KeyPair("peer-kyber");
     REQUIRE(peer_kyber_result.IsOk());
     auto [peer_kyber_sk_handle, peer_kyber_pk] = std::move(peer_kyber_result).Unwrap();
-    state.set_peer_kyber_public_key(peer_kyber_pk.data(), peer_kyber_pk.size());
+    state.set_kyber_remote_public(peer_kyber_pk.data(), peer_kyber_pk.size());
 
     std::vector<uint8_t> chain_key(kChainKeyBytes, 0x44);
-    state.mutable_sending_chain()->set_chain_key(chain_key.data(), chain_key.size());
-    state.mutable_sending_chain()->set_index(0);
-    state.mutable_receiving_chain()->set_chain_key(chain_key.data(), chain_key.size());
-    state.mutable_receiving_chain()->set_index(0);
+    state.mutable_send_chain()->set_chain_key(chain_key.data(), chain_key.size());
+    state.mutable_send_chain()->set_message_index(0);
+    state.mutable_recv_chain()->set_chain_key(chain_key.data(), chain_key.size());
+    state.mutable_recv_chain()->set_message_index(0);
 
     std::vector<uint8_t> nonce_prefix(kNoncePrefixBytes, 0x55);
-    state.mutable_nonce_state()->set_prefix(nonce_prefix.data(), nonce_prefix.size());
-    state.mutable_nonce_state()->set_counter(0);
+    state.mutable_nonce_generator()->set_prefix(nonce_prefix.data(), nonce_prefix.size());
+    state.mutable_nonce_generator()->set_counter(0);
 
-    state.set_state_generation(1);
-    state.set_sending_ratchet_epoch(0);
-    state.set_receiving_ratchet_epoch(0);
-    state.set_max_messages_per_ratchet(static_cast<uint32_t>(kMessagesPerRatchet));
+    state.set_state_counter(1);
+    state.set_send_ratchet_epoch(0);
+    state.set_recv_ratchet_epoch(0);
+    state.set_max_messages_per_chain(static_cast<uint32_t>(kDefaultMessagesPerChain));
 
     std::vector<uint8_t> dummy_mac(kHmacBytes, 0x00);
-    state.set_state_mac(dummy_mac.data(), dummy_mac.size());
+    state.set_state_hmac(dummy_mac.data(), dummy_mac.size());
 
     return state;
 }
 
 }  // namespace
 
-TEST_CASE("State import - MAC verification", "[session][state][mac][import]") {
+TEST_CASE("State import - HMAC verification", "[session][state][hmac][import]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     REQUIRE(KyberInterop::Initialize().IsOk());
 
-    SECTION("State with invalid MAC is rejected") {
+    SECTION("State with invalid HMAC is rejected") {
         auto state = CreateValidProtocolState();
 
         std::vector<uint8_t> bad_mac(kHmacBytes, 0xDE);
-        state.set_state_mac(bad_mac.data(), bad_mac.size());
+        state.set_state_hmac(bad_mac.data(), bad_mac.size());
 
         auto result = Session::FromState(state);
         REQUIRE(result.IsErr());
-        REQUIRE(result.UnwrapErr().message.find("MAC") != std::string::npos);
+        REQUIRE(result.UnwrapErr().message.find("HMAC") != std::string::npos);
     }
 
-    SECTION("State with missing MAC is rejected") {
+    SECTION("State with missing HMAC is rejected") {
         auto state = CreateValidProtocolState();
-        state.clear_state_mac();
+        state.clear_state_hmac();
 
         auto result = Session::FromState(state);
         REQUIRE(result.IsErr());
     }
 
-    SECTION("State with truncated MAC is rejected") {
+    SECTION("State with truncated HMAC is rejected") {
         auto state = CreateValidProtocolState();
 
         std::vector<uint8_t> short_mac(16, 0xAB);
-        state.set_state_mac(short_mac.data(), short_mac.size());
+        state.set_state_hmac(short_mac.data(), short_mac.size());
 
         auto result = Session::FromState(state);
         REQUIRE(result.IsErr());
@@ -176,7 +176,7 @@ TEST_CASE("State import - Key size validation", "[session][state][keysize]") {
     SECTION("Short DH private key is rejected") {
         auto state = CreateValidProtocolState();
         std::vector<uint8_t> short_key(16, 0x44);
-        state.mutable_dh_self()->set_private_key(short_key.data(), short_key.size());
+        state.mutable_dh_local()->set_private_key(short_key.data(), short_key.size());
 
         auto result = Session::FromState(state);
         REQUIRE(result.IsErr());
@@ -185,7 +185,7 @@ TEST_CASE("State import - Key size validation", "[session][state][keysize]") {
     SECTION("Short DH public key is rejected") {
         auto state = CreateValidProtocolState();
         std::vector<uint8_t> short_key(16, 0x55);
-        state.mutable_dh_self()->set_public_key(short_key.data(), short_key.size());
+        state.mutable_dh_local()->set_public_key(short_key.data(), short_key.size());
 
         auto result = Session::FromState(state);
         REQUIRE(result.IsErr());
@@ -194,7 +194,7 @@ TEST_CASE("State import - Key size validation", "[session][state][keysize]") {
     SECTION("Short chain key is rejected") {
         auto state = CreateValidProtocolState();
         std::vector<uint8_t> short_key(16, 0x66);
-        state.mutable_sending_chain()->set_chain_key(short_key.data(), short_key.size());
+        state.mutable_send_chain()->set_chain_key(short_key.data(), short_key.size());
 
         auto result = Session::FromState(state);
         REQUIRE(result.IsErr());
@@ -203,7 +203,7 @@ TEST_CASE("State import - Key size validation", "[session][state][keysize]") {
     SECTION("Short nonce prefix is rejected") {
         auto state = CreateValidProtocolState();
         std::vector<uint8_t> short_prefix(2, 0x77);
-        state.mutable_nonce_state()->set_prefix(short_prefix.data(), short_prefix.size());
+        state.mutable_nonce_generator()->set_prefix(short_prefix.data(), short_prefix.size());
 
         auto result = Session::FromState(state);
         REQUIRE(result.IsErr());
@@ -212,7 +212,7 @@ TEST_CASE("State import - Key size validation", "[session][state][keysize]") {
     SECTION("Short Kyber public key is rejected") {
         auto state = CreateValidProtocolState();
         std::vector<uint8_t> short_key(100, 0x88);
-        state.mutable_kyber_self()->set_public_key(short_key.data(), short_key.size());
+        state.mutable_kyber_local()->set_public_key(short_key.data(), short_key.size());
 
         auto result = Session::FromState(state);
         REQUIRE(result.IsErr());
@@ -221,7 +221,7 @@ TEST_CASE("State import - Key size validation", "[session][state][keysize]") {
     SECTION("Short Kyber secret key is rejected") {
         auto state = CreateValidProtocolState();
         std::vector<uint8_t> short_key(100, 0x99);
-        state.mutable_kyber_self()->set_secret_key(short_key.data(), short_key.size());
+        state.mutable_kyber_local()->set_secret_key(short_key.data(), short_key.size());
 
         auto result = Session::FromState(state);
         REQUIRE(result.IsErr());
@@ -235,7 +235,7 @@ TEST_CASE("State import - All-zeros key rejection", "[session][state][zeroskey]"
     SECTION("All-zeros DH private key is rejected") {
         auto state = CreateValidProtocolState();
         std::vector<uint8_t> zero_key(kX25519PrivateKeyBytes, 0x00);
-        state.mutable_dh_self()->set_private_key(zero_key.data(), zero_key.size());
+        state.mutable_dh_local()->set_private_key(zero_key.data(), zero_key.size());
 
         auto result = Session::FromState(state);
         REQUIRE(result.IsErr());
@@ -245,7 +245,7 @@ TEST_CASE("State import - All-zeros key rejection", "[session][state][zeroskey]"
     SECTION("All-zeros Kyber secret key is rejected") {
         auto state = CreateValidProtocolState();
         std::vector<uint8_t> zero_key(kKyberSecretKeyBytes, 0x00);
-        state.mutable_kyber_self()->set_secret_key(zero_key.data(), zero_key.size());
+        state.mutable_kyber_local()->set_secret_key(zero_key.data(), zero_key.size());
 
         auto result = Session::FromState(state);
         REQUIRE(result.IsErr());
@@ -259,7 +259,7 @@ TEST_CASE("State import - Chain index limits", "[session][state][chainindex]") {
 
     SECTION("Sending chain index exceeding ratchet limit is rejected") {
         auto state = CreateValidProtocolState();
-        state.mutable_sending_chain()->set_index(state.max_messages_per_ratchet() + 1);
+        state.mutable_send_chain()->set_message_index(state.max_messages_per_chain() + 1);
 
         auto result = Session::FromState(state);
         REQUIRE(result.IsErr());
@@ -270,7 +270,7 @@ TEST_CASE("State import - Chain index limits", "[session][state][chainindex]") {
 
     SECTION("Receiving chain index exceeding ratchet limit is rejected") {
         auto state = CreateValidProtocolState();
-        state.mutable_receiving_chain()->set_index(state.max_messages_per_ratchet() + 1);
+        state.mutable_recv_chain()->set_message_index(state.max_messages_per_chain() + 1);
 
         auto result = Session::FromState(state);
         REQUIRE(result.IsErr());
@@ -281,17 +281,17 @@ TEST_CASE("State import - Ratchet config validation", "[session][state][ratchetc
     REQUIRE(SodiumInterop::Initialize().IsOk());
     REQUIRE(KyberInterop::Initialize().IsOk());
 
-    SECTION("Zero max_messages_per_ratchet is rejected") {
+    SECTION("Zero max_messages_per_chain is rejected") {
         auto state = CreateValidProtocolState();
-        state.set_max_messages_per_ratchet(0);
+        state.set_max_messages_per_chain(0);
 
         auto result = Session::FromState(state);
         REQUIRE(result.IsErr());
     }
 
-    SECTION("Excessive max_messages_per_ratchet is rejected") {
+    SECTION("Excessive max_messages_per_chain is rejected") {
         auto state = CreateValidProtocolState();
-        state.set_max_messages_per_ratchet(static_cast<uint32_t>(kMaxChainLength + 1));
+        state.set_max_messages_per_chain(static_cast<uint32_t>(kMaxMessagesPerChain + 1));
 
         auto result = Session::FromState(state);
         REQUIRE(result.IsErr());
@@ -304,83 +304,83 @@ TEST_CASE("State import - Nonce counter limits", "[session][state][nonce]") {
 
     SECTION("Nonce counter at maximum is rejected") {
         auto state = CreateValidProtocolState();
-        state.mutable_nonce_state()->set_counter(kMaxNonceCounter + 1);
+        state.mutable_nonce_generator()->set_counter(kMaxNonceCounter + 1);
 
         auto result = Session::FromState(state);
         REQUIRE(result.IsErr());
     }
 }
 
-TEST_CASE("State import - Cached message key invariants", "[session][state][cachedkeys]") {
+TEST_CASE("State import - Skipped message key invariants", "[session][state][skippedkeys]") {
     REQUIRE(SodiumInterop::Initialize().IsOk());
     REQUIRE(KyberInterop::Initialize().IsOk());
 
     // Note: These tests verify that invalid state configurations are rejected.
-    // Since MAC verification happens before detailed validation, we verify
-    // that any malformed state is rejected (either by MAC or validation).
+    // Since HMAC verification happens before detailed validation, we verify
+    // that any malformed state is rejected (either by HMAC or validation).
 
-    SECTION("Sending chain with cached keys causes rejection") {
+    SECTION("Send chain with skipped keys causes rejection") {
         auto state = CreateValidProtocolState();
 
-        auto* cached = state.mutable_sending_chain()->add_cached_message_keys();
-        cached->set_index(0);
+        auto* cached = state.mutable_send_chain()->add_skipped_message_keys();
+        cached->set_message_index(0);
         std::vector<uint8_t> key(kMessageKeyBytes, 0xAA);
-        cached->set_key_material(key.data(), key.size());
+        cached->set_message_key(key.data(), key.size());
 
         auto result = Session::FromState(state);
         REQUIRE(result.IsErr());
     }
 
-    SECTION("Too many cached message keys causes rejection") {
+    SECTION("Too many skipped message keys causes rejection") {
         auto state = CreateValidProtocolState();
-        state.mutable_receiving_chain()->set_index(kMaxSkippedMessageKeys + 10);
+        state.mutable_recv_chain()->set_message_index(kMaxSkippedMessageKeys + 10);
 
         for (size_t i = 0; i < kMaxSkippedMessageKeys + 5; ++i) {
-            auto* cached = state.mutable_receiving_chain()->add_cached_message_keys();
-            cached->set_index(i);
+            auto* cached = state.mutable_recv_chain()->add_skipped_message_keys();
+            cached->set_message_index(i);
             std::vector<uint8_t> key(kMessageKeyBytes, static_cast<uint8_t>(i & 0xFF));
-            cached->set_key_material(key.data(), key.size());
+            cached->set_message_key(key.data(), key.size());
         }
 
         auto result = Session::FromState(state);
         REQUIRE(result.IsErr());
     }
 
-    SECTION("Invalid cached message key size causes rejection") {
+    SECTION("Invalid skipped message key size causes rejection") {
         auto state = CreateValidProtocolState();
-        state.mutable_receiving_chain()->set_index(10);
+        state.mutable_recv_chain()->set_message_index(10);
 
-        auto* cached = state.mutable_receiving_chain()->add_cached_message_keys();
-        cached->set_index(5);
+        auto* cached = state.mutable_recv_chain()->add_skipped_message_keys();
+        cached->set_message_index(5);
         std::vector<uint8_t> short_key(16, 0xBB);
-        cached->set_key_material(short_key.data(), short_key.size());
+        cached->set_message_key(short_key.data(), short_key.size());
 
         auto result = Session::FromState(state);
         REQUIRE(result.IsErr());
     }
 
-    SECTION("Cached key index >= receiving chain index causes rejection") {
+    SECTION("Skipped key index >= receiving chain index causes rejection") {
         auto state = CreateValidProtocolState();
-        state.mutable_receiving_chain()->set_index(10);
+        state.mutable_recv_chain()->set_message_index(10);
 
-        auto* cached = state.mutable_receiving_chain()->add_cached_message_keys();
-        cached->set_index(15);
+        auto* cached = state.mutable_recv_chain()->add_skipped_message_keys();
+        cached->set_message_index(15);
         std::vector<uint8_t> key(kMessageKeyBytes, 0xCC);
-        cached->set_key_material(key.data(), key.size());
+        cached->set_message_key(key.data(), key.size());
 
         auto result = Session::FromState(state);
         REQUIRE(result.IsErr());
     }
 
-    SECTION("Duplicate cached message key indices cause rejection") {
+    SECTION("Duplicate skipped message key indices cause rejection") {
         auto state = CreateValidProtocolState();
-        state.mutable_receiving_chain()->set_index(20);
+        state.mutable_recv_chain()->set_message_index(20);
 
         for (int i = 0; i < 2; ++i) {
-            auto* cached = state.mutable_receiving_chain()->add_cached_message_keys();
-            cached->set_index(5);
+            auto* cached = state.mutable_recv_chain()->add_skipped_message_keys();
+            cached->set_message_index(5);
             std::vector<uint8_t> key(kMessageKeyBytes, static_cast<uint8_t>(i));
-            cached->set_key_material(key.data(), key.size());
+            cached->set_message_key(key.data(), key.size());
         }
 
         auto result = Session::FromState(state);
@@ -389,12 +389,12 @@ TEST_CASE("State import - Cached message key invariants", "[session][state][cach
 
     SECTION("Cached key index exceeding maximum causes rejection") {
         auto state = CreateValidProtocolState();
-        state.mutable_receiving_chain()->set_index(kMaxMessageIndex);
+        state.mutable_recv_chain()->set_message_index(kMaxMessageIndex);
 
-        auto* cached = state.mutable_receiving_chain()->add_cached_message_keys();
-        cached->set_index(kMaxMessageIndex + 1);
+        auto* cached = state.mutable_recv_chain()->add_skipped_message_keys();
+        cached->set_message_index(kMaxMessageIndex + 1);
         std::vector<uint8_t> key(kMessageKeyBytes, 0xDD);
-        cached->set_key_material(key.data(), key.size());
+        cached->set_message_key(key.data(), key.size());
 
         auto result = Session::FromState(state);
         REQUIRE(result.IsErr());
@@ -408,7 +408,7 @@ TEST_CASE("State import - DH public key validation", "[session][state][dhvalidat
     SECTION("All-zeros DH peer public key is rejected") {
         auto state = CreateValidProtocolState();
         std::vector<uint8_t> zero_key(kX25519PublicKeyBytes, 0x00);
-        state.set_dh_peer_public(zero_key.data(), zero_key.size());
+        state.set_dh_remote_public(zero_key.data(), zero_key.size());
 
         auto result = Session::FromState(state);
         REQUIRE(result.IsErr());
@@ -423,7 +423,7 @@ TEST_CASE("State import - DH public key validation", "[session][state][dhvalidat
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01
         };
-        state.set_dh_peer_public(small_order_point.data(), small_order_point.size());
+        state.set_dh_remote_public(small_order_point.data(), small_order_point.size());
 
         auto result = Session::FromState(state);
         REQUIRE(result.IsErr());
@@ -432,7 +432,7 @@ TEST_CASE("State import - DH public key validation", "[session][state][dhvalidat
     SECTION("All-zeros initial DH public key is rejected") {
         auto state = CreateValidProtocolState();
         std::vector<uint8_t> zero_key(kX25519PublicKeyBytes, 0x00);
-        state.set_dh_initial_peer_public(zero_key.data(), zero_key.size());
+        state.set_dh_remote_initial_public(zero_key.data(), zero_key.size());
 
         auto result = Session::FromState(state);
         REQUIRE(result.IsErr());
@@ -446,7 +446,7 @@ TEST_CASE("State import - Kyber key validation", "[session][state][kybervalidati
     SECTION("All-zeros Kyber public key is rejected") {
         auto state = CreateValidProtocolState();
         std::vector<uint8_t> zero_key(kKyberPublicKeyBytes, 0x00);
-        state.mutable_kyber_self()->set_public_key(zero_key.data(), zero_key.size());
+        state.mutable_kyber_local()->set_public_key(zero_key.data(), zero_key.size());
 
         auto result = Session::FromState(state);
         REQUIRE(result.IsErr());
@@ -455,7 +455,7 @@ TEST_CASE("State import - Kyber key validation", "[session][state][kybervalidati
     SECTION("All-zeros peer Kyber public key is rejected") {
         auto state = CreateValidProtocolState();
         std::vector<uint8_t> zero_key(kKyberPublicKeyBytes, 0x00);
-        state.set_peer_kyber_public_key(zero_key.data(), zero_key.size());
+        state.set_kyber_remote_public(zero_key.data(), zero_key.size());
 
         auto result = Session::FromState(state);
         REQUIRE(result.IsErr());

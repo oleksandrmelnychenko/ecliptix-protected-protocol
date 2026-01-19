@@ -98,7 +98,7 @@ TEST_CASE("ProtocolConnection - SetPeerBundle", "[connection]") {
         auto get_result = conn->GetPeerBundle();
         REQUIRE(get_result.IsOk());
         auto retrieved = get_result.Unwrap();
-        REQUIRE(retrieved.GetEd25519Public() == ed25519_pub);
+        REQUIRE(retrieved.GetIdentityEd25519Public() == ed25519_pub);
     }
     SECTION("Cannot set peer bundle after finalization") {
         auto conn = CreatePreparedConnection(1, true);
@@ -667,7 +667,7 @@ TEST_CASE("ProtocolConnection - Sprint 1.5B: MAX_CHAIN_LENGTH Enforcement", "[co
         auto finalize_result = conn->FinalizeChainAndDhKeys(root_key, peer_pk);
         REQUIRE(finalize_result.IsOk());
         bool chain_length_error_detected = false;
-        for (uint32_t i = 0; i < kMaxChainLength + 100; ++i) {
+        for (uint32_t i = 0; i < kMaxMessagesPerChain + 100; ++i) {
             auto msg_result = conn->PrepareNextSendMessage();
             if (msg_result.IsErr()) {
                 auto err = std::move(msg_result).UnwrapErr();

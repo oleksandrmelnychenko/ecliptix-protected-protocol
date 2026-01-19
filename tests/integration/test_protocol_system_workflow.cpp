@@ -17,10 +17,10 @@ using ecliptix::proto::protocol::PublicKeyBundle;
 namespace {
     PublicKeyBundle ToProtoBundle(const LocalPublicKeyBundle& bundle) {
         PublicKeyBundle proto_bundle;
-        proto_bundle.set_identity_public_key(bundle.GetEd25519Public().data(),
-                                             bundle.GetEd25519Public().size());
-        proto_bundle.set_identity_x25519_public_key(bundle.GetIdentityX25519().data(),
-                                                    bundle.GetIdentityX25519().size());
+        proto_bundle.set_identity_public_key(bundle.GetIdentityEd25519Public().data(),
+                                             bundle.GetIdentityEd25519Public().size());
+        proto_bundle.set_identity_x25519_public_key(bundle.GetIdentityX25519Public().data(),
+                                                    bundle.GetIdentityX25519Public().size());
         proto_bundle.set_signed_pre_key_id(bundle.GetSignedPreKeyId());
         proto_bundle.set_signed_pre_key_public_key(bundle.GetSignedPreKeyPublic().data(),
                                                    bundle.GetSignedPreKeyPublic().size());
@@ -28,16 +28,16 @@ namespace {
                                                   bundle.GetSignedPreKeySignature().size());
         for (const auto& otp : bundle.GetOneTimePreKeys()) {
             auto* otp_proto = proto_bundle.add_one_time_pre_keys();
-            otp_proto->set_pre_key_id(otp.GetPreKeyId());
+            otp_proto->set_pre_key_id(otp.GetOneTimePreKeyId());
             otp_proto->set_public_key(otp.GetPublicKey().data(), otp.GetPublicKey().size());
         }
-        if (bundle.HasEphemeralKey()) {
+        if (bundle.HasEphemeralX25519Public()) {
             proto_bundle.set_ephemeral_x25519_public_key(bundle.GetEphemeralX25519Public()->data(),
                                                          bundle.GetEphemeralX25519Public()->size());
         }
-        if (bundle.HasKyberKey()) {
-            proto_bundle.set_kyber_public_key(bundle.GetKyberPublicKey()->data(),
-                                              bundle.GetKyberPublicKey()->size());
+        if (bundle.HasKyberPublic()) {
+            proto_bundle.set_kyber_public_key(bundle.GetKyberPublic()->data(),
+                                              bundle.GetKyberPublic()->size());
         }
         if (bundle.HasKyberCiphertext()) {
             proto_bundle.set_kyber_ciphertext(bundle.GetKyberCiphertext()->data(),
@@ -107,7 +107,7 @@ namespace {
                 kX3dhInfo.begin(),
                 kX3dhInfo.end());
 
-            auto alice_ek_public = alice->GetIdentityKeys().GetEphemeralX25519PublicKeyCopy();
+            auto alice_ek_public = alice->GetIdentityKeys().GetEphemeralX25519PublicCopy();
             if (!alice_ek_public.has_value()) {
                 return Result<Unit, ProtocolFailure>::Err(
                     ProtocolFailure::Generic("Alice ephemeral key not available"));

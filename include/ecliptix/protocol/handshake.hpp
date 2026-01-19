@@ -18,7 +18,7 @@ public:
     [[nodiscard]] static Result<std::unique_ptr<HandshakeInitiator>, ProtocolFailure> Start(
         identity::IdentityKeys& identity_keys,
         const ecliptix::proto::protocol::PreKeyBundle& peer_bundle,
-        uint32_t max_messages_per_ratchet);
+        uint32_t max_messages_per_chain);
 
     [[nodiscard]] const ecliptix::proto::protocol::HandshakeInit& Message() const;
     [[nodiscard]] const std::vector<uint8_t>& EncodedMessage() const;
@@ -47,7 +47,7 @@ public:
         identity::IdentityKeys& identity_keys,
         const ecliptix::proto::protocol::PreKeyBundle& local_bundle,
         std::span<const uint8_t> init_message_bytes,
-        uint32_t max_messages_per_ratchet);
+        uint32_t max_messages_per_chain);
 
     [[nodiscard]] const ecliptix::proto::protocol::HandshakeAck& Ack() const;
     [[nodiscard]] const std::vector<uint8_t>& EncodedAck() const;

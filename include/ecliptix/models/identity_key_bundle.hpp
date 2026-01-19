@@ -12,7 +12,7 @@ struct IdentityKeyBundle {
     SignedPreKeyPair signed_pre_key;
     std::vector<OneTimePreKey> one_time_pre_keys;
     crypto::SecureMemoryHandle kyber_secret_key;
-    std::vector<uint8_t> kyber_public_key;
+    std::vector<uint8_t> kyber_public;
     IdentityKeyBundle(
         Ed25519KeyPair ed25519_key,
         X25519KeyPair identity_x25519_key,
@@ -25,7 +25,7 @@ struct IdentityKeyBundle {
         , signed_pre_key(std::move(signed_pre_key_material))
         , one_time_pre_keys(std::move(one_time_keys))
         , kyber_secret_key(std::move(kyber_secret))
-        , kyber_public_key(std::move(kyber_public)) {
+        , kyber_public(std::move(kyber_public)) {
     }
     IdentityKeyBundle(IdentityKeyBundle&&) noexcept = default;
     IdentityKeyBundle& operator=(IdentityKeyBundle&&) noexcept = default;

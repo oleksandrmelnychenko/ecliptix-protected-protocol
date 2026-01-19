@@ -27,7 +27,7 @@ TEST_CASE("Metadata key agreement - correct DH key selection", "[metadata][x3dh]
     client_identity.GenerateEphemeralKeyPair();
     server_identity.GenerateEphemeralKeyPair();
 
-    auto client_ek = client_identity.GetEphemeralX25519PublicKeyCopy();
+    auto client_ek = client_identity.GetEphemeralX25519PublicCopy();
     REQUIRE(client_ek.has_value());
     REQUIRE(client_ek->size() == kX25519PublicKeyBytes);
 
@@ -59,32 +59,32 @@ TEST_CASE("Metadata key agreement - correct DH key selection", "[metadata][x3dh]
     randombytes_buf(kyber_shared_secret.data(), kyber_shared_secret.size());
 
     ecliptix::proto::protocol::PublicKeyBundle client_proto_bundle;
-    client_proto_bundle.set_identity_public_key(client_bundle.GetEd25519Public().data(), client_bundle.GetEd25519Public().size());
-    client_proto_bundle.set_identity_x25519_public_key(client_bundle.GetIdentityX25519().data(), client_bundle.GetIdentityX25519().size());
+    client_proto_bundle.set_identity_public_key(client_bundle.GetIdentityEd25519Public().data(), client_bundle.GetIdentityEd25519Public().size());
+    client_proto_bundle.set_identity_x25519_public_key(client_bundle.GetIdentityX25519Public().data(), client_bundle.GetIdentityX25519Public().size());
     client_proto_bundle.set_signed_pre_key_id(client_bundle.GetSignedPreKeyId());
     client_proto_bundle.set_signed_pre_key_public_key(client_bundle.GetSignedPreKeyPublic().data(), client_bundle.GetSignedPreKeyPublic().size());
     client_proto_bundle.set_signed_pre_key_signature(client_bundle.GetSignedPreKeySignature().data(), client_bundle.GetSignedPreKeySignature().size());
-    if (client_bundle.HasEphemeralKey()) {
+    if (client_bundle.HasEphemeralX25519Public()) {
         const auto& eph = client_bundle.GetEphemeralX25519Public();
         client_proto_bundle.set_ephemeral_x25519_public_key(eph->data(), eph->size());
     }
-    if (client_bundle.HasKyberKey()) {
-        const auto& kyber = client_bundle.GetKyberPublicKey();
+    if (client_bundle.HasKyberPublic()) {
+        const auto& kyber = client_bundle.GetKyberPublic();
         client_proto_bundle.set_kyber_public_key(kyber->data(), kyber->size());
     }
 
     ecliptix::proto::protocol::PublicKeyBundle server_proto_bundle;
-    server_proto_bundle.set_identity_public_key(server_bundle.GetEd25519Public().data(), server_bundle.GetEd25519Public().size());
-    server_proto_bundle.set_identity_x25519_public_key(server_bundle.GetIdentityX25519().data(), server_bundle.GetIdentityX25519().size());
+    server_proto_bundle.set_identity_public_key(server_bundle.GetIdentityEd25519Public().data(), server_bundle.GetIdentityEd25519Public().size());
+    server_proto_bundle.set_identity_x25519_public_key(server_bundle.GetIdentityX25519Public().data(), server_bundle.GetIdentityX25519Public().size());
     server_proto_bundle.set_signed_pre_key_id(server_bundle.GetSignedPreKeyId());
     server_proto_bundle.set_signed_pre_key_public_key(server_bundle.GetSignedPreKeyPublic().data(), server_bundle.GetSignedPreKeyPublic().size());
     server_proto_bundle.set_signed_pre_key_signature(server_bundle.GetSignedPreKeySignature().data(), server_bundle.GetSignedPreKeySignature().size());
-    if (server_bundle.HasEphemeralKey()) {
+    if (server_bundle.HasEphemeralX25519Public()) {
         const auto& eph = server_bundle.GetEphemeralX25519Public();
         server_proto_bundle.set_ephemeral_x25519_public_key(eph->data(), eph->size());
     }
-    if (server_bundle.HasKyberKey()) {
-        const auto& kyber = server_bundle.GetKyberPublicKey();
+    if (server_bundle.HasKyberPublic()) {
+        const auto& kyber = server_bundle.GetKyberPublic();
         server_proto_bundle.set_kyber_public_key(kyber->data(), kyber->size());
     }
 
@@ -254,17 +254,17 @@ TEST_CASE("Metadata key canonical ordering", "[metadata][ordering]") {
     auto bundle = std::move(bundle_result).Unwrap();
 
     ecliptix::proto::protocol::PublicKeyBundle proto_bundle;
-    proto_bundle.set_identity_public_key(bundle.GetEd25519Public().data(), bundle.GetEd25519Public().size());
-    proto_bundle.set_identity_x25519_public_key(bundle.GetIdentityX25519().data(), bundle.GetIdentityX25519().size());
+    proto_bundle.set_identity_public_key(bundle.GetIdentityEd25519Public().data(), bundle.GetIdentityEd25519Public().size());
+    proto_bundle.set_identity_x25519_public_key(bundle.GetIdentityX25519Public().data(), bundle.GetIdentityX25519Public().size());
     proto_bundle.set_signed_pre_key_id(bundle.GetSignedPreKeyId());
     proto_bundle.set_signed_pre_key_public_key(bundle.GetSignedPreKeyPublic().data(), bundle.GetSignedPreKeyPublic().size());
     proto_bundle.set_signed_pre_key_signature(bundle.GetSignedPreKeySignature().data(), bundle.GetSignedPreKeySignature().size());
-    if (bundle.HasEphemeralKey()) {
+    if (bundle.HasEphemeralX25519Public()) {
         const auto& eph = bundle.GetEphemeralX25519Public();
         proto_bundle.set_ephemeral_x25519_public_key(eph->data(), eph->size());
     }
-    if (bundle.HasKyberKey()) {
-        const auto& kyber = bundle.GetKyberPublicKey();
+    if (bundle.HasKyberPublic()) {
+        const auto& kyber = bundle.GetKyberPublic();
         proto_bundle.set_kyber_public_key(kyber->data(), kyber->size());
     }
 

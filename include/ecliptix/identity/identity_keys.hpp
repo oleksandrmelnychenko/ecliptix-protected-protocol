@@ -34,12 +34,12 @@ public:
         std::span<const uint8_t> master_key,
         std::string_view membership_id,
         uint32_t one_time_key_count);
-    [[nodiscard]] std::vector<uint8_t> GetIdentityX25519PublicKeyCopy() const;
-    [[nodiscard]] std::vector<uint8_t> GetIdentityEd25519PublicKeyCopy() const;
-    [[nodiscard]] std::vector<uint8_t> GetKyberPublicKeyCopy() const;
+    [[nodiscard]] std::vector<uint8_t> GetIdentityX25519PublicCopy() const;
+    [[nodiscard]] std::vector<uint8_t> GetIdentityEd25519PublicCopy() const;
+    [[nodiscard]] std::vector<uint8_t> GetKyberPublicCopy() const;
     [[nodiscard]] Result<std::vector<uint8_t>, ProtocolFailure> GetIdentityX25519PrivateKeyCopy() const;
     [[nodiscard]] Result<SecureMemoryHandle, ProtocolFailure> CloneKyberSecretKey() const;
-    [[nodiscard]] std::optional<std::vector<uint8_t>> GetEphemeralX25519PublicKeyCopy() const;
+    [[nodiscard]] std::optional<std::vector<uint8_t>> GetEphemeralX25519PublicCopy() const;
     [[nodiscard]] std::vector<uint8_t> GetSignedPreKeyPublicCopy() const;
     [[nodiscard]] Result<std::vector<uint8_t>, ProtocolFailure> GetEphemeralX25519PrivateKeyCopy() const;
     [[nodiscard]] Result<std::vector<uint8_t>, ProtocolFailure> GetSignedPreKeyPrivateCopy() const;
@@ -60,11 +60,11 @@ public:
         std::span<const uint8_t> remote_identity_ed25519,
         std::span<const uint8_t> remote_spk_public,
         std::span<const uint8_t> remote_spk_signature);
-    [[nodiscard]] const OneTimePreKey* FindOneTimePreKeyById(uint32_t opk_id) const;
-    [[nodiscard]] Result<Unit, ProtocolFailure> ConsumeOneTimePreKeyById(uint32_t opk_id);
-    [[nodiscard]] std::optional<uint32_t> GetSelectedOpkId() const;
-    void SetSelectedOpkId(uint32_t opk_id);
-    void ClearSelectedOpkId();
+    [[nodiscard]] const OneTimePreKey* FindOneTimePreKeyById(uint32_t one_time_pre_key_id) const;
+    [[nodiscard]] Result<Unit, ProtocolFailure> ConsumeOneTimePreKeyById(uint32_t one_time_pre_key_id);
+    [[nodiscard]] std::optional<uint32_t> GetSelectedOneTimePreKeyId() const;
+    void SetSelectedOneTimePreKeyId(uint32_t one_time_pre_key_id);
+    void ClearSelectedOneTimePreKeyId();
     void ClearEphemeralKeyPair();
     IdentityKeys(IdentityKeys&&) noexcept = default;
     IdentityKeys& operator=(IdentityKeys&&) noexcept = default;
@@ -94,32 +94,32 @@ private:
         std::span<const uint8_t> ephemeral_secret,
         std::span<const uint8_t> identity_secret,
         const LocalPublicKeyBundle& remote_bundle,
-        std::optional<uint32_t> opk_id,
+        std::optional<uint32_t> one_time_pre_key_id,
         std::span<uint8_t> dh_results_output);
     [[nodiscard]] Result<size_t, ProtocolFailure> PerformX3dhDiffieHellmanAsResponder(
         const LocalPublicKeyBundle& remote_bundle,
-        std::optional<uint32_t> used_opk_id,
+        std::optional<uint32_t> used_one_time_pre_key_id,
         std::span<uint8_t> dh_results_output);
-    [[nodiscard]] const OneTimePreKey* FindOneTimePreKeyByIdLocked(uint32_t opk_id) const;
-    [[nodiscard]] Result<Unit, ProtocolFailure> ConsumeOneTimePreKeyByIdLocked(uint32_t opk_id);
+    [[nodiscard]] const OneTimePreKey* FindOneTimePreKeyByIdLocked(uint32_t one_time_pre_key_id) const;
+    [[nodiscard]] Result<Unit, ProtocolFailure> ConsumeOneTimePreKeyByIdLocked(uint32_t one_time_pre_key_id);
     [[nodiscard]] Result<HybridHandshakeArtifacts, ProtocolFailure> DecapsulateKyberCiphertextLocked(
         std::span<const uint8_t> ciphertext) const;
     void ClearEphemeralKeyPairLocked();
-    SecureMemoryHandle ed25519_secret_key_handle_;
-    std::vector<uint8_t> ed25519_public_key_;
+    SecureMemoryHandle identity_ed25519_secret_key_handle_;
+    std::vector<uint8_t> identity_ed25519_public_;
     SecureMemoryHandle identity_x25519_secret_key_handle_;
-    std::vector<uint8_t> identity_x25519_public_key_;
+    std::vector<uint8_t> identity_x25519_public_;
     uint32_t signed_pre_key_id_;
     SecureMemoryHandle signed_pre_key_secret_key_handle_;
     std::vector<uint8_t> signed_pre_key_public_;
     std::vector<uint8_t> signed_pre_key_signature_;
     std::vector<OneTimePreKey> one_time_pre_keys_;
     SecureMemoryHandle kyber_secret_key_handle_;
-    std::vector<uint8_t> kyber_public_key_;
+    std::vector<uint8_t> kyber_public_;
     std::optional<HybridHandshakeArtifacts> pending_kyber_handshake_;
     std::optional<SecureMemoryHandle> ephemeral_secret_key_handle_;
-    std::optional<std::vector<uint8_t>> ephemeral_x25519_public_key_;
-    std::optional<uint32_t> selected_opk_id_;
+    std::optional<std::vector<uint8_t>> ephemeral_x25519_public_;
+    std::optional<uint32_t> selected_one_time_pre_key_id_;
     mutable std::unique_ptr<std::shared_mutex> lock_;
 };
 } 

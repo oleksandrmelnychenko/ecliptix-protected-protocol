@@ -35,9 +35,9 @@ inline constexpr size_t kNonceCounterBytes = 4;
 inline constexpr size_t kNonceIndexBytes = 4;
 inline constexpr uint64_t kMaxNonceCounter = 0xFFFFFFFFull;
 inline constexpr uint64_t kMaxMessageIndex = 0xFFFFFFFFull;
-inline constexpr uint64_t kMessagesPerRatchet = 1000;
+inline constexpr uint64_t kDefaultMessagesPerChain = 1000;
 inline constexpr size_t kMaxSkippedMessageKeys = 1000;
-inline constexpr size_t kMaxChainLength = 10000;
+inline constexpr size_t kMaxMessagesPerChain = 10000;
 
 inline constexpr size_t kOpaqueSessionKeyBytes = 32;
 
@@ -54,7 +54,7 @@ inline constexpr std::string_view kMessageInfo = "Ecliptix-Msg";
 inline constexpr std::string_view kSessionIdInfo = "Ecliptix-SessionId";
 inline constexpr std::string_view kMetadataKeyInfo = "Ecliptix-MetadataKey";
 inline constexpr std::string_view kOpaqueRootInfo = "Ecliptix-OPAQUE-Root";
-inline constexpr std::string_view kStateMacInfo = "Ecliptix-State-MAC";
+inline constexpr std::string_view kStateHmacInfo = "Ecliptix-State-HMAC";
 inline constexpr std::string_view kKeyConfirmInitInfo = "Ecliptix-KeyConfirm-I";
 inline constexpr std::string_view kKeyConfirmRespInfo = "Ecliptix-KeyConfirm-R";
 inline constexpr std::string_view kTranscriptLabel = "Ecliptix-Handshake-Transcript";

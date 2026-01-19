@@ -143,9 +143,9 @@ bool validate_session_config(const EppSessionConfig* config, EppError* out_error
         fill_error(out_error, EPP_ERROR_NULL_POINTER, "Session config is null");
         return false;
     }
-    if (config->max_messages_per_ratchet == 0 ||
-        config->max_messages_per_ratchet > kMaxChainLength) {
-        fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Invalid max messages per ratchet");
+    if (config->max_messages_per_chain == 0 ||
+        config->max_messages_per_chain > kMaxMessagesPerChain) {
+        fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Invalid max messages per chain");
         return false;
     }
     return true;
@@ -351,7 +351,7 @@ EppErrorCode epp_identity_get_x25519_public(
         return EPP_ERROR_BUFFER_TOO_SMALL;
     }
 
-    const auto& key = handle->identity_keys->GetIdentityX25519PublicKeyCopy();
+    const auto& key = handle->identity_keys->GetIdentityX25519PublicCopy();
     std::memcpy(out_key, key.data(), key.size());
 
     return EPP_SUCCESS;
@@ -377,7 +377,7 @@ EppErrorCode epp_identity_get_ed25519_public(
         return EPP_ERROR_BUFFER_TOO_SMALL;
     }
 
-    const auto& key = handle->identity_keys->GetIdentityEd25519PublicKeyCopy();
+    const auto& key = handle->identity_keys->GetIdentityEd25519PublicCopy();
     std::memcpy(out_key, key.data(), key.size());
 
     return EPP_SUCCESS;
@@ -403,7 +403,7 @@ EppErrorCode epp_identity_get_kyber_public(
         return EPP_ERROR_BUFFER_TOO_SMALL;
     }
 
-    const auto& key = handle->identity_keys->GetKyberPublicKeyCopy();
+    const auto& key = handle->identity_keys->GetKyberPublicCopy();
     std::memcpy(out_key, key.data(), key.size());
 
     return EPP_SUCCESS;
@@ -439,19 +439,19 @@ EppErrorCode epp_prekey_bundle_create(
     }
     const auto& bundle = bundle_result.Unwrap();
 
-    if (bundle.GetEd25519Public().size() != kEd25519PublicKeyBytes ||
-        bundle.GetIdentityX25519().size() != kX25519PublicKeyBytes ||
+    if (bundle.GetIdentityEd25519Public().size() != kEd25519PublicKeyBytes ||
+        bundle.GetIdentityX25519Public().size() != kX25519PublicKeyBytes ||
         bundle.GetSignedPreKeyPublic().size() != kX25519PublicKeyBytes ||
         bundle.GetSignedPreKeySignature().size() != kEd25519SignatureBytes) {
         fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Invalid local identity key sizes for bundle");
         return EPP_ERROR_INVALID_INPUT;
     }
 
-    if (!bundle.HasKyberKey()) {
+    if (!bundle.HasKyberPublic()) {
         fill_error(out_error, EPP_ERROR_PQ_MISSING, "Kyber public key required for bundle");
         return EPP_ERROR_PQ_MISSING;
     }
-    const auto& kyber_public = bundle.GetKyberPublicKey();
+    const auto& kyber_public = bundle.GetKyberPublic();
     if (!kyber_public.has_value() || kyber_public->size() != kKyberPublicKeyBytes) {
         fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Invalid Kyber public key size for bundle");
         return EPP_ERROR_INVALID_INPUT;
@@ -459,12 +459,12 @@ EppErrorCode epp_prekey_bundle_create(
 
     ecliptix::proto::protocol::PreKeyBundle proto_bundle;
     proto_bundle.set_version(kProtocolVersion);
-    proto_bundle.set_identity_ed25519(
-        bundle.GetEd25519Public().data(),
-        bundle.GetEd25519Public().size());
-    proto_bundle.set_identity_x25519(
-        bundle.GetIdentityX25519().data(),
-        bundle.GetIdentityX25519().size());
+    proto_bundle.set_identity_ed25519_public(
+        bundle.GetIdentityEd25519Public().data(),
+        bundle.GetIdentityEd25519Public().size());
+    proto_bundle.set_identity_x25519_public(
+        bundle.GetIdentityX25519Public().data(),
+        bundle.GetIdentityX25519Public().size());
     proto_bundle.set_signed_pre_key_id(bundle.GetSignedPreKeyId());
     proto_bundle.set_signed_pre_key_public(
         bundle.GetSignedPreKeyPublic().data(),
@@ -474,11 +474,11 @@ EppErrorCode epp_prekey_bundle_create(
         bundle.GetSignedPreKeySignature().size());
     for (const auto& opk : bundle.GetOneTimePreKeys()) {
         auto* opk_proto = proto_bundle.add_one_time_pre_keys();
-        opk_proto->set_pre_key_id(opk.GetPreKeyId());
+        opk_proto->set_one_time_pre_key_id(opk.GetOneTimePreKeyId());
         const auto& opk_pub = opk.GetPublicKey();
         opk_proto->set_public_key(opk_pub.data(), opk_pub.size());
     }
-    proto_bundle.set_kyber_public_key(kyber_public->data(), kyber_public->size());
+    proto_bundle.set_kyber_public(kyber_public->data(), kyber_public->size());
 
     std::string serialized;
     if (!proto_bundle.SerializeToString(&serialized)) {
@@ -526,11 +526,11 @@ EppErrorCode epp_handshake_initiator_start(
         fill_error(out_error, EPP_ERROR_DECODE, "Failed to parse peer PreKeyBundle");
         return EPP_ERROR_DECODE;
     }
-    if (peer_bundle.kyber_public_key().empty()) {
+    if (peer_bundle.kyber_public().empty()) {
         fill_error(out_error, EPP_ERROR_PQ_MISSING, "Peer bundle missing Kyber public key");
         return EPP_ERROR_PQ_MISSING;
     }
-    if (peer_bundle.kyber_public_key().size() != kKyberPublicKeyBytes) {
+    if (peer_bundle.kyber_public().size() != kKyberPublicKeyBytes) {
         fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Invalid peer Kyber public key size");
         return EPP_ERROR_INVALID_INPUT;
     }
@@ -538,7 +538,7 @@ EppErrorCode epp_handshake_initiator_start(
     auto handshake_result = ecliptix::protocol::HandshakeInitiator::Start(
         *identity_keys->identity_keys,
         peer_bundle,
-        config->max_messages_per_ratchet);
+        config->max_messages_per_chain);
     if (handshake_result.IsErr()) {
         return fill_error_from_failure(out_error, handshake_result.UnwrapErr());
     }
@@ -639,11 +639,11 @@ EppErrorCode epp_handshake_responder_start(
         fill_error(out_error, EPP_ERROR_DECODE, "Failed to parse local PreKeyBundle");
         return EPP_ERROR_DECODE;
     }
-    if (local_bundle.kyber_public_key().empty()) {
+    if (local_bundle.kyber_public().empty()) {
         fill_error(out_error, EPP_ERROR_PQ_MISSING, "Local bundle missing Kyber public key");
         return EPP_ERROR_PQ_MISSING;
     }
-    if (local_bundle.kyber_public_key().size() != kKyberPublicKeyBytes) {
+    if (local_bundle.kyber_public().size() != kKyberPublicKeyBytes) {
         fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Invalid local Kyber public key size");
         return EPP_ERROR_INVALID_INPUT;
     }
@@ -652,7 +652,7 @@ EppErrorCode epp_handshake_responder_start(
         *identity_keys->identity_keys,
         local_bundle,
         std::span(handshake_init, handshake_init_length),
-        config->max_messages_per_ratchet);
+        config->max_messages_per_chain);
     if (handshake_result.IsErr()) {
         return fill_error_from_failure(out_error, handshake_result.UnwrapErr());
     }

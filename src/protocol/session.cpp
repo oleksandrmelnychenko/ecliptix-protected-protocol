@@ -175,24 +175,24 @@ namespace ecliptix::protocol {
 
         Result<NonceGenerator, ProtocolFailure> LoadNonceGenerator(
             const ecliptix::proto::protocol::ProtocolState& state) {
-            if (state.nonce_state().prefix().size() != kNoncePrefixBytes) {
+            if (state.nonce_generator().prefix().size() != kNoncePrefixBytes) {
                 return Result<NonceGenerator, ProtocolFailure>::Err(
                     ProtocolFailure::InvalidInput("Invalid nonce prefix size"));
             }
-            NonceGenerator::State nonce_state;
-            std::copy(state.nonce_state().prefix().begin(),
-                      state.nonce_state().prefix().end(),
-                      nonce_state.prefix.begin());
-            nonce_state.counter = state.nonce_state().counter();
-            return NonceGenerator::FromState(nonce_state);
+            NonceGenerator::State nonce_generator;
+            std::copy(state.nonce_generator().prefix().begin(),
+                      state.nonce_generator().prefix().end(),
+                      nonce_generator.prefix.begin());
+            nonce_generator.counter = state.nonce_generator().counter();
+            return NonceGenerator::FromState(nonce_generator);
         }
 
         void StoreNonceState(
             ecliptix::proto::protocol::ProtocolState& state,
-            const NonceGenerator::State& nonce_state) {
-            state.mutable_nonce_state()->set_prefix(
-                nonce_state.prefix.data(), nonce_state.prefix.size());
-            state.mutable_nonce_state()->set_counter(nonce_state.counter);
+            const NonceGenerator::State& nonce_generator) {
+            state.mutable_nonce_generator()->set_prefix(
+                nonce_generator.prefix.data(), nonce_generator.prefix.size());
+            state.mutable_nonce_generator()->set_counter(nonce_generator.counter);
         }
 
         void SetTimestampNow(google::protobuf::Timestamp* timestamp) {
@@ -212,7 +212,7 @@ namespace ecliptix::protocol {
         : is_initiator_(state.is_initiator())
         , state_(std::move(state))
         , pending_kyber_shared_secret_(std::move(pending_kyber_shared_secret)) {
-        ResetReplayTracking(state_.receiving_ratchet_epoch());
+        ResetReplayTracking(state_.recv_ratchet_epoch());
     }
 
     void Session::ResetReplayTracking(uint64_t epoch) {
@@ -248,101 +248,101 @@ namespace ecliptix::protocol {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidInput("Invalid session key material sizes"));
         }
-        if (state.dh_self().private_key().size() != kX25519PrivateKeyBytes ||
-            state.dh_self().public_key().size() != kX25519PublicKeyBytes ||
-            state.dh_peer_public().size() != kX25519PublicKeyBytes) {
+        if (state.dh_local().private_key().size() != kX25519PrivateKeyBytes ||
+            state.dh_local().public_key().size() != kX25519PublicKeyBytes ||
+            state.dh_remote_public().size() != kX25519PublicKeyBytes) {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidInput("Invalid DH key sizes in state"));
         }
-        if (state.dh_initial_self_public().size() != kX25519PublicKeyBytes ||
-            state.dh_initial_peer_public().size() != kX25519PublicKeyBytes) {
+        if (state.dh_local_initial_public().size() != kX25519PublicKeyBytes ||
+            state.dh_remote_initial_public().size() != kX25519PublicKeyBytes) {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidInput("Invalid initial DH public key sizes in state"));
         }
-        if (state.kyber_self().secret_key().size() != kKyberSecretKeyBytes ||
-            state.kyber_self().public_key().size() != kKyberPublicKeyBytes ||
-            state.peer_kyber_public_key().size() != kKyberPublicKeyBytes) {
+        if (state.kyber_local().secret_key().size() != kKyberSecretKeyBytes ||
+            state.kyber_local().public_key().size() != kKyberPublicKeyBytes ||
+            state.kyber_remote_public().size() != kKyberPublicKeyBytes) {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidInput("Invalid Kyber key sizes in state"));
         }
-        if (state.sending_chain().chain_key().size() != kChainKeyBytes ||
-            state.receiving_chain().chain_key().size() != kChainKeyBytes) {
+        if (state.send_chain().chain_key().size() != kChainKeyBytes ||
+            state.recv_chain().chain_key().size() != kChainKeyBytes) {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidInput("Invalid chain key sizes in state"));
         }
-        if (state.nonce_state().prefix().size() != kNoncePrefixBytes) {
+        if (state.nonce_generator().prefix().size() != kNoncePrefixBytes) {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidInput("Invalid nonce prefix size in state"));
         }
-        const uint64_t max_messages_per_ratchet = state.max_messages_per_ratchet();
-        if (max_messages_per_ratchet == 0 || max_messages_per_ratchet > kMaxChainLength) {
+        const uint64_t max_messages_per_chain = state.max_messages_per_chain();
+        if (max_messages_per_chain == 0 || max_messages_per_chain > kMaxMessagesPerChain) {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
-                ProtocolFailure::InvalidInput("Invalid max messages per ratchet in state"));
+                ProtocolFailure::InvalidInput("Invalid max messages per chain in state"));
         }
-        if (state.sending_chain().index() > max_messages_per_ratchet ||
-            state.receiving_chain().index() > max_messages_per_ratchet) {
+        if (state.send_chain().message_index() > max_messages_per_chain ||
+            state.recv_chain().message_index() > max_messages_per_chain) {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
-                ProtocolFailure::InvalidInput("Chain index exceeds ratchet message limit"));
+                ProtocolFailure::InvalidInput("Chain index exceeds max messages per chain"));
         }
-        if (state.nonce_state().counter() > kMaxNonceCounter) {
+        if (state.nonce_generator().counter() > kMaxNonceCounter) {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidState("Nonce counter exceeds maximum"));
         }
         if (IsAllZero(std::span(
-            reinterpret_cast<const uint8_t*>(state.dh_self().private_key().data()),
-            state.dh_self().private_key().size()))) {
+            reinterpret_cast<const uint8_t*>(state.dh_local().private_key().data()),
+            state.dh_local().private_key().size()))) {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidInput("DH private key is all zeros"));
         }
         if (IsAllZero(std::span(
-            reinterpret_cast<const uint8_t*>(state.kyber_self().secret_key().data()),
-            state.kyber_self().secret_key().size()))) {
+            reinterpret_cast<const uint8_t*>(state.kyber_local().secret_key().data()),
+            state.kyber_local().secret_key().size()))) {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidInput("Kyber secret key is all zeros"));
         }
 
-        auto dh_self_public = std::span(
-            reinterpret_cast<const uint8_t*>(state.dh_self().public_key().data()),
-            state.dh_self().public_key().size());
-        if (auto dh_check = ValidateDhPublicKey(dh_self_public); dh_check.IsErr()) {
+        auto dh_local_public = std::span(
+            reinterpret_cast<const uint8_t*>(state.dh_local().public_key().data()),
+            state.dh_local().public_key().size());
+        if (auto dh_check = ValidateDhPublicKey(dh_local_public); dh_check.IsErr()) {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(dh_check.UnwrapErr());
         }
-        auto dh_peer_public = std::span(
-            reinterpret_cast<const uint8_t*>(state.dh_peer_public().data()),
-            state.dh_peer_public().size());
-        if (auto dh_check = ValidateDhPublicKey(dh_peer_public); dh_check.IsErr()) {
+        auto dh_remote_public = std::span(
+            reinterpret_cast<const uint8_t*>(state.dh_remote_public().data()),
+            state.dh_remote_public().size());
+        if (auto dh_check = ValidateDhPublicKey(dh_remote_public); dh_check.IsErr()) {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(dh_check.UnwrapErr());
         }
-        auto dh_initial_self_public = std::span(
-            reinterpret_cast<const uint8_t*>(state.dh_initial_self_public().data()),
-            state.dh_initial_self_public().size());
-        if (auto dh_check = ValidateDhPublicKey(dh_initial_self_public); dh_check.IsErr()) {
+        auto dh_local_initial_public = std::span(
+            reinterpret_cast<const uint8_t*>(state.dh_local_initial_public().data()),
+            state.dh_local_initial_public().size());
+        if (auto dh_check = ValidateDhPublicKey(dh_local_initial_public); dh_check.IsErr()) {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(dh_check.UnwrapErr());
         }
-        auto dh_initial_peer_public = std::span(
-            reinterpret_cast<const uint8_t*>(state.dh_initial_peer_public().data()),
-            state.dh_initial_peer_public().size());
-        if (auto dh_check = ValidateDhPublicKey(dh_initial_peer_public); dh_check.IsErr()) {
+        auto dh_remote_initial_public = std::span(
+            reinterpret_cast<const uint8_t*>(state.dh_remote_initial_public().data()),
+            state.dh_remote_initial_public().size());
+        if (auto dh_check = ValidateDhPublicKey(dh_remote_initial_public); dh_check.IsErr()) {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(dh_check.UnwrapErr());
         }
 
         auto kyber_public = std::span(
-            reinterpret_cast<const uint8_t*>(state.kyber_self().public_key().data()),
-            state.kyber_self().public_key().size());
+            reinterpret_cast<const uint8_t*>(state.kyber_local().public_key().data()),
+            state.kyber_local().public_key().size());
         if (auto pq_check = KyberInterop::ValidatePublicKey(kyber_public); pq_check.IsErr()) {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
                 ProtocolFailure::FromSodiumFailure(pq_check.UnwrapErr()));
         }
         auto peer_kyber_public = std::span(
-            reinterpret_cast<const uint8_t*>(state.peer_kyber_public_key().data()),
-            state.peer_kyber_public_key().size());
+            reinterpret_cast<const uint8_t*>(state.kyber_remote_public().data()),
+            state.kyber_remote_public().size());
         if (auto pq_check = KyberInterop::ValidatePublicKey(peer_kyber_public); pq_check.IsErr()) {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
                 ProtocolFailure::FromSodiumFailure(pq_check.UnwrapErr()));
         }
-        if (state.state_mac().size() != kHmacBytes) {
+        if (state.state_hmac().size() != kHmacBytes) {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
-                ProtocolFailure::InvalidInput("Missing or invalid state MAC"));
+                ProtocolFailure::InvalidInput("Missing or invalid state HMAC"));
         }
 
         auto mac_key_result = DeriveKeyBytes(
@@ -350,7 +350,7 @@ namespace ecliptix::protocol {
                       state.root_key().size()),
             kHmacBytes,
             {},
-            kStateMacInfo);
+            kStateHmacInfo);
         if (mac_key_result.IsErr()) {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
                 mac_key_result.UnwrapErr());
@@ -364,7 +364,7 @@ namespace ecliptix::protocol {
         };
 
         auto mac_state = state;
-        mac_state.clear_state_mac();
+        mac_state.clear_state_hmac();
         auto serialized_result = SerializeDeterministic(mac_state);
         if (serialized_result.IsErr()) {
             wipe_bytes(mac_key);
@@ -382,83 +382,83 @@ namespace ecliptix::protocol {
         }
         auto expected_mac = expected_result.Unwrap();
 
-        const bool mac_ok = expected_mac.size() == state.state_mac().size() &&
-            sodium_memcmp(expected_mac.data(), state.state_mac().data(), expected_mac.size()) == 0;
+        const bool mac_ok = expected_mac.size() == state.state_hmac().size() &&
+            sodium_memcmp(expected_mac.data(), state.state_hmac().data(), expected_mac.size()) == 0;
         wipe_bytes(expected_mac);
         wipe_bytes(serialized);
         wipe_bytes(mac_key);
         if (!mac_ok) {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
-                ProtocolFailure::InvalidInput("State MAC verification failed"));
+                ProtocolFailure::InvalidInput("State HMAC verification failed"));
         }
 
-        if (!state.sending_chain().cached_message_keys().empty()) {
+        if (!state.send_chain().skipped_message_keys().empty()) {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
-                ProtocolFailure::InvalidInput("Sending chain must not include cached message keys"));
+                ProtocolFailure::InvalidInput("Send chain must not include skipped message keys"));
         }
 
-        std::map<uint64_t, std::vector<uint8_t>> receive_cache;
-        const auto& cached_keys = state.receiving_chain().cached_message_keys();
+        std::map<uint64_t, std::vector<uint8_t>> skipped_message_keys;
+        const auto& cached_keys = state.recv_chain().skipped_message_keys();
         if (static_cast<size_t>(cached_keys.size()) > kMaxSkippedMessageKeys) {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
-                ProtocolFailure::InvalidInput("Too many cached message keys in state"));
+                ProtocolFailure::InvalidInput("Too many skipped message keys in state"));
         }
         std::unordered_set<uint64_t> cached_indices;
         cached_indices.reserve(cached_keys.size());
         for (const auto& cached : cached_keys) {
-            if (cached.key_material().size() != kMessageKeyBytes) {
+            if (cached.message_key().size() != kMessageKeyBytes) {
                 return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
-                    ProtocolFailure::InvalidInput("Invalid cached message key size in state"));
+                    ProtocolFailure::InvalidInput("Invalid skipped message key size in state"));
             }
-            if (cached.index() > kMaxMessageIndex) {
+            if (cached.message_index() > kMaxMessageIndex) {
                 return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
                     ProtocolFailure::InvalidInput("Cached message key index exceeds maximum"));
             }
-            if (cached.index() >= state.receiving_chain().index()) {
+            if (cached.message_index() >= state.recv_chain().message_index()) {
                 return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
                     ProtocolFailure::InvalidInput("Cached message key index out of range"));
             }
-            if (!cached_indices.insert(cached.index()).second) {
+            if (!cached_indices.insert(cached.message_index()).second) {
                 return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
-                    ProtocolFailure::InvalidInput("Duplicate cached message key index"));
+                    ProtocolFailure::InvalidInput("Duplicate skipped message key index"));
             }
-            receive_cache.emplace(
-                cached.index(),
-                std::vector<uint8_t>(cached.key_material().begin(), cached.key_material().end()));
+            skipped_message_keys.emplace(
+                cached.message_index(),
+                std::vector<uint8_t>(cached.message_key().begin(), cached.message_key().end()));
         }
 
         auto sanitized_state = state;
-        sanitized_state.clear_state_mac();
-        sanitized_state.mutable_sending_chain()->clear_cached_message_keys();
-        sanitized_state.mutable_receiving_chain()->clear_cached_message_keys();
+        sanitized_state.clear_state_hmac();
+        sanitized_state.mutable_send_chain()->clear_skipped_message_keys();
+        sanitized_state.mutable_recv_chain()->clear_skipped_message_keys();
         auto session = std::unique_ptr<Session>(
             new Session(std::move(sanitized_state), std::vector<uint8_t>{}));
-        if (!receive_cache.empty()) {
-            session->receive_cache_ = std::move(receive_cache);
+        if (!skipped_message_keys.empty()) {
+            session->skipped_message_keys_ = std::move(skipped_message_keys);
         }
         return Result<std::unique_ptr<Session>, ProtocolFailure>::Ok(std::move(session));
     }
 
     Result<ecliptix::proto::protocol::ProtocolState, ProtocolFailure> Session::ExportState() {
         std::lock_guard<std::mutex> guard(lock_);
-        if (state_.state_generation() == std::numeric_limits<uint64_t>::max()) {
+        if (state_.state_counter() == std::numeric_limits<uint64_t>::max()) {
             return Result<ecliptix::proto::protocol::ProtocolState, ProtocolFailure>::Err(
-                ProtocolFailure::InvalidState("State generation overflow"));
+                ProtocolFailure::InvalidState("State counter overflow"));
         }
 
-        const uint64_t next_generation = state_.state_generation() + 1;
+        const uint64_t next_generation = state_.state_counter() + 1;
         ecliptix::proto::protocol::ProtocolState copy = state_;
-        copy.mutable_sending_chain()->clear_cached_message_keys();
-        copy.mutable_receiving_chain()->clear_cached_message_keys();
-        copy.set_state_generation(next_generation);
-        copy.clear_state_mac();
+        copy.mutable_send_chain()->clear_skipped_message_keys();
+        copy.mutable_recv_chain()->clear_skipped_message_keys();
+        copy.set_state_counter(next_generation);
+        copy.clear_state_hmac();
 
         auto mac_key_result = DeriveKeyBytes(
             std::span(reinterpret_cast<const uint8_t*>(state_.root_key().data()),
                       state_.root_key().size()),
             kHmacBytes,
             {},
-            kStateMacInfo);
+            kStateHmacInfo);
         if (mac_key_result.IsErr()) {
             return Result<ecliptix::proto::protocol::ProtocolState, ProtocolFailure>::Err(
                 mac_key_result.UnwrapErr());
@@ -487,9 +487,9 @@ namespace ecliptix::protocol {
                 mac_result.UnwrapErr());
         }
         auto mac = mac_result.Unwrap();
-        copy.set_state_mac(mac.data(), mac.size());
+        copy.set_state_hmac(mac.data(), mac.size());
 
-        state_.set_state_generation(next_generation);
+        state_.set_state_counter(next_generation);
 
         wipe_bytes(mac);
         wipe_bytes(serialized);
@@ -516,22 +516,22 @@ namespace ecliptix::protocol {
             return Result<Unit, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidInput("Invalid root key size"));
         }
-        if (state_.dh_self().private_key().size() != kX25519PrivateKeyBytes ||
-            state_.dh_peer_public().size() != kX25519PublicKeyBytes) {
+        if (state_.dh_local().private_key().size() != kX25519PrivateKeyBytes ||
+            state_.dh_remote_public().size() != kX25519PublicKeyBytes) {
             wipe_pending();
             return Result<Unit, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidInput("Invalid DH keys for handshake init"));
         }
-        auto dh_peer = std::span(reinterpret_cast<const uint8_t*>(state_.dh_peer_public().data()),
-                                 state_.dh_peer_public().size());
+        auto dh_peer = std::span(reinterpret_cast<const uint8_t*>(state_.dh_remote_public().data()),
+                                 state_.dh_remote_public().size());
         if (auto dh_check = ValidateDhPublicKey(dh_peer); dh_check.IsErr()) {
             wipe_pending();
             return dh_check;
         }
 
         auto dh_init_result = ComputeDh(
-            std::span(reinterpret_cast<const uint8_t*>(state_.dh_self().private_key().data()),
-                      state_.dh_self().private_key().size()),
+            std::span(reinterpret_cast<const uint8_t*>(state_.dh_local().private_key().data()),
+                      state_.dh_local().private_key().size()),
             dh_peer,
             "DH-Init");
         if (dh_init_result.IsErr()) {
@@ -599,14 +599,14 @@ namespace ecliptix::protocol {
         }
 
         state_.set_root_key(new_root.data(), new_root.size());
-        state_.mutable_sending_chain()->set_chain_key(send_chain.data(), send_chain.size());
-        state_.mutable_receiving_chain()->set_chain_key(recv_chain.data(), recv_chain.size());
-        state_.mutable_sending_chain()->set_index(0);
-        state_.mutable_receiving_chain()->set_index(0);
-        state_.mutable_sending_chain()->clear_cached_message_keys();
-        state_.mutable_receiving_chain()->clear_cached_message_keys();
-        state_.set_sending_ratchet_epoch(0);
-        state_.set_receiving_ratchet_epoch(0);
+        state_.mutable_send_chain()->set_chain_key(send_chain.data(), send_chain.size());
+        state_.mutable_recv_chain()->set_chain_key(recv_chain.data(), recv_chain.size());
+        state_.mutable_send_chain()->set_message_index(0);
+        state_.mutable_recv_chain()->set_message_index(0);
+        state_.mutable_send_chain()->clear_skipped_message_keys();
+        state_.mutable_recv_chain()->clear_skipped_message_keys();
+        state_.set_send_ratchet_epoch(0);
+        state_.set_recv_ratchet_epoch(0);
 
         auto _wipe_root = SodiumInterop::SecureWipe(std::span(new_root));
         (void) _wipe_root;
@@ -615,18 +615,18 @@ namespace ecliptix::protocol {
         auto _wipe_recv = SodiumInterop::SecureWipe(std::span(recv_chain));
         (void) _wipe_recv;
         wipe_pending();
-        receive_cache_.clear();
+        skipped_message_keys_.clear();
         return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 
-    Result<std::vector<uint8_t>, ProtocolFailure> Session::NextSendingMessageKey(
+    Result<std::vector<uint8_t>, ProtocolFailure> Session::NextSendMessageKey(
         uint64_t& message_index) {
-        auto* chain = state_.mutable_sending_chain();
+        auto* chain = state_.mutable_send_chain();
         if (chain->chain_key().size() != kChainKeyBytes) {
             return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidState("Sending chain key missing"));
         }
-        message_index = chain->index();
+        message_index = chain->message_index();
         if (message_index > kMaxMessageIndex) {
             return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidState("Message index exceeds maximum"));
@@ -643,15 +643,15 @@ namespace ecliptix::protocol {
         }
         auto [message_key, next_chain_key] = derived_result.Unwrap();
         chain->set_chain_key(next_chain_key.data(), next_chain_key.size());
-        chain->set_index(message_index + 1);
+        chain->set_message_index(message_index + 1);
         auto _wipe_next = SodiumInterop::SecureWipe(std::span(next_chain_key));
         (void) _wipe_next;
         return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(std::move(message_key));
     }
 
-    Result<std::vector<uint8_t>, ProtocolFailure> Session::GetReceivingMessageKey(
+    Result<std::vector<uint8_t>, ProtocolFailure> Session::GetRecvMessageKey(
         uint64_t message_index) {
-        auto* chain = state_.mutable_receiving_chain();
+        auto* chain = state_.mutable_recv_chain();
         if (chain->chain_key().size() != kChainKeyBytes) {
             return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidState("Receiving chain key missing"));
@@ -661,15 +661,15 @@ namespace ecliptix::protocol {
                 ProtocolFailure::InvalidInput("Message index exceeds maximum"));
         }
 
-        const uint64_t current_index = chain->index();
+        const uint64_t current_index = chain->message_index();
         if (message_index < current_index) {
-            auto it = receive_cache_.find(message_index);
-            if (it == receive_cache_.end()) {
+            auto it = skipped_message_keys_.find(message_index);
+            if (it == skipped_message_keys_.end()) {
                 return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                     ProtocolFailure::ReplayAttack("Replay attack detected: message index already processed"));
             }
             auto key = it->second;
-            receive_cache_.erase(it);
+            skipped_message_keys_.erase(it);
             return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(std::move(key));
         }
 
@@ -686,7 +686,7 @@ namespace ecliptix::protocol {
             }
             auto [message_key, next_chain_key] = derived_result.Unwrap();
             if (index < message_index) {
-                if (receive_cache_.size() >= kMaxSkippedMessageKeys) {
+                if (skipped_message_keys_.size() >= kMaxSkippedMessageKeys) {
                     auto _wipe_msg = SodiumInterop::SecureWipe(std::span(message_key));
                     (void) _wipe_msg;
                     auto _wipe_next = SodiumInterop::SecureWipe(std::span(next_chain_key));
@@ -694,10 +694,10 @@ namespace ecliptix::protocol {
                     return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                         ProtocolFailure::InvalidState("Message key cache overflow"));
                 }
-                receive_cache_.emplace(index, std::move(message_key));
+                skipped_message_keys_.emplace(index, std::move(message_key));
             } else {
                 chain->set_chain_key(next_chain_key.data(), next_chain_key.size());
-                chain->set_index(message_index + 1);
+                chain->set_message_index(message_index + 1);
                 auto _wipe_next = SodiumInterop::SecureWipe(std::span(next_chain_key));
                 (void) _wipe_next;
                 return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(std::move(message_key));
@@ -709,23 +709,23 @@ namespace ecliptix::protocol {
             ProtocolFailure::InvalidState("Failed to derive message key"));
     }
 
-    Result<Unit, ProtocolFailure> Session::MaybeRotateSendingRatchet(
+    Result<Unit, ProtocolFailure> Session::MaybeRotateSendRatchet(
         ecliptix::proto::protocol::SecureEnvelope& envelope) {
-        auto* chain = state_.mutable_sending_chain();
-        const uint64_t max_messages_per_ratchet = state_.max_messages_per_ratchet();
-        if (max_messages_per_ratchet == 0 || max_messages_per_ratchet > kMaxChainLength) {
+        auto* chain = state_.mutable_send_chain();
+        const uint64_t max_messages_per_chain = state_.max_messages_per_chain();
+        if (max_messages_per_chain == 0 || max_messages_per_chain > kMaxMessagesPerChain) {
             return Result<Unit, ProtocolFailure>::Err(
-                ProtocolFailure::InvalidState("Invalid max messages per ratchet"));
+                ProtocolFailure::InvalidState("Invalid max messages per chain"));
         }
-        if (chain->index() < max_messages_per_ratchet) {
+        if (chain->message_index() < max_messages_per_chain) {
             return Result<Unit, ProtocolFailure>::Ok(Unit{});
         }
-        if (state_.dh_peer_public().size() != kX25519PublicKeyBytes ||
+        if (state_.dh_remote_public().size() != kX25519PublicKeyBytes ||
             state_.root_key().size() != kRootKeyBytes) {
             return Result<Unit, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidState("Cannot rotate ratchet: missing key material"));
         }
-        if (state_.peer_kyber_public_key().size() != kKyberPublicKeyBytes) {
+        if (state_.kyber_remote_public().size() != kKyberPublicKeyBytes) {
             return Result<Unit, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidState("Peer Kyber public key missing"));
         }
@@ -742,8 +742,8 @@ namespace ecliptix::protocol {
         }
         auto new_private = new_private_result.Unwrap();
 
-        auto peer_dh = std::span(reinterpret_cast<const uint8_t*>(state_.dh_peer_public().data()),
-                                 state_.dh_peer_public().size());
+        auto peer_dh = std::span(reinterpret_cast<const uint8_t*>(state_.dh_remote_public().data()),
+                                 state_.dh_remote_public().size());
         if (auto dh_check = ValidateDhPublicKey(peer_dh); dh_check.IsErr()) {
             auto _wipe = SodiumInterop::SecureWipe(std::span(new_private));
             (void) _wipe;
@@ -762,8 +762,8 @@ namespace ecliptix::protocol {
         auto dh_secret = dh_secret_result.Unwrap();
 
         auto encap_result = KyberInterop::Encapsulate(
-            std::span(reinterpret_cast<const uint8_t*>(state_.peer_kyber_public_key().data()),
-                      state_.peer_kyber_public_key().size()));
+            std::span(reinterpret_cast<const uint8_t*>(state_.kyber_remote_public().data()),
+                      state_.kyber_remote_public().size()));
         if (encap_result.IsErr()) {
             auto _wipe = SodiumInterop::SecureWipe(std::span(new_private));
             (void) _wipe;
@@ -818,11 +818,11 @@ namespace ecliptix::protocol {
         std::vector<uint8_t> new_chain(ratchet_out.begin() + kRootKeyBytes, ratchet_out.end());
 
         state_.set_root_key(new_root.data(), new_root.size());
-        state_.mutable_sending_chain()->set_chain_key(new_chain.data(), new_chain.size());
-        state_.mutable_sending_chain()->set_index(0);
-        state_.set_sending_ratchet_epoch(state_.sending_ratchet_epoch() + 1);
-        state_.mutable_dh_self()->set_private_key(new_private.data(), new_private.size());
-        state_.mutable_dh_self()->set_public_key(new_public.data(), new_public.size());
+        state_.mutable_send_chain()->set_chain_key(new_chain.data(), new_chain.size());
+        state_.mutable_send_chain()->set_message_index(0);
+        state_.set_send_ratchet_epoch(state_.send_ratchet_epoch() + 1);
+        state_.mutable_dh_local()->set_private_key(new_private.data(), new_private.size());
+        state_.mutable_dh_local()->set_public_key(new_public.data(), new_public.size());
 
         envelope.set_dh_public_key(new_public.data(), new_public.size());
         envelope.set_kyber_ciphertext(kyber_ct.data(), kyber_ct.size());
@@ -836,7 +836,7 @@ namespace ecliptix::protocol {
         return Result<Unit, ProtocolFailure>::Ok(Unit{});
     }
 
-    Result<Unit, ProtocolFailure> Session::ApplyReceivingRatchet(
+    Result<Unit, ProtocolFailure> Session::ApplyRecvRatchet(
         const ecliptix::proto::protocol::SecureEnvelope& envelope) {
         if (!envelope.has_dh_public_key() || !envelope.has_kyber_ciphertext()) {
             return Result<Unit, ProtocolFailure>::Err(
@@ -859,19 +859,19 @@ namespace ecliptix::protocol {
             return Result<Unit, ProtocolFailure>::Err(
                 ProtocolFailure::FromSodiumFailure(pq_check.UnwrapErr()));
         }
-        if (state_.kyber_self().secret_key().size() != kKyberSecretKeyBytes) {
+        if (state_.kyber_local().secret_key().size() != kKyberSecretKeyBytes) {
             return Result<Unit, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidState("Missing Kyber secret key"));
         }
         if (state_.root_key().size() != kRootKeyBytes ||
-            state_.dh_self().private_key().size() != kX25519PrivateKeyBytes) {
+            state_.dh_local().private_key().size() != kX25519PrivateKeyBytes) {
             return Result<Unit, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidState("Missing ratchet key material"));
         }
 
         auto dh_secret_result = ComputeDh(
-            std::span(reinterpret_cast<const uint8_t*>(state_.dh_self().private_key().data()),
-                      state_.dh_self().private_key().size()),
+            std::span(reinterpret_cast<const uint8_t*>(state_.dh_local().private_key().data()),
+                      state_.dh_local().private_key().size()),
             dh_public,
             "DH-Ratchet-Recv");
         if (dh_secret_result.IsErr()) {
@@ -888,8 +888,8 @@ namespace ecliptix::protocol {
         }
         auto sk_handle = std::move(sk_handle_result).Unwrap();
         auto write_result = sk_handle.Write(
-            std::span(reinterpret_cast<const uint8_t*>(state_.kyber_self().secret_key().data()),
-                      state_.kyber_self().secret_key().size()));
+            std::span(reinterpret_cast<const uint8_t*>(state_.kyber_local().secret_key().data()),
+                      state_.kyber_local().secret_key().size()));
         if (write_result.IsErr()) {
             auto _wipe = SodiumInterop::SecureWipe(std::span(dh_secret));
             (void) _wipe;
@@ -946,12 +946,12 @@ namespace ecliptix::protocol {
         std::vector<uint8_t> new_chain(ratchet_out.begin() + kRootKeyBytes, ratchet_out.end());
 
         state_.set_root_key(new_root.data(), new_root.size());
-        state_.mutable_receiving_chain()->set_chain_key(new_chain.data(), new_chain.size());
-        state_.mutable_receiving_chain()->set_index(0);
-        state_.set_receiving_ratchet_epoch(state_.receiving_ratchet_epoch() + 1);
-        state_.set_dh_peer_public(dh_public.data(), dh_public.size());
-        receive_cache_.clear();
-        ResetReplayTracking(state_.receiving_ratchet_epoch());
+        state_.mutable_recv_chain()->set_chain_key(new_chain.data(), new_chain.size());
+        state_.mutable_recv_chain()->set_message_index(0);
+        state_.set_recv_ratchet_epoch(state_.recv_ratchet_epoch() + 1);
+        state_.set_dh_remote_public(dh_public.data(), dh_public.size());
+        skipped_message_keys_.clear();
+        ResetReplayTracking(state_.recv_ratchet_epoch());
 
         auto _wipe_root = SodiumInterop::SecureWipe(std::span(new_root));
         (void) _wipe_root;
@@ -974,17 +974,17 @@ namespace ecliptix::protocol {
         ecliptix::proto::protocol::SecureEnvelope envelope;
         envelope.set_version(kProtocolVersion);
 
-        auto rotate_result = MaybeRotateSendingRatchet(envelope);
+        auto rotate_result = MaybeRotateSendRatchet(envelope);
         if (rotate_result.IsErr()) {
             return Result<ecliptix::proto::protocol::SecureEnvelope, ProtocolFailure>::Err(
                 rotate_result.UnwrapErr());
         }
 
-        const uint64_t ratchet_epoch = state_.sending_ratchet_epoch();
+        const uint64_t ratchet_epoch = state_.send_ratchet_epoch();
         envelope.set_ratchet_epoch(ratchet_epoch);
 
         uint64_t message_index = 0;
-        auto message_key_result = NextSendingMessageKey(message_index);
+        auto message_key_result = NextSendMessageKey(message_index);
         if (message_key_result.IsErr()) {
             return Result<ecliptix::proto::protocol::SecureEnvelope, ProtocolFailure>::Err(
                 message_key_result.UnwrapErr());
@@ -1102,10 +1102,10 @@ namespace ecliptix::protocol {
             return Result<Session::DecryptResult, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidState("Metadata key not initialized"));
         }
-        const uint64_t max_messages_per_ratchet = state_.max_messages_per_ratchet();
-        if (max_messages_per_ratchet == 0 || max_messages_per_ratchet > kMaxChainLength) {
+        const uint64_t max_messages_per_chain = state_.max_messages_per_chain();
+        if (max_messages_per_chain == 0 || max_messages_per_chain > kMaxMessagesPerChain) {
             return Result<Session::DecryptResult, ProtocolFailure>::Err(
-                ProtocolFailure::InvalidState("Invalid max messages per ratchet"));
+                ProtocolFailure::InvalidState("Invalid max messages per chain"));
         }
 
         const uint64_t envelope_epoch = envelope.ratchet_epoch();
@@ -1114,16 +1114,16 @@ namespace ecliptix::protocol {
                 return Result<Session::DecryptResult, ProtocolFailure>::Err(
                     ProtocolFailure::InvalidInput("Incomplete ratchet header"));
             }
-            if (envelope_epoch != state_.receiving_ratchet_epoch() + 1) {
+            if (envelope_epoch != state_.recv_ratchet_epoch() + 1) {
                 return Result<Session::DecryptResult, ProtocolFailure>::Err(
                     ProtocolFailure::InvalidState("Unexpected ratchet epoch"));
             }
-            auto ratchet_result = ApplyReceivingRatchet(envelope);
+            auto ratchet_result = ApplyRecvRatchet(envelope);
             if (ratchet_result.IsErr()) {
                 return Result<Session::DecryptResult, ProtocolFailure>::Err(
                     ratchet_result.UnwrapErr());
             }
-        } else if (envelope_epoch != state_.receiving_ratchet_epoch()) {
+        } else if (envelope_epoch != state_.recv_ratchet_epoch()) {
             return Result<Session::DecryptResult, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidState("Stale or future ratchet epoch"));
         }
@@ -1162,9 +1162,9 @@ namespace ecliptix::protocol {
             return Result<Session::DecryptResult, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidInput("Message index exceeds maximum"));
         }
-        if (metadata.message_index() >= max_messages_per_ratchet) {
+        if (metadata.message_index() >= max_messages_per_chain) {
             return Result<Session::DecryptResult, ProtocolFailure>::Err(
-                ProtocolFailure::InvalidInput("Message index exceeds per-ratchet limit"));
+                ProtocolFailure::InvalidInput("Message index exceeds per-chain limit"));
         }
 
         auto nonce_index_result = ExtractNonceIndex(
@@ -1179,8 +1179,8 @@ namespace ecliptix::protocol {
                 ProtocolFailure::InvalidInput("Nonce index mismatch"));
         }
 
-        if (replay_epoch_ != state_.receiving_ratchet_epoch()) {
-            ResetReplayTracking(state_.receiving_ratchet_epoch());
+        if (replay_epoch_ != state_.recv_ratchet_epoch()) {
+            ResetReplayTracking(state_.recv_ratchet_epoch());
         }
 
         std::string payload_nonce_key(
@@ -1191,7 +1191,7 @@ namespace ecliptix::protocol {
                 ProtocolFailure::ReplayAttack("Replay attack detected: payload nonce reused"));
         }
 
-        auto message_key_result = GetReceivingMessageKey(metadata.message_index());
+        auto message_key_result = GetRecvMessageKey(metadata.message_index());
         if (message_key_result.IsErr()) {
             return Result<Session::DecryptResult, ProtocolFailure>::Err(
                 message_key_result.UnwrapErr());

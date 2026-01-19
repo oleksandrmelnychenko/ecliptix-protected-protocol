@@ -114,10 +114,10 @@ Handshake uses serialized `PreKeyBundle` and `HandshakeInit`/`HandshakeAck` prot
 ### `EppSessionConfig`
 ```c
 typedef struct EppSessionConfig {
-    uint32_t max_messages_per_ratchet;
+    uint32_t max_messages_per_chain;
 } EppSessionConfig;
 ```
-Per-session configuration. `max_messages_per_ratchet` must be greater than zero and not exceed 10000.
+Per-session configuration. `max_messages_per_chain` must be greater than zero and not exceed 10000.
 Both initiator and responder must use the same value or the handshake will fail.
 
 ### `epp_prekey_bundle_create`
@@ -224,7 +224,7 @@ EppErrorCode epp_session_serialize(
     EppError* out_error);
 ```
 Serialize session state as `ProtocolState` protobuf bytes. Export increments
-`state_generation` and embeds a `state_mac` (HMAC-SHA256) for integrity;
+`state_counter` and embeds a `state_hmac` (HMAC-SHA256) for integrity;
 deserialize rejects missing or invalid MACs.
 
 ### `epp_session_deserialize`

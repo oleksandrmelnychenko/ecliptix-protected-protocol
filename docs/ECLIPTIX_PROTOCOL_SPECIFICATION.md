@@ -230,12 +230,12 @@ Bob (responder) publishes to the server:
 ```
 PublicKeyBundle {
     identity_public_key: IK_B           // Ed25519, 32 bytes
-    identity_x25519_public_key: IK_DH_B // X25519, 32 bytes
+    identity_x25519_public: IK_DH_B // X25519, 32 bytes
     signed_pre_key_id: uint32
     signed_pre_key_public: SPK_B        // X25519, 32 bytes
     signed_pre_key_signature: σ_SPK     // Ed25519 signature of SPK_B
     one_time_pre_keys: [OPK_B_1, ...]   // X25519 keys, optional
-    kyber_public_key: KPK_B             // Kyber768, 1184 bytes
+    kyber_public: KPK_B                 // Kyber768, 1184 bytes
 }
 ```
 
@@ -398,7 +398,7 @@ Procedure:
   9. Update: SK_send ← SK_new, PK_send ← PK_new
   10. Update: KSK_self ← KSK_new, KPK_self ← KPK_new
   11. Reset: sending_index ← 0
-  12. Increment: sending_ratchet_epoch += 1
+  12. Increment: send_ratchet_epoch += 1
   13. Wipe: SK_old, hybrid_secret, DH_secret, KSS
   14. Return (RK', CK', PK_new, CT)
 ```
@@ -426,7 +426,7 @@ Procedure:
   8. (KSK_new, KPK_new) ← Kyber768.KeyGen()    // For next ratchet
   9. Update: KSK_self ← KSK_new, KPK_self ← KPK_new
   10. Reset: receiving_index ← 0
-  11. Increment: receiving_ratchet_epoch += 1
+  11. Increment: recv_ratchet_epoch += 1
   12. Wipe: hybrid_secret, DH_secret, KSS, KSK_old
   13. Return (RK', CK')
 ```
@@ -659,15 +659,15 @@ Provides security under the OR assumption because:
 // Key Exchange Bundle
 message PublicKeyBundle {
     bytes identity_public_key = 1;           // Ed25519, 32 bytes
-    bytes identity_x25519_public_key = 2;    // X25519, 32 bytes
+    bytes identity_x25519_public = 2;        // X25519, 32 bytes
     uint32 signed_pre_key_id = 3;
     bytes signed_pre_key_public_key = 4;     // X25519, 32 bytes
     bytes signed_pre_key_signature = 5;      // Ed25519 sig, 64 bytes
     repeated OneTimePreKey one_time_pre_keys = 6;
     bytes ephemeral_x25519_public_key = 7;   // X25519, 32 bytes (initiator only)
-    bytes kyber_public_key = 8;              // Kyber768, 1184 bytes
+    bytes kyber_public = 8;                  // Kyber768, 1184 bytes
     bytes kyber_ciphertext = 9;              // Kyber768 CT, 1088 bytes
-    optional uint32 used_one_time_pre_key_id = 10;
+    optional uint32 one_time_pre_key_id = 10;
 }
 
 // Encrypted Message Envelope
@@ -678,8 +678,8 @@ message SecureEnvelope {
     bytes sender_dh_public_key = 4;          // X25519, 32 bytes (if ratchet)
     bytes kyber_ciphertext = 5;              // Kyber768 CT, 1088 bytes (if ratchet)
     uint32 message_index = 6;
-    uint64 sending_ratchet_epoch = 7;
-    uint64 receiving_ratchet_epoch = 8;
+    uint64 send_ratchet_epoch = 7;
+    uint64 recv_ratchet_epoch = 8;
 }
 
 // Session State (for persistence)
@@ -692,12 +692,12 @@ message RatchetState {
     ChainStepState receiving_step = 12;
     bytes peer_dh_public_key = 5;            // MUTABLE: updated on ratchet
     bytes initial_peer_dh_public = 24;       // IMMUTABLE: never changes
-    bytes kyber_public_key = 20;
+    bytes kyber_public = 20;
     bytes kyber_secret_key = 19;
     bytes kyber_ciphertext = 17;
     bytes kyber_shared_secret = 18;
-    uint64 receiving_ratchet_epoch = 22;
-    uint64 sending_ratchet_epoch = 23;
+    uint64 recv_ratchet_epoch = 22;
+    uint64 send_ratchet_epoch = 23;
 }
 ```
 

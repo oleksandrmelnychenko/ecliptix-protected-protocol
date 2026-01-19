@@ -64,17 +64,17 @@ var bobKeys = EcliptixIdentityKeys.Create().Unwrap();
 byte[] aliceBundle = aliceKeys.CreatePreKeyBundle().Unwrap();
 byte[] bobBundle = bobKeys.CreatePreKeyBundle().Unwrap();
 
-uint maxMessagesPerRatchet = 200;
+uint maxMessagesPerChain = 200;
 
 // Alice starts handshake using Bob's bundle
-var aliceStart = EcliptixHandshakeInitiator.Start(aliceKeys, bobBundle, maxMessagesPerRatchet).Unwrap();
+var aliceStart = EcliptixHandshakeInitiator.Start(aliceKeys, bobBundle, maxMessagesPerChain).Unwrap();
 
 // Bob processes handshake init using his local bundle
 var bobStart = EcliptixHandshakeResponder.Start(
     bobKeys,
     bobBundle,
     aliceStart.HandshakeInit,
-    maxMessagesPerRatchet).Unwrap();
+    maxMessagesPerChain).Unwrap();
 
 // Bob finalizes and returns ack
 var bobSession = bobStart.Responder.Finish().Unwrap();
@@ -153,16 +153,16 @@ EcliptixNativeInterop.epp_init();
 var identityKeys = EcliptixIdentityKeys.Create().Unwrap();
 byte[] bundle = identityKeys.CreatePreKeyBundle().Unwrap();
 
-uint maxMessagesPerRatchet = 200;
+uint maxMessagesPerChain = 200;
 var initiatorStart = EcliptixHandshakeInitiator.Start(
     identityKeys,
     peerBundle,
-    maxMessagesPerRatchet).Unwrap();
+    maxMessagesPerChain).Unwrap();
 var responderStart = EcliptixHandshakeResponder.Start(
     peerKeys,
     peerBundle,
     initiatorStart.HandshakeInit,
-    maxMessagesPerRatchet).Unwrap();
+    maxMessagesPerChain).Unwrap();
 
 var responderSession = responderStart.Responder.Finish().Unwrap();
 var initiatorSession = initiatorStart.Initiator.Finish(responderStart.HandshakeAck).Unwrap();

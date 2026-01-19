@@ -223,7 +223,7 @@ public sealed class EcliptixHandshakeInitiator : IDisposable
     public static Result<EcliptixHandshakeInitiatorStart, EcliptixProtocolFailure> Start(
         EcliptixIdentityKeys identityKeys,
         byte[] peerPreKeyBundle,
-        uint maxMessagesPerRatchet)
+        uint maxMessagesPerChain)
     {
         if (identityKeys == null || identityKeys.IsDisposed)
         {
@@ -235,15 +235,15 @@ public sealed class EcliptixHandshakeInitiator : IDisposable
             return Result<EcliptixHandshakeInitiatorStart, EcliptixProtocolFailure>.Err(
                 EcliptixProtocolFailure.InvalidInput("Peer bundle is null"));
         }
-        if (maxMessagesPerRatchet == 0)
+        if (maxMessagesPerChain == 0)
         {
             return Result<EcliptixHandshakeInitiatorStart, EcliptixProtocolFailure>.Err(
-                EcliptixProtocolFailure.InvalidInput("Max messages per ratchet must be greater than zero"));
+                EcliptixProtocolFailure.InvalidInput("Max messages per chain must be greater than zero"));
         }
 
         EcliptixSessionConfig config = new()
         {
-            MaxMessagesPerRatchet = maxMessagesPerRatchet
+            MaxMessagesPerChain = maxMessagesPerChain
         };
         EcliptixErrorCode result = EcliptixNativeInterop.epp_handshake_initiator_start(
             identityKeys.Handle,
@@ -362,7 +362,7 @@ public sealed class EcliptixHandshakeResponder : IDisposable
         EcliptixIdentityKeys identityKeys,
         byte[] localPreKeyBundle,
         byte[] handshakeInit,
-        uint maxMessagesPerRatchet)
+        uint maxMessagesPerChain)
     {
         if (identityKeys == null || identityKeys.IsDisposed)
         {
@@ -379,15 +379,15 @@ public sealed class EcliptixHandshakeResponder : IDisposable
             return Result<EcliptixHandshakeResponderStart, EcliptixProtocolFailure>.Err(
                 EcliptixProtocolFailure.InvalidInput("Handshake init is null"));
         }
-        if (maxMessagesPerRatchet == 0)
+        if (maxMessagesPerChain == 0)
         {
             return Result<EcliptixHandshakeResponderStart, EcliptixProtocolFailure>.Err(
-                EcliptixProtocolFailure.InvalidInput("Max messages per ratchet must be greater than zero"));
+                EcliptixProtocolFailure.InvalidInput("Max messages per chain must be greater than zero"));
         }
 
         EcliptixSessionConfig config = new()
         {
-            MaxMessagesPerRatchet = maxMessagesPerRatchet
+            MaxMessagesPerChain = maxMessagesPerChain
         };
         EcliptixErrorCode result = EcliptixNativeInterop.epp_handshake_responder_start(
             identityKeys.Handle,

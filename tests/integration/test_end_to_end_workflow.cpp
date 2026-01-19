@@ -110,7 +110,7 @@ struct EndToEndTestContext {
         }
         auto alice_kyber_set = ctx.alice_connection->SetLocalKyberKeyPair(
             std::move(alice_kyber_clone).Unwrap(),
-            ctx.alice_identity->GetKyberPublicKeyCopy());
+            ctx.alice_identity->GetKyberPublicCopy());
         if (alice_kyber_set.IsErr()) {
             return Result<EndToEndTestContext, ProtocolFailure>::Err(
                 alice_kyber_set.UnwrapErr());
@@ -122,7 +122,7 @@ struct EndToEndTestContext {
         }
         auto bob_kyber_set = ctx.bob_connection->SetLocalKyberKeyPair(
             std::move(bob_kyber_clone).Unwrap(),
-            ctx.bob_identity->GetKyberPublicKeyCopy());
+            ctx.bob_identity->GetKyberPublicCopy());
         if (bob_kyber_set.IsErr()) {
             return Result<EndToEndTestContext, ProtocolFailure>::Err(
                 bob_kyber_set.UnwrapErr());

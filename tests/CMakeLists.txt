@@ -28,7 +28,7 @@ set(TEST_SOURCES
     unit/test_dh_validator.cpp
     unit/test_kyber_interop_comprehensive.cpp
     unit/test_session_replay_protection.cpp
-    unit/test_session_state_mac.cpp
+    unit/test_session_state_hmac.cpp
     unit/test_session_chain_length.cpp
     unit/test_secret_sharing.cpp
     unit/test_state_import_invariants.cpp

@@ -14,8 +14,8 @@ extern "C" {
         ProtocolSystemHandle* handle,
         uint32_t connection_id,
         uint8_t exchange_type,
-        const uint8_t* peer_kyber_public_key,
-        size_t peer_kyber_public_key_length,
+        const uint8_t* kyber_remote_public,
+        size_t kyber_remote_public_length,
         EppBuffer* out_handshake_message,
         EppError* out_error);
 
