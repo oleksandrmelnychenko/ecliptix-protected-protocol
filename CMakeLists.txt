@@ -71,11 +71,14 @@ else()
     # Security hardening flags (GCC/Clang)
     add_compile_options(
         -fstack-protector-strong
-        -D_FORTIFY_SOURCE=2
         -Wformat
         -Wformat-security
         -Werror=format-security
     )
+    # FORTIFY_SOURCE conflicts with ASAN (which sets it to 0)
+    if(NOT ECLIPTIX_ENABLE_ASAN)
+        add_compile_options(-D_FORTIFY_SOURCE=2)
+    endif()
 
     # Position-independent code
     if(ECLIPTIX_BUILD_SHARED)
