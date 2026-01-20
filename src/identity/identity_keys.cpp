@@ -242,6 +242,41 @@ namespace ecliptix::protocol::identity {
         return Result<std::vector<OneTimePreKey>, ProtocolFailure>::Ok(std::move(opks));
     }
 
+    Result<std::vector<OneTimePreKey>, ProtocolFailure> IdentityKeys::GenerateOneTimePreKeysFromMasterKey(
+        const std::span<const uint8_t> master_key,
+        const std::string_view membership_id,
+        const uint32_t count) {
+        if (count == 0) {
+            return Result<std::vector<OneTimePreKey>, ProtocolFailure>::Ok(
+                std::vector<OneTimePreKey>{});
+        }
+        std::vector<OneTimePreKey> opks;
+        opks.reserve(count);
+
+        for (uint32_t i = 0; i < count; ++i) {
+            // Derive deterministic OPK ID from master key and index
+            auto id_seed = MasterKeyDerivation::DeriveOneTimePreKeySeed(master_key, membership_id, i);
+            uint32_t id;
+            std::memcpy(&id, id_seed.data(), sizeof(uint32_t));
+            // Ensure ID is at least 2 (Signal protocol convention)
+            id = (id % 0xFFFFFFFE) + 2;
+
+            // Derive the OPK seed for this index
+            auto opk_seed = MasterKeyDerivation::DeriveOneTimePreKeySeed(master_key, membership_id, count + i);
+
+            auto opk_result = OneTimePreKey::CreateFromSeed(id, std::span(opk_seed));
+            SodiumInterop::SecureWipe(std::span(opk_seed));
+            SodiumInterop::SecureWipe(std::span(id_seed));
+
+            if (opk_result.IsErr()) {
+                return Result<std::vector<OneTimePreKey>, ProtocolFailure>::Err(
+                    opk_result.UnwrapErr());
+            }
+            opks.push_back(std::move(opk_result).Unwrap());
+        }
+        return Result<std::vector<OneTimePreKey>, ProtocolFailure>::Ok(std::move(opks));
+    }
+
     Result<IdentityKeys, ProtocolFailure> IdentityKeys::Create(
         uint32_t one_time_key_count) {
         auto ed_result = GenerateEd25519Keys();
@@ -438,7 +473,8 @@ namespace ecliptix::protocol::identity {
             std::move(spk_handle),
             std::move(spk_public),
             std::move(spk_signature));
-        auto opks_result = GenerateOneTimePreKeys(one_time_key_count);
+        // Use deterministic OPK generation from master key for reproducible identities
+        auto opks_result = GenerateOneTimePreKeysFromMasterKey(master_key, membership_id, one_time_key_count);
         if (opks_result.IsErr()) {
             return Result<IdentityKeys, ProtocolFailure>::Err(
                 opks_result.UnwrapErr());

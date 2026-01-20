@@ -78,27 +78,6 @@ public static class RelayNativeInterop
         out EppError outError);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern EppErrorCode epp_handshake_initiator_start(
-        IntPtr identityKeys,
-        [In] byte[] peerPrekeyBundle,
-        nuint peerPrekeyBundleLength,
-        ref EppSessionConfig config,
-        out IntPtr outHandle,
-        out EppBuffer outHandshakeInit,
-        out EppError outError);
-
-    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern EppErrorCode epp_handshake_initiator_finish(
-        IntPtr handle,
-        [In] byte[] handshakeAck,
-        nuint handshakeAckLength,
-        out IntPtr outSession,
-        out EppError outError);
-
-    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern void epp_handshake_initiator_destroy(IntPtr handle);
-
-    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     public static extern EppErrorCode epp_handshake_responder_start(
         IntPtr identityKeys,
         [In] byte[] localPrekeyBundle,

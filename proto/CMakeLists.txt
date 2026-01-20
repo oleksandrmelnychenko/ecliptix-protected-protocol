@@ -13,6 +13,7 @@ find_package(absl QUIET)
 set(PROTO_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/protocol/handshake.proto
     ${CMAKE_CURRENT_SOURCE_DIR}/protocol/envelope.proto
+    ${CMAKE_CURRENT_SOURCE_DIR}/protocol/error.proto
     ${CMAKE_CURRENT_SOURCE_DIR}/protocol/state.proto
 )
 

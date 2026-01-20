@@ -40,6 +40,16 @@ namespace ecliptix::protocol::crypto {
         return result;
     }
 
+    std::vector<uint8_t> MasterKeyDerivation::DeriveOneTimePreKeySeed(
+        const std::span<const uint8_t> master_key,
+        const std::string_view membership_id,
+        const uint32_t opk_index) {
+        // Build context with OPK index for unique derivation per OPK
+        std::string indexed_context = std::string(OPK_CONTEXT) + "-" + std::to_string(opk_index);
+        auto context_data = BuildContextData(indexed_context, membership_id);
+        return HashWithGenericHash(master_key, context_data, KEY_SIZE);
+    }
+
     std::vector<uint8_t> MasterKeyDerivation::HashWithGenericHash(
         const std::span<const uint8_t> key,
         const std::span<const uint8_t> data,

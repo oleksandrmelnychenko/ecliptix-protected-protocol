@@ -11,6 +11,9 @@ namespace ecliptix::protocol::models {
 class OneTimePreKey {
 public:
     static Result<OneTimePreKey, ProtocolFailure> Generate(uint32_t one_time_pre_key_id);
+    static Result<OneTimePreKey, ProtocolFailure> CreateFromSeed(
+        uint32_t one_time_pre_key_id,
+        std::span<const uint8_t> seed);
     static OneTimePreKey CreateFromParts(
         uint32_t one_time_pre_key_id,
         crypto::SecureMemoryHandle private_key_handle,

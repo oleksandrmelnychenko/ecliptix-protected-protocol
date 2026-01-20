@@ -82,6 +82,10 @@ private:
         std::span<const uint8_t> spk_public);
     [[nodiscard]] static Result<std::vector<OneTimePreKey>, ProtocolFailure> GenerateOneTimePreKeys(
         uint32_t count);
+    [[nodiscard]] static Result<std::vector<OneTimePreKey>, ProtocolFailure> GenerateOneTimePreKeysFromMasterKey(
+        std::span<const uint8_t> master_key,
+        std::string_view membership_id,
+        uint32_t count);
     [[nodiscard]] Result<Unit, ProtocolFailure> ValidateX3dhPrerequisites(
         const LocalPublicKeyBundle& remote_bundle,
         std::span<const uint8_t> info) const;
