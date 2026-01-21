@@ -85,14 +85,10 @@ TEST_CASE("Session replay protection rejects duplicate envelope", "[session][rep
     REQUIRE(initiator_result.IsOk());
     auto initiator = std::move(initiator_result).Unwrap();
 
-    auto local_bundle_result = BuildPreKeyBundle(bob_keys);
-    REQUIRE(local_bundle_result.IsOk());
-    auto local_bundle = local_bundle_result.Unwrap();
-
     const auto& init_bytes = initiator->EncodedMessage();
     auto responder_result = HandshakeResponder::Process(
         bob_keys,
-        local_bundle,
+        bob_bundle,  // Reuse the same bundle instead of creating a new one
         std::span<const uint8_t>(init_bytes.data(), init_bytes.size()),
         max_messages);
     REQUIRE(responder_result.IsOk());

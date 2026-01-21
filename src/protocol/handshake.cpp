@@ -42,14 +42,12 @@ namespace ecliptix::protocol
         Result<std::vector<uint8_t>, ProtocolFailure> SerializeDeterministic(
             const google::protobuf::Message& message)
         {
+            // Use simpler serialization to avoid protobuf global state issues
             std::string output;
-            google::protobuf::io::StringOutputStream stream(&output);
-            google::protobuf::io::CodedOutputStream coded_out(&stream);
-            coded_out.SetSerializationDeterministic(true);
-            if (!message.SerializeToCodedStream(&coded_out) || coded_out.HadError())
+            if (!message.SerializeToString(&output))
             {
                 return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
-                    ProtocolFailure::Encode("Failed to serialize protobuf deterministically"));
+                    ProtocolFailure::Encode("Failed to serialize protobuf"));
             }
             return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(
                 std::vector<uint8_t>(output.begin(), output.end()));
@@ -286,6 +284,7 @@ namespace ecliptix::protocol
                 return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
                     bundle_bytes_result.UnwrapErr());
             }
+
             ecliptix::proto::protocol::HandshakeInit init_copy = init;
             init_copy.clear_key_confirmation_mac();
             auto init_bytes_result = SerializeDeterministic(init_copy);

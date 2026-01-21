@@ -1,5 +1,6 @@
 #include "ecliptix/models/keys/one_time_pre_key.hpp"
 #include <sodium.h>
+#include <cstring>
 
 namespace ecliptix::protocol::models {
     Result<OneTimePreKey, ProtocolFailure> OneTimePreKey::Generate(const uint32_t one_time_pre_key_id) {
