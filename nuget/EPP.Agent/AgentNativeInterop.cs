@@ -182,7 +182,7 @@ public static class AgentNativeInterop
         nuint secretLength,
         byte threshold,
         byte shareCount,
-        [In] byte[] authKey,
+        [In] byte[]? authKey,
         nuint authKeyLength,
         out EppBuffer outShares,
         out nuint outShareLength,
@@ -194,7 +194,7 @@ public static class AgentNativeInterop
         nuint sharesLength,
         nuint shareLength,
         nuint shareCount,
-        [In] byte[] authKey,
+        [In] byte[]? authKey,
         nuint authKeyLength,
         out EppBuffer outSecret,
         out EppError outError);
