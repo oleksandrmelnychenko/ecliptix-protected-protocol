@@ -71,12 +71,15 @@ FRAMEWORK_DIR="$BUILD_DIR/EcliptixProtocolC.framework"
 rm -rf "$FRAMEWORK_DIR"
 mkdir -p "$FRAMEWORK_DIR/Headers" "$FRAMEWORK_DIR/Modules"
 
-cp "$ROOT_DIR/include/ecliptix/c_api/ecliptix_c_api.h" \
-    "$FRAMEWORK_DIR/Headers/ecliptix_c_api.h"
+cp "$ROOT_DIR/include/ecliptix/c_api/epp_api.h" \
+    "$FRAMEWORK_DIR/Headers/epp_api.h"
+cp "$ROOT_DIR/include/ecliptix/c_api/epp_export.h" \
+    "$FRAMEWORK_DIR/Headers/epp_export.h"
 
 cat > "$FRAMEWORK_DIR/Modules/module.modulemap" <<'EOF'
 module EcliptixProtocolC {
-  header "ecliptix_c_api.h"
+  header "epp_api.h"
+  header "epp_export.h"
   export *
 }
 EOF
