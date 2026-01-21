@@ -1,4 +1,4 @@
-name: Build and Publish NuGet Packages
+name: Build & Publish All Packages
 
 on:
   push:
@@ -12,15 +12,50 @@ on:
         type: string
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 env:
   DOTNET_VERSION: '8.0.x'
+  IOS_DEPLOYMENT_TARGET: '17.0'
+  ANDROID_API_LEVEL: '34'
+  ANDROID_NDK_VERSION: '26.2.11394342'
+  GRADLE_VERSION: '8.7'
   VCPKG_BINARY_SOURCES: 'clear;x-gha,readwrite'
 
 jobs:
-  build-native:
+  # ==========================================================================
+  # Prepare version info
+  # ==========================================================================
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is_release: ${{ steps.version.outputs.is_release }}
+    steps:
+      - id: version
+        run: |
+          if [[ "${{ github.event.inputs.version }}" != "" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION#v}"
+          else
+            VERSION="1.0.0-ci.${{ github.run_number }}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building version: $VERSION"
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ==========================================================================
+  # Desktop Native Builds (Linux, macOS, Windows)
+  # ==========================================================================
+  build-desktop:
+    needs: prepare
     strategy:
       matrix:
         include:
@@ -161,13 +196,99 @@ jobs:
             build/**/${{ matrix.lib_prefix }}epp_agent.${{ matrix.lib_ext }}
             build/**/${{ matrix.lib_prefix }}epp_relay.${{ matrix.lib_ext }}
             vcpkg-dlls/*.dll
+          retention-days: 1
 
-  build-nuget:
-    needs: build-native
+  # ==========================================================================
+  # iOS Build (XCFramework)
+  # ==========================================================================
+  build-ios:
+    needs: prepare
+    runs-on: macos-14
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          brew install cmake ninja pkg-config autoconf automake libtool
+
+      - name: Build XCFramework
+        run: |
+          bash bindings/swift/build-ios.sh
+
+      - name: Upload iOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-xcframework
+          path: |
+            bindings/swift/artifacts/EcliptixProtocolC.xcframework.zip
+            bindings/swift/artifacts/EcliptixProtocolC.xcframework.checksum
+          retention-days: 30
+
+  # ==========================================================================
+  # Android Build (Native + AAR)
+  # ==========================================================================
+  build-android:
+    needs: prepare
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager --install "platform-tools" "platforms;android-${{ env.ANDROID_API_LEVEL }}" "ndk;${{ env.ANDROID_NDK_VERSION }}"
+
+      - name: Configure NDK path
+        run: |
+          SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          echo "ANDROID_NDK_HOME=$SDK_ROOT/ndk/${{ env.ANDROID_NDK_VERSION }}" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$SDK_ROOT/ndk/${{ env.ANDROID_NDK_VERSION }}" >> "$GITHUB_ENV"
+
+      - name: Build native library
+        run: |
+          bash bindings/android/build-android.sh
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: Assemble AAR
+        run: |
+          gradle -p bindings/android :ecliptix-protocol:assembleRelease
+
+      - name: Publish AAR to GitHub Packages
+        if: needs.prepare.outputs.is_release == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gradle -p bindings/android :ecliptix-protocol:publish
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-aar
+          path: bindings/android/ecliptix-protocol/build/outputs/aar/ecliptix-protocol-release.aar
+          retention-days: 30
+
+  # ==========================================================================
+  # Package NuGet
+  # ==========================================================================
+  package-nuget:
+    needs: [prepare, build-desktop]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -182,6 +303,7 @@ jobs:
       - name: Download all native libraries
         uses: actions/download-artifact@v4
         with:
+          pattern: native-*
           path: native-artifacts
 
       - name: Organize native libraries
@@ -197,12 +319,6 @@ jobs:
           mkdir -p nuget/EPP.Relay/runtimes/linux-arm64/native
           find native-artifacts/native-linux-arm64 -name "libepp_agent.so" -exec cp {} nuget/EPP.Agent/runtimes/linux-arm64/native/ \; || true
           find native-artifacts/native-linux-arm64 -name "libepp_relay.so" -exec cp {} nuget/EPP.Relay/runtimes/linux-arm64/native/ \; || true
-
-          # macOS x64
-          mkdir -p nuget/EPP.Agent/runtimes/osx-x64/native
-          mkdir -p nuget/EPP.Relay/runtimes/osx-x64/native
-          find native-artifacts/native-osx-x64 -name "libepp_agent.dylib" -exec cp {} nuget/EPP.Agent/runtimes/osx-x64/native/ \; || true
-          find native-artifacts/native-osx-x64 -name "libepp_relay.dylib" -exec cp {} nuget/EPP.Relay/runtimes/osx-x64/native/ \; || true
 
           # macOS arm64
           mkdir -p nuget/EPP.Agent/runtimes/osx-arm64/native
@@ -222,67 +338,132 @@ jobs:
           echo "=== Native library structure ==="
           find nuget -name "*.so" -o -name "*.dylib" -o -name "*.dll" | sort
 
-      - name: Determine version
-        id: version
-        run: |
-          if [[ "${{ github.event.inputs.version }}" != "" ]]; then
-            VERSION="${{ github.event.inputs.version }}"
-          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            VERSION="${{ github.ref_name }}"
-            VERSION="${VERSION#v}"  # Remove 'v' prefix
-          else
-            VERSION="1.0.0-ci.${{ github.run_number }}"
-          fi
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          echo "Building version: $VERSION"
-
       - name: Build NuGet packages
         run: |
           cd nuget
-
-          # Build Client package
           dotnet pack EPP.Agent/EPP.Agent.csproj \
             -c Release \
             -o output \
-            /p:Version=${{ steps.version.outputs.VERSION }}
+            /p:Version=${{ needs.prepare.outputs.version }}
 
-          # Build Server package
           dotnet pack EPP.Relay/EPP.Relay.csproj \
             -c Release \
             -o output \
-            /p:Version=${{ steps.version.outputs.VERSION }}
+            /p:Version=${{ needs.prepare.outputs.version }}
 
       - name: Upload NuGet packages
         uses: actions/upload-artifact@v4
         with:
           name: nuget-packages
           path: nuget/output/*.nupkg
+          retention-days: 30
 
       - name: Publish to GitHub Packages
         run: |
           cd nuget/output
           for pkg in *.nupkg; do
             dotnet nuget push "$pkg" \
-              --source "https://nuget.pkg.github.com/oleksandrmelnychenko/index.json" \
+              --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" \
               --api-key ${{ secrets.GITHUB_TOKEN }} \
               --skip-duplicate
           done
 
-  create-release:
-    needs: build-nuget
+  # ==========================================================================
+  # Update Swift Package Manager
+  # ==========================================================================
+  update-spm:
+    needs: [prepare, build-ios]
+    if: needs.prepare.outputs.is_release == 'true'
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
-    permissions:
-      contents: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEFAULT_BRANCH }}
+
+      - name: Download iOS checksum
+        uses: actions/download-artifact@v4
+        with:
+          name: ios-xcframework
+          path: ios-artifacts
+
+      - name: Update Package.swift
+        run: |
+          CHECKSUM="$(cat ios-artifacts/EcliptixProtocolC.xcframework.checksum)"
+          bash bindings/swift/update-package.sh "$VERSION" "$CHECKSUM"
+
+      - name: Commit Package.swift update
+        run: |
+          if git diff --quiet; then
+            echo "No Package.swift changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Package.swift
+          git commit -m "Update Swift package for v$VERSION"
+          git push origin "HEAD:$DEFAULT_BRANCH"
+
+  # ==========================================================================
+  # Create GitHub Release
+  # ==========================================================================
+  create-release:
+    needs: [prepare, build-ios, build-android, package-nuget]
+    if: needs.prepare.outputs.is_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download iOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ios-xcframework
+          path: ios-artifacts
+
+      - name: Download Android artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: android-aar
+          path: android-artifacts
+
       - name: Download NuGet packages
         uses: actions/download-artifact@v4
         with:
           name: nuget-packages
-          path: packages
+          path: nuget-artifacts
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: packages/*.nupkg
+          files: |
+            ios-artifacts/EcliptixProtocolC.xcframework.zip
+            android-artifacts/ecliptix-protocol-release.aar
+            nuget-artifacts/*.nupkg
           generate_release_notes: true
+          body: |
+            ## Ecliptix Protected Protocol v${{ needs.prepare.outputs.version }}
+
+            ### Installation
+
+            **NuGet (.NET)**
+            ```bash
+            dotnet add package EPP.Agent --version ${{ needs.prepare.outputs.version }}
+            dotnet add package EPP.Relay --version ${{ needs.prepare.outputs.version }}
+            ```
+
+            **Swift Package Manager**
+            ```swift
+            .package(url: "https://github.com/${{ github.repository }}", from: "${{ needs.prepare.outputs.version }}")
+            ```
+
+            **Android (Gradle)**
+            ```kotlin
+            implementation("com.ecliptix.security:ecliptix-protocol:${{ needs.prepare.outputs.version }}")
+            ```
+
+            ### Platforms
+            - Linux x64, arm64
+            - macOS arm64
+            - Windows x64
+            - iOS (arm64, arm64-simulator, x86_64-simulator)
+            - Android (arm64-v8a)
