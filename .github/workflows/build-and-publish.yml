@@ -271,6 +271,7 @@ jobs:
 
       - name: Publish AAR to GitHub Packages
         if: needs.prepare.outputs.is_release == 'true'
+        continue-on-error: true  # Skip if version already exists (409 Conflict)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
