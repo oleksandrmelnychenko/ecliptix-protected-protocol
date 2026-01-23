@@ -158,7 +158,7 @@ create_framework() {
     cp "$ROOT_DIR/include/ecliptix/c_api/epp_export.h" "$DIR/Headers/"
 
     cat > "$DIR/Modules/module.modulemap" <<'EOF'
-module EcliptixProtocolC {
+framework module EcliptixProtocolC {
   header "epp_api.h"
   header "epp_export.h"
   export *
