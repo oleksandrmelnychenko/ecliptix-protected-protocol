@@ -24,7 +24,7 @@ if [ ! -d "$VCPKG_ROOT" ]; then
     "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
 fi
 
-"$VCPKG_ROOT/vcpkg" install libsodium liboqs openssl protobuf fmt --triplet "$TRIPLET"
+"$VCPKG_ROOT/vcpkg" install libsodium "liboqs[core]" openssl protobuf fmt --triplet "$TRIPLET"
 
 export PKG_CONFIG_PATH="$VCPKG_ROOT/installed/$TRIPLET/lib/pkgconfig:$VCPKG_ROOT/installed/$TRIPLET/share/pkgconfig"
 export PKG_CONFIG_SYSROOT_DIR="$VCPKG_ROOT/installed/$TRIPLET"
@@ -36,6 +36,7 @@ cmake -B "$BUILD_DIR" -S "$ROOT_DIR" \
     -DECLIPTIX_BUILD_SERVER_TARGET=OFF \
     -DECLIPTIX_BUILD_CLIENT_TARGET=ON \
     -DECLIPTIX_BUILD_SHARED=ON \
+    -DECLIPTIX_BUILD_JNI=ON \
     -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
     -DVCPKG_TARGET_TRIPLET="$TRIPLET" \
     -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \

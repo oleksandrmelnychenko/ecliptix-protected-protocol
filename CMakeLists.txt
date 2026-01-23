@@ -23,6 +23,7 @@ option(ECLIPTIX_ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer" OFF)
 option(ECLIPTIX_BUILD_CLIENT_TARGET "Build client (desktop/mobile) target with C API" ON)
 option(ECLIPTIX_BUILD_SERVER_TARGET "Build server target (core only)" ON)
 option(ECLIPTIX_DEBUG_KEYS "Enable debug logging of cryptographic keys (DEVELOPMENT ONLY)" OFF)
+option(ECLIPTIX_BUILD_JNI "Build JNI bindings for Android" OFF)
 
 # ============================================================================
 # Position Independent Code (required for shared libraries)
@@ -189,6 +190,12 @@ set(ECLIPTIX_CLIENT_SOURCES
     ${ECLIPTIX_COMMON_API_SOURCES}
 )
 
+if(ECLIPTIX_BUILD_JNI AND ANDROID)
+    list(APPEND ECLIPTIX_CLIENT_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/bindings/android/jni/epp_jni.cpp
+    )
+endif()
+
 # Server sources include core + common + server-specific C API
 set(ECLIPTIX_SERVER_SOURCES
     ${ECLIPTIX_CORE_SOURCES}
@@ -229,6 +236,7 @@ function(configure_protocol_target target_name output_name)
         PRIVATE
             $<$<BOOL:${spdlog_FOUND}>:spdlog::spdlog>
             $<$<BOOL:${fmt_FOUND}>:fmt::fmt>
+            $<$<BOOL:${ANDROID}>:log>
     )
 
     target_compile_definitions(${target_name}
