@@ -18,6 +18,11 @@ android {
         consumerProguardFiles("consumer-rules.pro")
     }
 
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
     sourceSets {
         getByName("main").jniLibs.srcDirs("src/main/jniLibs")
     }
@@ -27,6 +32,10 @@ android {
             withSourcesJar()
         }
     }
+}
+
+kotlin {
+    jvmToolchain(17)
 }
 
 publishing {
