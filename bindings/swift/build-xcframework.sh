@@ -19,7 +19,7 @@ ARTIFACT_DIR="$SCRIPT_DIR/artifacts"
 BUILD_TYPE="${1:-Release}"
 VERSION="${VERSION:-1.0.0}"
 IOS_DEPLOYMENT_TARGET="${IOS_DEPLOYMENT_TARGET:-17.0}"
-MACOS_DEPLOYMENT_TARGET="${MACOS_DEPLOYMENT_TARGET:-11.0}"
+MACOS_DEPLOYMENT_TARGET="${MACOS_DEPLOYMENT_TARGET:-14.0}"
 
 VCPKG_ROOT="${VCPKG_ROOT:-$ROOT_DIR/.build/vcpkg}"
 
@@ -60,6 +60,7 @@ build_deps() {
         "liboqs[core]" \
         openssl \
         protobuf \
+        fmt \
         --triplet "$TRIPLET" \
         --x-install-root="$VCPKG_ROOT/installed" \
         || true
