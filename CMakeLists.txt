@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(Ecliptix_Protection_Protocol VERSION 1.0.0 LANGUAGES CXX)
+project(Ecliptix_Protection_Protocol VERSION 1.0.1 LANGUAGES CXX)
 
 # ============================================================================
 # Project Configuration
