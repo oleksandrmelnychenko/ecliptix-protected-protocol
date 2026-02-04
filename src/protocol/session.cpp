@@ -7,6 +7,7 @@
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/crypto/sodium_secure_memory_handle.hpp"
 #include "ecliptix/security/validation/dh_validator.hpp"
+#include "protocol/sealed_state.pb.h"
 #include <google/protobuf/io/coded_stream.h>
 #include <google/protobuf/io/zero_copy_stream_impl_lite.h>
 #include <google/protobuf/message.h>
@@ -62,18 +63,6 @@ namespace ecliptix::protocol {
             }
             return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(
                 std::vector<uint8_t>(output.begin(), output.end()));
-        }
-
-        Result<std::vector<uint8_t>, ProtocolFailure> ComputeHmacSha256(
-            std::span<const uint8_t> key,
-            std::span<const uint8_t> data) {
-            if (key.size() != kHmacBytes) {
-                return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
-                    ProtocolFailure::InvalidInput("HMAC key must be 32 bytes"));
-            }
-            std::vector<uint8_t> mac(crypto_auth_hmacsha256_BYTES);
-            crypto_auth_hmacsha256(mac.data(), data.data(), data.size(), key.data());
-            return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(std::move(mac));
         }
 
         bool IsAllZero(std::span<const uint8_t> bytes) {
@@ -299,7 +288,7 @@ namespace ecliptix::protocol {
         return Result<std::unique_ptr<Session>, ProtocolFailure>::Ok(std::move(session));
     }
 
-    Result<std::unique_ptr<Session>, ProtocolFailure> Session::FromState(
+    Result<std::unique_ptr<Session>, ProtocolFailure> Session::FromStateInternal(
         const ecliptix::proto::protocol::ProtocolState& state) {
         if (state.version() != kProtocolVersion) {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
@@ -443,58 +432,6 @@ namespace ecliptix::protocol {
                 ProtocolFailure::InvalidInput("Identity binding hash verification failed"));
         }
 
-        if (state.state_hmac().size() != kHmacBytes) {
-            return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
-                ProtocolFailure::InvalidInput("Missing or invalid state HMAC"));
-        }
-
-        auto mac_key_result = DeriveKeyBytes(
-            std::span(reinterpret_cast<const uint8_t*>(state.root_key().data()),
-                      state.root_key().size()),
-            kHmacBytes,
-            {},
-            kStateHmacInfo);
-        if (mac_key_result.IsErr()) {
-            return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
-                mac_key_result.UnwrapErr());
-        }
-        auto mac_key = mac_key_result.Unwrap();
-        auto wipe_bytes = [](std::vector<uint8_t>& bytes) {
-            if (!bytes.empty()) {
-                auto _wipe = SodiumInterop::SecureWipe(std::span(bytes));
-                (void) _wipe;
-            }
-        };
-
-        auto mac_state = state;
-        mac_state.clear_state_hmac();
-        auto serialized_result = SerializeDeterministic(mac_state);
-        if (serialized_result.IsErr()) {
-            wipe_bytes(mac_key);
-            return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
-                serialized_result.UnwrapErr());
-        }
-        auto serialized = serialized_result.Unwrap();
-
-        auto expected_result = ComputeHmacSha256(std::span(mac_key), std::span(serialized));
-        if (expected_result.IsErr()) {
-            wipe_bytes(serialized);
-            wipe_bytes(mac_key);
-            return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
-                expected_result.UnwrapErr());
-        }
-        auto expected_mac = expected_result.Unwrap();
-
-        const bool mac_ok = expected_mac.size() == state.state_hmac().size() &&
-            sodium_memcmp(expected_mac.data(), state.state_hmac().data(), expected_mac.size()) == 0;
-        wipe_bytes(expected_mac);
-        wipe_bytes(serialized);
-        wipe_bytes(mac_key);
-        if (!mac_ok) {
-            return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
-                ProtocolFailure::InvalidInput("State HMAC verification failed"));
-        }
-
         if (!state.send_chain().skipped_message_keys().empty()) {
             return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
                 ProtocolFailure::InvalidInput("Send chain must not include skipped message keys"));
@@ -542,7 +479,7 @@ namespace ecliptix::protocol {
         return Result<std::unique_ptr<Session>, ProtocolFailure>::Ok(std::move(session));
     }
 
-    Result<ecliptix::proto::protocol::ProtocolState, ProtocolFailure> Session::ExportState() {
+    Result<ecliptix::proto::protocol::ProtocolState, ProtocolFailure> Session::PrepareStateForExport() {
         std::lock_guard<std::mutex> guard(lock_);
         if (state_.state_counter() == std::numeric_limits<uint64_t>::max()) {
             return Result<ecliptix::proto::protocol::ProtocolState, ProtocolFailure>::Err(
@@ -556,48 +493,164 @@ namespace ecliptix::protocol {
         copy.set_state_counter(next_generation);
         copy.clear_state_hmac();
 
-        auto mac_key_result = DeriveKeyBytes(
-            std::span(reinterpret_cast<const uint8_t*>(state_.root_key().data()),
-                      state_.root_key().size()),
-            kHmacBytes,
-            {},
-            kStateHmacInfo);
-        if (mac_key_result.IsErr()) {
-            return Result<ecliptix::proto::protocol::ProtocolState, ProtocolFailure>::Err(
-                mac_key_result.UnwrapErr());
-        }
-        auto mac_key = mac_key_result.Unwrap();
-        auto wipe_bytes = [](std::vector<uint8_t>& bytes) {
-            if (!bytes.empty()) {
-                auto _wipe = SodiumInterop::SecureWipe(std::span(bytes));
-                (void) _wipe;
-            }
-        };
-
-        auto serialized_result = SerializeDeterministic(copy);
-        if (serialized_result.IsErr()) {
-            wipe_bytes(mac_key);
-            return Result<ecliptix::proto::protocol::ProtocolState, ProtocolFailure>::Err(
-                serialized_result.UnwrapErr());
-        }
-        auto serialized = serialized_result.Unwrap();
-
-        auto mac_result = ComputeHmacSha256(std::span(mac_key), std::span(serialized));
-        if (mac_result.IsErr()) {
-            wipe_bytes(serialized);
-            wipe_bytes(mac_key);
-            return Result<ecliptix::proto::protocol::ProtocolState, ProtocolFailure>::Err(
-                mac_result.UnwrapErr());
-        }
-        auto mac = mac_result.Unwrap();
-        copy.set_state_hmac(mac.data(), mac.size());
-
         state_.set_state_counter(next_generation);
-
-        wipe_bytes(mac);
-        wipe_bytes(serialized);
-        wipe_bytes(mac_key);
         return Result<ecliptix::proto::protocol::ProtocolState, ProtocolFailure>::Ok(std::move(copy));
+    }
+
+    Result<std::vector<uint8_t>, ProtocolFailure> Session::ExportSealedState(
+        interfaces::IStateKeyProvider& key_provider) {
+        auto state_result = PrepareStateForExport();
+        if (state_result.IsErr()) {
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(state_result.UnwrapErr());
+        }
+        auto state_proto = state_result.Unwrap();
+
+        auto serialized_result = SerializeDeterministic(state_proto);
+        if (serialized_result.IsErr()) {
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(serialized_result.UnwrapErr());
+        }
+        auto plaintext_state = serialized_result.Unwrap();
+
+        auto kek_result = key_provider.GetStateEncryptionKey();
+        if (kek_result.IsErr()) {
+            SodiumInterop::SecureWipe(std::span(plaintext_state));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(kek_result.UnwrapErr());
+        }
+        auto kek_handle = std::move(kek_result).Unwrap();
+
+        auto dek = SodiumInterop::GetRandomBytes(kAesKeyBytes);
+        auto dek_nonce = SodiumInterop::GetRandomBytes(kAesGcmNonceBytes);
+        auto state_nonce = SodiumInterop::GetRandomBytes(kAesGcmNonceBytes);
+
+        std::vector<uint8_t> kek_bytes(kAesKeyBytes);
+        auto read_result = kek_handle.Read(std::span(kek_bytes));
+        if (read_result.IsErr()) {
+            SodiumInterop::SecureWipe(std::span(dek));
+            SodiumInterop::SecureWipe(std::span(plaintext_state));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(read_result.UnwrapErr()));
+        }
+
+        constexpr uint8_t kSealedStateVersion = 1;
+        std::vector<uint8_t> dek_aad = {kSealedStateVersion};
+        auto encrypt_dek_result = AesGcm::Encrypt(std::span(kek_bytes), std::span(dek_nonce), std::span(dek), std::span(dek_aad));
+        if (encrypt_dek_result.IsErr()) {
+            SodiumInterop::SecureWipe(std::span(kek_bytes));
+            SodiumInterop::SecureWipe(std::span(dek));
+            SodiumInterop::SecureWipe(std::span(plaintext_state));
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(encrypt_dek_result.UnwrapErr());
+        }
+        auto encrypted_dek = encrypt_dek_result.Unwrap();
+
+        std::vector<uint8_t> state_aad;
+        state_aad.reserve(1 + dek_nonce.size() + encrypted_dek.size());
+        state_aad.push_back(kSealedStateVersion);
+        state_aad.insert(state_aad.end(), dek_nonce.begin(), dek_nonce.end());
+        state_aad.insert(state_aad.end(), encrypted_dek.begin(), encrypted_dek.end());
+
+        auto encrypt_state_result = AesGcm::Encrypt(std::span(dek), std::span(state_nonce), std::span(plaintext_state), std::span(state_aad));
+        SodiumInterop::SecureWipe(std::span(kek_bytes));
+        SodiumInterop::SecureWipe(std::span(dek));
+        SodiumInterop::SecureWipe(std::span(plaintext_state));
+
+        if (encrypt_state_result.IsErr()) {
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(encrypt_state_result.UnwrapErr());
+        }
+        auto encrypted_state = encrypt_state_result.Unwrap();
+
+        ecliptix::proto::protocol::SealedState sealed;
+        sealed.set_version(kSealedStateVersion);
+        sealed.set_dek_nonce(dek_nonce.data(), dek_nonce.size());
+        sealed.set_state_nonce(state_nonce.data(), state_nonce.size());
+        sealed.set_encrypted_dek(encrypted_dek.data(), encrypted_dek.size());
+        sealed.set_encrypted_state(encrypted_state.data(), encrypted_state.size());
+
+        std::string output;
+        if (!sealed.SerializeToString(&output)) {
+            return Result<std::vector<uint8_t>, ProtocolFailure>::Err(
+                ProtocolFailure::Encode("Failed to serialize sealed state"));
+        }
+        return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(
+            std::vector<uint8_t>(output.begin(), output.end()));
+    }
+
+    Result<std::unique_ptr<Session>, ProtocolFailure> Session::FromSealedState(
+        std::span<const uint8_t> sealed_data,
+        interfaces::IStateKeyProvider& key_provider) {
+        if (sealed_data.size() > kMaxProtobufMessageSize) {
+            return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("Sealed state too large"));
+        }
+
+        ecliptix::proto::protocol::SealedState sealed;
+        if (!sealed.ParseFromArray(sealed_data.data(), static_cast<int>(sealed_data.size()))) {
+            return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
+                ProtocolFailure::Decode("Failed to parse sealed state"));
+        }
+
+        constexpr uint8_t kSealedStateVersion = 1;
+        if (sealed.version() != kSealedStateVersion) {
+            return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("Unsupported sealed state version"));
+        }
+
+        if (sealed.dek_nonce().size() != kAesGcmNonceBytes ||
+            sealed.state_nonce().size() != kAesGcmNonceBytes) {
+            return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
+                ProtocolFailure::InvalidInput("Invalid nonce size in sealed state"));
+        }
+
+        auto kek_result = key_provider.GetStateEncryptionKey();
+        if (kek_result.IsErr()) {
+            return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(kek_result.UnwrapErr());
+        }
+        auto kek_handle = std::move(kek_result).Unwrap();
+
+        std::vector<uint8_t> dek_nonce(sealed.dek_nonce().begin(), sealed.dek_nonce().end());
+        std::vector<uint8_t> state_nonce(sealed.state_nonce().begin(), sealed.state_nonce().end());
+        std::vector<uint8_t> encrypted_dek(sealed.encrypted_dek().begin(), sealed.encrypted_dek().end());
+        std::vector<uint8_t> encrypted_state_data(sealed.encrypted_state().begin(), sealed.encrypted_state().end());
+
+        std::vector<uint8_t> kek_bytes(kAesKeyBytes);
+        auto read_result = kek_handle.Read(std::span(kek_bytes));
+        if (read_result.IsErr()) {
+            return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(read_result.UnwrapErr()));
+        }
+
+        std::vector<uint8_t> dek_aad = {kSealedStateVersion};
+        auto decrypt_dek_result = AesGcm::Decrypt(std::span(kek_bytes), std::span(dek_nonce), std::span(encrypted_dek), std::span(dek_aad));
+        SodiumInterop::SecureWipe(std::span(kek_bytes));
+        if (decrypt_dek_result.IsErr()) {
+            return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Decryption failed - invalid key or tampered data"));
+        }
+        auto dek = decrypt_dek_result.Unwrap();
+
+        std::vector<uint8_t> state_aad;
+        state_aad.reserve(1 + dek_nonce.size() + encrypted_dek.size());
+        state_aad.push_back(kSealedStateVersion);
+        state_aad.insert(state_aad.end(), dek_nonce.begin(), dek_nonce.end());
+        state_aad.insert(state_aad.end(), encrypted_dek.begin(), encrypted_dek.end());
+
+        auto decrypt_result = AesGcm::Decrypt(std::span(dek), std::span(state_nonce), std::span(encrypted_state_data), std::span(state_aad));
+        SodiumInterop::SecureWipe(std::span(dek));
+
+        if (decrypt_result.IsErr()) {
+            return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
+                ProtocolFailure::Generic("Decryption failed - invalid key or tampered data"));
+        }
+        auto plaintext_state = decrypt_result.Unwrap();
+
+        ecliptix::proto::protocol::ProtocolState state_proto;
+        if (!state_proto.ParseFromArray(plaintext_state.data(), static_cast<int>(plaintext_state.size()))) {
+            SodiumInterop::SecureWipe(std::span(plaintext_state));
+            return Result<std::unique_ptr<Session>, ProtocolFailure>::Err(
+                ProtocolFailure::Decode("Failed to parse protocol state"));
+        }
+        SodiumInterop::SecureWipe(std::span(plaintext_state));
+
+        return FromStateInternal(state_proto);
     }
 
     Result<Unit, ProtocolFailure> Session::InitializeFromHandshake() {

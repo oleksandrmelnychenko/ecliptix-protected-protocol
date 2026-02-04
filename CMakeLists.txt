@@ -122,6 +122,7 @@ pkg_check_modules(LIBSODIUM REQUIRED libsodium)
 pkg_check_modules(LIBOQS REQUIRED liboqs)
 
 # OpenSSL - For HKDF implementation
+set(OPENSSL_ROOT_DIR "/opt/homebrew/opt/openssl@3")
 find_package(OpenSSL REQUIRED)
 
 # Protobuf - Message serialization
@@ -219,6 +220,7 @@ function(configure_protocol_target target_name output_name)
             ${ECLIPTIX_SOURCE_DIR}
             ${LIBSODIUM_INCLUDE_DIRS}
             ${LIBOQS_INCLUDE_DIRS}
+            ${OPENSSL_INCLUDE_DIR}
     )
 
     target_link_directories(${target_name}
@@ -231,7 +233,7 @@ function(configure_protocol_target target_name output_name)
         PUBLIC
             ${LIBSODIUM_LIBRARIES}
             ${LIBOQS_LIBRARIES}
-            OpenSSL::Crypto
+            ${OPENSSL_CRYPTO_LIBRARY}
             Ecliptix::Proto
         PRIVATE
             $<$<BOOL:${spdlog_FOUND}>:spdlog::spdlog>

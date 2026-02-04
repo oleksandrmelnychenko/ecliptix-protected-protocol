@@ -174,12 +174,16 @@ EPP_API EppErrorCode epp_session_decrypt(
 
 EPP_API EppErrorCode epp_session_serialize(
     EppSessionHandle* handle,
-    EppBuffer* out_state,
+    const uint8_t* encryption_key,
+    size_t encryption_key_length,
+    EppBuffer* out_sealed_state,
     EppError* out_error);
 
 EPP_API EppErrorCode epp_session_deserialize(
-    const uint8_t* state_bytes,
-    size_t state_bytes_length,
+    const uint8_t* sealed_state_bytes,
+    size_t sealed_state_bytes_length,
+    const uint8_t* decryption_key,
+    size_t decryption_key_length,
     EppSessionHandle** out_handle,
     EppError* out_error);
 

@@ -1,6 +1,6 @@
 #include "ecliptix/security/validation/dh_validator.hpp"
 #include "ecliptix/core/format.hpp"
-#include <algorithm>
+#include <cstdint>
 #include <cstring>
 
 namespace ecliptix::protocol::security {
@@ -44,31 +44,21 @@ namespace ecliptix::protocol::security {
         if (public_key.size() != Constants::CURVE_25519_FIELD_ELEMENT_SIZE) {
             return false;
         }
-        std::array<uint32_t, Constants::FIELD_256_WORD_COUNT> key_words{};
-        std::array<uint32_t, Constants::FIELD_256_WORD_COUNT> prime_words{};
+        uint32_t borrow = 0;
         for (size_t i = 0; i < Constants::FIELD_256_WORD_COUNT; ++i) {
             const size_t byte_offset = i * Constants::WORD_SIZE;
-            key_words[i] = static_cast<uint32_t>(public_key[byte_offset]) |
+            const uint32_t key_word = static_cast<uint32_t>(public_key[byte_offset]) |
                            (static_cast<uint32_t>(public_key[byte_offset + 1]) << 8) |
                            (static_cast<uint32_t>(public_key[byte_offset + 2]) << 16) |
                            (static_cast<uint32_t>(public_key[byte_offset + 3]) << 24);
-        }
-        for (size_t i = 0; i < Constants::FIELD_256_WORD_COUNT; ++i) {
-            const size_t byte_offset = i * Constants::WORD_SIZE;
-            prime_words[i] = static_cast<uint32_t>(CURVE_25519_PRIME[byte_offset]) |
+            const uint32_t prime_word = static_cast<uint32_t>(CURVE_25519_PRIME[byte_offset]) |
                              (static_cast<uint32_t>(CURVE_25519_PRIME[byte_offset + 1]) << 8) |
                              (static_cast<uint32_t>(CURVE_25519_PRIME[byte_offset + 2]) << 16) |
                              (static_cast<uint32_t>(CURVE_25519_PRIME[byte_offset + 3]) << 24);
+            const uint64_t diff = static_cast<uint64_t>(key_word) - static_cast<uint64_t>(prime_word) - borrow;
+            borrow = static_cast<uint32_t>(diff >> 63);
         }
-        for (int i = Constants::FIELD_256_WORD_COUNT - 1; i >= 0; --i) {
-            if (key_words[i] < prime_words[i]) {
-                return true;
-            }
-            if (key_words[i] > prime_words[i]) {
-                return false;
-            }
-        }
-        return false;
+        return borrow == 1;
     }
 
     bool DhValidator::ConstantTimeEquals(

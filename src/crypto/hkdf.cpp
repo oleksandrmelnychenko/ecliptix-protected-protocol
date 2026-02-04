@@ -1,4 +1,5 @@
 #include "ecliptix/crypto/hkdf.hpp"
+#include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/core/constants.hpp"
 #include <openssl/evp.h>
 #include <openssl/kdf.h>
@@ -79,6 +80,13 @@ namespace ecliptix::protocol::crypto {
                 params[param_idx] = OSSL_PARAM_construct_end();
                 const int result = EVP_KDF_derive(kctx, output.data(), output.size(), params);
                 EVP_KDF_CTX_free(kctx);
+                SodiumInterop::SecureWipe(std::span(ikm_copy));
+                if (!salt_copy.empty()) {
+                    SodiumInterop::SecureWipe(std::span(salt_copy));
+                }
+                if (!info_copy.empty()) {
+                    SodiumInterop::SecureWipe(std::span(info_copy));
+                }
                 if (result != OpenSSL::SUCCESS) {
                     return Result<Unit, ProtocolFailure>::Err(
                         ProtocolFailure::DeriveKey("HKDF key derivation failed"));

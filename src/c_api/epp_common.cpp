@@ -5,6 +5,7 @@
 #include "ecliptix/crypto/kyber_interop.hpp"
 #include "ecliptix/crypto/hkdf.hpp"
 #include "ecliptix/crypto/shamir_secret_sharing.hpp"
+#include "ecliptix/interfaces/i_state_key_provider.hpp"
 #include "ecliptix/protocol/handshake.hpp"
 #include "ecliptix/protocol/session.hpp"
 #include "ecliptix/protocol/constants.hpp"
@@ -28,6 +29,60 @@ using namespace ecliptix::protocol;
 using namespace ecliptix::protocol::identity;
 using namespace ecliptix::protocol::crypto;
 using crypto::KyberInterop;
+
+namespace {
+
+class RawKeyProvider final : public interfaces::IStateKeyProvider {
+public:
+    static Result<std::unique_ptr<RawKeyProvider>, ProtocolFailure> Create(std::span<const uint8_t> key) {
+        auto handle_result = SecureMemoryHandle::Allocate(key.size());
+        if (handle_result.IsErr()) {
+            return Result<std::unique_ptr<RawKeyProvider>, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(handle_result.UnwrapErr()));
+        }
+        auto handle = std::move(handle_result).Unwrap();
+        auto write_result = handle.Write(key);
+        if (write_result.IsErr()) {
+            return Result<std::unique_ptr<RawKeyProvider>, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(write_result.UnwrapErr()));
+        }
+        return Result<std::unique_ptr<RawKeyProvider>, ProtocolFailure>::Ok(
+            std::unique_ptr<RawKeyProvider>(new RawKeyProvider(std::move(handle))));
+    }
+
+    ~RawKeyProvider() override = default;
+
+    [[nodiscard]] Result<SecureMemoryHandle, ProtocolFailure> GetStateEncryptionKey() override {
+        auto handle_result = SecureMemoryHandle::Allocate(key_handle_.Size());
+        if (handle_result.IsErr()) {
+            return Result<SecureMemoryHandle, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(handle_result.UnwrapErr()));
+        }
+        auto handle = std::move(handle_result).Unwrap();
+        std::vector<uint8_t> key_bytes(key_handle_.Size());
+        auto read_result = key_handle_.Read(std::span(key_bytes));
+        if (read_result.IsErr()) {
+            return Result<SecureMemoryHandle, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(read_result.UnwrapErr()));
+        }
+        auto write_result = handle.Write(std::span(key_bytes));
+        SodiumInterop::SecureWipe(std::span(key_bytes));
+        if (write_result.IsErr()) {
+            return Result<SecureMemoryHandle, ProtocolFailure>::Err(
+                ProtocolFailure::FromSodiumFailure(write_result.UnwrapErr()));
+        }
+        return Result<SecureMemoryHandle, ProtocolFailure>::Ok(std::move(handle));
+    }
+
+    RawKeyProvider(const RawKeyProvider&) = delete;
+    RawKeyProvider& operator=(const RawKeyProvider&) = delete;
+
+private:
+    explicit RawKeyProvider(SecureMemoryHandle handle) : key_handle_(std::move(handle)) {}
+    SecureMemoryHandle key_handle_;
+};
+
+}
 
 namespace epp::internal {
 
@@ -822,7 +877,9 @@ EppErrorCode epp_session_decrypt(
 
 EppErrorCode epp_session_serialize(
     EppSessionHandle* handle,
-    EppBuffer* out_state,
+    const uint8_t* encryption_key,
+    size_t encryption_key_length,
+    EppBuffer* out_sealed_state,
     EppError* out_error) {
     if (const auto err = EnsureInitialized(); err != EPP_SUCCESS) {
         fill_error(out_error, err, "Failed to initialize libsodium");
@@ -832,25 +889,28 @@ EppErrorCode epp_session_serialize(
         fill_error(out_error, EPP_ERROR_INVALID_STATE, "Session handle is null or uninitialized");
         return EPP_ERROR_INVALID_STATE;
     }
-    if (!validate_output_handle(out_state, out_error)) {
-        return EPP_ERROR_NULL_POINTER;
+    if (!validate_buffer_param(encryption_key, encryption_key_length, out_error) ||
+        !validate_output_handle(out_sealed_state, out_error)) {
+        return out_error ? out_error->code : EPP_ERROR_NULL_POINTER;
+    }
+    if (encryption_key_length != kAesKeyBytes) {
+        fill_error(out_error, EPP_ERROR_INVALID_INPUT,
+                   "Encryption key must be " + std::to_string(kAesKeyBytes) + " bytes");
+        return EPP_ERROR_INVALID_INPUT;
     }
 
-    auto state_result = handle->session->ExportState();
+    auto key_provider_result = RawKeyProvider::Create(std::span(encryption_key, encryption_key_length));
+    if (key_provider_result.IsErr()) {
+        return fill_error_from_failure(out_error, key_provider_result.UnwrapErr());
+    }
+    auto key_provider = std::move(key_provider_result).Unwrap();
+    auto state_result = handle->session->ExportSealedState(*key_provider);
     if (state_result.IsErr()) {
         return fill_error_from_failure(out_error, state_result.UnwrapErr());
     }
 
-    const auto& state = state_result.Unwrap();
-    std::string serialized;
-    if (!state.SerializeToString(&serialized)) {
-        fill_error(out_error, EPP_ERROR_ENCODE, "Failed to serialize ProtocolState");
-        return EPP_ERROR_ENCODE;
-    }
-    if (!copy_to_buffer(
-        std::span(reinterpret_cast<const uint8_t*>(serialized.data()), serialized.size()),
-        out_state,
-        out_error)) {
+    auto sealed_state = state_result.Unwrap();
+    if (!copy_to_buffer(std::span(sealed_state), out_sealed_state, out_error)) {
         return out_error ? out_error->code : EPP_ERROR_OUT_OF_MEMORY;
     }
 
@@ -858,30 +918,39 @@ EppErrorCode epp_session_serialize(
 }
 
 EppErrorCode epp_session_deserialize(
-    const uint8_t* state_bytes,
-    size_t state_bytes_length,
+    const uint8_t* sealed_state_bytes,
+    size_t sealed_state_bytes_length,
+    const uint8_t* decryption_key,
+    size_t decryption_key_length,
     EppSessionHandle** out_handle,
     EppError* out_error) {
     if (const auto err = EnsureInitialized(); err != EPP_SUCCESS) {
         fill_error(out_error, err, "Failed to initialize libsodium");
         return err;
     }
-    if (!validate_buffer_param(state_bytes, state_bytes_length, out_error) ||
+    if (!validate_buffer_param(sealed_state_bytes, sealed_state_bytes_length, out_error) ||
+        !validate_buffer_param(decryption_key, decryption_key_length, out_error) ||
         !validate_output_handle(out_handle, out_error)) {
         return out_error ? out_error->code : EPP_ERROR_NULL_POINTER;
     }
-
-    if (state_bytes_length > ecliptix::protocol::kMaxProtobufMessageSize) {
+    if (decryption_key_length != kAesKeyBytes) {
+        fill_error(out_error, EPP_ERROR_INVALID_INPUT,
+                   "Decryption key must be " + std::to_string(kAesKeyBytes) + " bytes");
+        return EPP_ERROR_INVALID_INPUT;
+    }
+    if (sealed_state_bytes_length > ecliptix::protocol::kMaxProtobufMessageSize) {
         fill_error(out_error, EPP_ERROR_INVALID_INPUT, "Message too large");
         return EPP_ERROR_INVALID_INPUT;
     }
-    ecliptix::proto::protocol::ProtocolState state;
-    if (!state.ParseFromArray(state_bytes, static_cast<int>(state_bytes_length))) {
-        fill_error(out_error, EPP_ERROR_DECODE, "Failed to parse ProtocolState");
-        return EPP_ERROR_DECODE;
-    }
 
-    auto session_result = ecliptix::protocol::Session::FromState(state);
+    auto key_provider_result = RawKeyProvider::Create(std::span(decryption_key, decryption_key_length));
+    if (key_provider_result.IsErr()) {
+        return fill_error_from_failure(out_error, key_provider_result.UnwrapErr());
+    }
+    auto key_provider = std::move(key_provider_result).Unwrap();
+    auto session_result = ecliptix::protocol::Session::FromSealedState(
+        std::span(sealed_state_bytes, sealed_state_bytes_length),
+        *key_provider);
     if (session_result.IsErr()) {
         return fill_error_from_failure(out_error, session_result.UnwrapErr());
     }

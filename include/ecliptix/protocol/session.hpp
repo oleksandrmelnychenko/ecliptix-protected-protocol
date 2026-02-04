@@ -1,8 +1,10 @@
 #pragma once
 #include "ecliptix/core/failures.hpp"
 #include "ecliptix/core/result.hpp"
+#include "ecliptix/interfaces/i_state_key_provider.hpp"
 #include "protocol/envelope.pb.h"
 #include "protocol/state.pb.h"
+#include "protocol/sealed_state.pb.h"
 #include <cstdint>
 #include <memory>
 #include <span>
@@ -59,10 +61,12 @@ public:
     [[nodiscard]] static Result<std::unique_ptr<Session>, ProtocolFailure> FromHandshakeState(
         HandshakeState state);
 
-    [[nodiscard]] static Result<std::unique_ptr<Session>, ProtocolFailure> FromState(
-        const ecliptix::proto::protocol::ProtocolState& state);
+    [[nodiscard]] static Result<std::unique_ptr<Session>, ProtocolFailure> FromSealedState(
+        std::span<const uint8_t> sealed_state,
+        interfaces::IStateKeyProvider& key_provider);
 
-    [[nodiscard]] Result<ecliptix::proto::protocol::ProtocolState, ProtocolFailure> ExportState();
+    [[nodiscard]] Result<std::vector<uint8_t>, ProtocolFailure> ExportSealedState(
+        interfaces::IStateKeyProvider& key_provider);
 
     [[nodiscard]] Result<ecliptix::proto::protocol::SecureEnvelope, ProtocolFailure> Encrypt(
         std::span<const uint8_t> payload,
@@ -113,6 +117,10 @@ private:
     explicit Session(
         ecliptix::proto::protocol::ProtocolState state,
         std::vector<uint8_t> pending_kyber_shared_secret);
+
+    [[nodiscard]] static Result<std::unique_ptr<Session>, ProtocolFailure> FromStateInternal(
+        const ecliptix::proto::protocol::ProtocolState& state);
+    [[nodiscard]] Result<ecliptix::proto::protocol::ProtocolState, ProtocolFailure> PrepareStateForExport();
 
     [[nodiscard]] Result<Unit, ProtocolFailure> InitializeFromHandshake();
     [[nodiscard]] Result<std::vector<uint8_t>, ProtocolFailure> NextSendMessageKey(uint64_t& message_index);

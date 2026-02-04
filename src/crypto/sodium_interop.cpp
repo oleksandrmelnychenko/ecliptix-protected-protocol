@@ -1,6 +1,5 @@
 #include "ecliptix/crypto/sodium_interop.hpp"
 #include "ecliptix/crypto/sodium_secure_memory_handle.hpp"
-#include <algorithm>
 
 namespace ecliptix::protocol::crypto {
     Result<Unit, SodiumFailure> SodiumInterop::Initialize() {
@@ -53,10 +52,7 @@ namespace ecliptix::protocol::crypto {
 
     Result<Unit, SodiumFailure> SodiumInterop::WipeSmallBuffer(std::span<uint8_t> buffer) {
         try {
-            volatile uint8_t *vbuf = buffer.data();
-            for (size_t i = 0; i < buffer.size(); ++i) {
-                vbuf[i] = SodiumConstants::SECURE_WIPE_PATTERN;
-            }
+            sodium_memzero(buffer.data(), buffer.size());
             return Result<Unit, SodiumFailure>::Ok(unit);
         } catch (const std::exception &ex) {
             return Result<Unit, SodiumFailure>::Err(
@@ -152,23 +148,36 @@ namespace ecliptix::protocol::crypto {
         }
     }
 
-    Result<std::pair<std::vector<uint8_t>, std::vector<uint8_t> >, ProtocolFailure>
+    Result<std::pair<SecureMemoryHandle, std::vector<uint8_t>>, ProtocolFailure>
     SodiumInterop::GenerateEd25519KeyPair() {
         try {
-            std::vector<uint8_t> pk(kEd25519PublicKeyBytes);
-            std::vector<uint8_t> sk(kEd25519SecretKeyBytes);
-            if (crypto_sign_keypair(pk.data(), sk.data()) != SodiumConstants::SUCCESS) {
-                SecureWipe(std::span(sk));
-                return Result<std::pair<std::vector<uint8_t>, std::vector<uint8_t> >,
+            auto sk_handle_result = SecureMemoryHandle::Allocate(kEd25519SecretKeyBytes);
+            if (sk_handle_result.IsErr()) {
+                return Result<std::pair<SecureMemoryHandle, std::vector<uint8_t>>,
                     ProtocolFailure>::Err(
-                    ProtocolFailure::KeyGeneration(
-                        "Failed to generate Ed25519 key pair"));
+                    ProtocolFailure::FromSodiumFailure(sk_handle_result.UnwrapErr()));
             }
-            return Result<std::pair<std::vector<uint8_t>, std::vector<uint8_t> >,
+            SecureMemoryHandle sk_handle = std::move(sk_handle_result).Unwrap();
+            std::vector<uint8_t> pk(kEd25519PublicKeyBytes);
+            std::vector<uint8_t> temp_sk(kEd25519SecretKeyBytes);
+            if (crypto_sign_keypair(pk.data(), temp_sk.data()) != SodiumConstants::SUCCESS) {
+                SecureWipe(std::span(temp_sk));
+                return Result<std::pair<SecureMemoryHandle, std::vector<uint8_t>>,
+                    ProtocolFailure>::Err(
+                    ProtocolFailure::KeyGeneration("Failed to generate Ed25519 key pair"));
+            }
+            auto write_result = sk_handle.Write(std::span<const uint8_t>(temp_sk));
+            SecureWipe(std::span(temp_sk));
+            if (write_result.IsErr()) {
+                return Result<std::pair<SecureMemoryHandle, std::vector<uint8_t>>,
+                    ProtocolFailure>::Err(
+                    ProtocolFailure::FromSodiumFailure(write_result.UnwrapErr()));
+            }
+            return Result<std::pair<SecureMemoryHandle, std::vector<uint8_t>>,
                 ProtocolFailure>::Ok(
-                std::make_pair(std::move(sk), std::move(pk)));
+                std::make_pair(std::move(sk_handle), std::move(pk)));
         } catch (const std::exception &ex) {
-            return Result<std::pair<std::vector<uint8_t>, std::vector<uint8_t> >,
+            return Result<std::pair<SecureMemoryHandle, std::vector<uint8_t>>,
                 ProtocolFailure>::Err(
                 ProtocolFailure::KeyGeneration(
                     "Unexpected error generating Ed25519 key pair: " +

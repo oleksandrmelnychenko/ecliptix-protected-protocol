@@ -123,7 +123,7 @@ namespace ecliptix::protocol::crypto {
                 ProtocolFailure::Generic(
                     ecliptix::compat::format("Failed to get authentication tag: {}", GetOpenSSLError())));
         }
-        output.resize(ciphertext_len + kAesGcmTagBytes);
+        output.resize(static_cast<size_t>(ciphertext_len) + kAesGcmTagBytes);
         return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(std::move(output));
     }
 
@@ -229,7 +229,7 @@ namespace ecliptix::protocol::crypto {
                     "Authentication tag verification failed - data may have been tampered with"));
         }
         plaintext_len += final_len;
-        output.resize(plaintext_len);
+        output.resize(static_cast<size_t>(plaintext_len));
         return Result<std::vector<uint8_t>, ProtocolFailure>::Ok(std::move(output));
     }
 }

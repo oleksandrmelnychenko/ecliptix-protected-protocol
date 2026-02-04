@@ -15,6 +15,7 @@ set(PROTO_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/protocol/envelope.proto
     ${CMAKE_CURRENT_SOURCE_DIR}/protocol/error.proto
     ${CMAKE_CURRENT_SOURCE_DIR}/protocol/state.proto
+    ${CMAKE_CURRENT_SOURCE_DIR}/protocol/sealed_state.proto
 )
 
 # Generate C++ code from proto files
